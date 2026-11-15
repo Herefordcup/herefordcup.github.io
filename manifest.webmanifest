@@ -1,0 +1,13 @@
+{
+  "name": "Hereford Cup",
+  "short_name": "Hereford Cup",
+  "description": "Annual Ryder Cup-style golf tournament",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f2ed",
+  "theme_color": "#750014",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

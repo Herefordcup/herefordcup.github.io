@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#750014">
+  <meta name="description" content="The official home of the Hereford Cup — an annual Ryder Cup-style golf tradition.">
+  <title>Hereford Cup</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="top-rule"></div>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="Hereford Cup home">
+      <span class="brand-mark" aria-hidden="true">HC</span>
+      <span><strong>HEREFORD CUP</strong><small>Annual Match Play</small></span>
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="#leaderboard">Leaderboard</a>
+      <a href="#matches">Matches</a>
+      <a href="#legacy">Legacy</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">TRADITION · TEAM · MATCH PLAY</p>
+        <h1 id="hero-title">The cup is<br><em>earned together.</em></h1>
+        <p class="hero-intro">One annual trip. Two teams. Three days of Ryder Cup-style golf and a lifetime of bragging rights.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#matches">View matches</a>
+          <button class="button button-quiet" id="installButton" type="button" hidden>Install app</button>
+        </div>
+      </div>
+      <div class="cup-art" aria-label="Hereford Cup shield">
+        <div class="year">EST. 2026</div>
+        <div class="shield"><span>H</span><i></i><b>CUP</b></div>
+        <p>HEREFORD</p>
+      </div>
+    </section>
+
+    <section class="score-section" id="leaderboard" aria-labelledby="score-title">
+      <div class="section-heading">
+        <div><p class="eyebrow">LIVE TOURNAMENT</p><h2 id="score-title">The race for the Cup</h2></div>
+        <span class="live-pill"><i></i> Scores saved on this device</span>
+      </div>
+      <div class="scoreboard">
+        <div class="team team-cardinal">
+          <span class="team-code">C</span>
+          <div><p>TEAM</p><h3>Cardinal</h3></div>
+          <strong id="cardinalTotal">0</strong>
+        </div>
+        <div class="score-center">
+          <span>FIRST TO</span><b id="targetPoints">6½</b><span>POINTS</span>
+        </div>
+        <div class="team team-silver">
+          <strong id="silverTotal">0</strong>
+          <div><p>TEAM</p><h3>Silver</h3></div>
+          <span class="team-code">S</span>
+        </div>
+      </div>
+      <div class="progress" aria-label="Team points progress"><i id="scoreProgress"></i></div>
+    </section>
+
+    <section class="matches-section" id="matches" aria-labelledby="matches-title">
+      <div class="section-heading">
+        <div><p class="eyebrow">MATCH CENTER</p><h2 id="matches-title">Tournament schedule</h2></div>
+        <button class="text-button" id="resetScores" type="button">Reset scores</button>
+      </div>
+      <div class="session-tabs" role="tablist" aria-label="Tournament sessions">
+        <button role="tab" aria-selected="true" data-session="fourball"><span>DAY 1</span>Four-Ball</button>
+        <button role="tab" aria-selected="false" data-session="foursomes"><span>DAY 2</span>Foursomes</button>
+        <button role="tab" aria-selected="false" data-session="singles"><span>DAY 3</span>Singles</button>
+      </div>
+      <div class="format-note" id="formatNote"></div>
+      <div class="match-list" id="matchList" aria-live="polite"></div>
+      <p class="scoring-help">Select the winner of each completed hole. The match status and Cup totals update automatically.</p>
+    </section>
+
+    <section class="legacy" id="legacy" aria-labelledby="legacy-title">
+      <div class="legacy-copy">
+        <p class="eyebrow">A NEW TRADITION</p>
+        <h2 id="legacy-title">Every trip becomes part of the story.</h2>
+        <p>This first edition is ready for your real teams, players, courses, dates, and history. Future champions will live here.</p>
+      </div>
+      <div class="legacy-grid">
+        <article><span>01</span><h3>Three sessions</h3><p>Four-Ball, Foursomes, and Singles.</p></article>
+        <article><span>02</span><h3>Live match play</h3><p>Automatic dormie, final scores, and Cup points.</p></article>
+        <article><span>03</span><h3>Built for the trip</h3><p>Installable and available offline on the course.</p></article>
+      </div>
+    </section>
+  </main>
+
+  <footer><span>HEREFORD CUP</span><p>Annual Ryder Cup-style golf tradition</p><span>EST. 2026</span></footer>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
