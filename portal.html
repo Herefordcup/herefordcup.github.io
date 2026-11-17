@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#750014">
+  <meta name="description" content="Hereford Cup player scoring portal">
+  <title>Player Portal · Hereford Cup</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="portal.css">
+</head>
+<body class="portal-body">
+  <div class="top-rule"></div>
+  <header class="site-header portal-header">
+    <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">HC</span><span><strong>HEREFORD CUP</strong><small>Player Portal</small></span></a>
+    <div class="player-actions"><a class="text-button" id="adminLink" href="admin.html" hidden>Admin</a><span id="playerIdentity"></span><button class="text-button" id="signOutButton" type="button" hidden>Sign out</button></div>
+  </header>
+
+  <main class="portal-main">
+    <section class="auth-card" id="authView">
+      <div class="auth-shield"><span>H</span></div>
+      <p class="eyebrow">HEREFORD CUP PLAYER ACCESS</p>
+      <h1>Your round.<br><em>Your team.</em></h1>
+      <p>Sign in to choose your course and tees, enter each hole, and see the match calculated in gross or net play.</p>
+      <button class="google-button" id="googleSignIn" type="button"><span>G</span> Continue with Google</button>
+      <p class="auth-note">Access is limited to invited Hereford Cup players.</p>
+      <div class="setup-message" id="setupMessage" hidden><strong>Backend setup pending</strong><p>The scoring portal is built. Connect the Hereford Cup Supabase project to activate player accounts.</p></div>
+    </section>
+
+    <section class="dashboard" id="dashboardView" hidden>
+      <div class="dashboard-head">
+        <div><p class="eyebrow">PLAYER SCORECARD</p><h1>Welcome, <span id="playerName">Golfer</span>.</h1></div>
+        <div class="sync-status" id="syncStatus"><i></i> Ready</div>
+      </div>
+
+      <div class="portal-grid">
+        <aside class="round-setup">
+          <div class="panel-heading"><span>01</span><div><small>ROUND SETUP</small><h2>Course & match</h2></div></div>
+          <label>Course<select id="courseSelect"><option value="">Select a course</option></select></label>
+          <label>Tees<select id="teeSelect" disabled><option value="">Select tees</option></select></label>
+          <div class="tee-facts" id="teeFacts"><span>Rating <b>—</b></span><span>Slope <b>—</b></span><span>Par <b>—</b></span></div>
+          <label>Handicap index<input id="handicapIndex" type="number" inputmode="decimal" min="-10" max="54" step="0.1" placeholder="0.0"></label>
+          <div class="calculated-handicap">Course handicap <strong id="courseHandicap">—</strong></div>
+          <label>Assigned match<select id="matchSelect"><option value="">Individual scorecard</option></select></label>
+          <div class="mode-grid"><div><small>FORMAT</small><strong id="matchFormat">Individual</strong></div><div><small>SCORING</small><strong id="scoringMode">Gross</strong></div></div>
+        </aside>
+
+        <section class="score-entry">
+          <div class="panel-heading"><span>02</span><div><small>HOLE-BY-HOLE</small><h2>Enter your score</h2></div></div>
+          <div class="score-summary"><div><small>THRU</small><strong id="holesCompleted">0</strong></div><div><small>GROSS</small><strong id="grossTotal">—</strong></div><div><small>NET</small><strong id="netTotal">—</strong></div><div><small>TO PAR</small><strong id="toPar">E</strong></div></div>
+          <div class="empty-scorecard" id="emptyScorecard"><span>18</span><p>Select a course and tee to open your scorecard.</p></div>
+          <div class="scorecard" id="scorecard" hidden></div>
+          <div class="save-row"><span id="saveMessage"></span><button class="button button-primary" id="saveRound" type="button" disabled>Save round</button></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="src/portal.js"></script>
+</body>
+</html>
