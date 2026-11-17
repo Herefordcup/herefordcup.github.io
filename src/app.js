@@ -1,6 +1,6 @@
 import { applyHoleResult, calculateTeamTotals, formatMatchStatus, isMatchComplete } from './scoring.js';
 import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js';
-import { knownLegacyTrips, renderLegacyArchive } from './legacy.js';
+import { renderLegacyArchive } from './legacy.js';
 
 const STORAGE_KEY = 'hereford-cup-state-v1';
 const sessions = {
@@ -161,7 +161,7 @@ async function startLegacyArchive() {
   try {
     renderLegacyArchive({ ...target, editions: await loadLegacyArchive() });
   } catch {
-    renderLegacyArchive({ ...target, editions: knownLegacyTrips });
+    renderLegacyArchive({ ...target, editions: [], emptyMessage: 'Legacy history is temporarily unavailable.' });
   }
 }
 

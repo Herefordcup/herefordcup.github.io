@@ -310,12 +310,19 @@ export async function loadLegacyArchive() {
     .order('sort_order', { referencedTable: 'legacy_results', ascending: true })
     .order('sort_order', { referencedTable: 'legacy_photos', ascending: true });
   if (error) throw error;
-  return data ?? [];
+  const editions = data ?? [];
+  await Promise.all(editions.flatMap(edition => (edition.legacy_photos ?? []).map(async photo => {
+    const { data: signed, error: signedError } = await supabase.storage
+      .from('legacy-photos')
+      .createSignedUrl(photo.storage_path, 3600);
+    if (signedError) throw signedError;
+    photo.signed_url = signed.signedUrl;
+  })));
+  return editions;
 }
 
-export function legacyPhotoUrl(storagePath) {
-  const encoded = String(storagePath ?? '').split('/').map(encodeURIComponent).join('/');
-  return `${SUPABASE_URL}/storage/v1/object/public/legacy-photos/${encoded}`;
+export function legacyPhotoUrl(photo) {
+  return photo?.signed_url ?? '';
 }
 
 export async function saveLegacyEdition({ id = null, year, venue, destination, status, winnerName, runnerUpName, finalScore, story, published }) {
@@ -339,18 +346,28 @@ export async function saveLegacyEdition({ id = null, year, venue, destination, s
   return data;
 }
 
-export async function saveLegacyResult({ editionId, label, cardinalEntry, silverEntry, result, sortOrder }) {
+export async function saveLegacyResult({ id = null, editionId, label, cardinalEntry, silverEntry, result, sortOrder }) {
   const supabase = await getSupabase();
-  const { data, error } = await supabase.from('legacy_results').insert({
+  const payload = {
     edition_id: editionId,
     label: label.trim(),
     cardinal_entry: cardinalEntry?.trim() || null,
     silver_entry: silverEntry?.trim() || null,
     result: result.trim(),
     sort_order: Number(sortOrder || 0),
-  }).select().single();
+  };
+  const query = id
+    ? supabase.from('legacy_results').update(payload).eq('id', id)
+    : supabase.from('legacy_results').insert(payload);
+  const { data, error } = await query.select().single();
   if (error) throw error;
   return data;
+}
+
+export async function deleteLegacyResult(resultId) {
+  const supabase = await getSupabase();
+  const { error } = await supabase.from('legacy_results').delete().eq('id', resultId);
+  if (error) throw error;
 }
 
 export async function uploadLegacyPhoto({ editionId, file, caption, sortOrder }) {
@@ -379,10 +396,12 @@ export async function uploadLegacyPhoto({ editionId, file, caption, sortOrder })
 
 export async function deleteLegacyPhoto(photo) {
   const supabase = await getSupabase();
-  const { error: storageError } = await supabase.storage.from('legacy-photos').remove([photo.storage_path]);
-  if (storageError) throw storageError;
-  const { error } = await supabase.from('legacy_photos').delete().eq('id', photo.id);
+  const { data: storagePath, error } = await supabase.rpc('delete_legacy_photo', {
+    target_photo_id: photo.id,
+  });
   if (error) throw error;
+  const { error: storageError } = await supabase.storage.from('legacy-photos').remove([storagePath]);
+  if (storageError) throw new Error('Photo record removed, but private storage cleanup failed. Retry cleanup from Supabase Storage.');
 }
 
 export async function saveCommentarySettings(settings) {
