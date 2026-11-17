@@ -44,6 +44,17 @@ test('course form supports unrated tees and match times are interpreted in Easte
   assert.match(supabaseScript, /slope: tee\.slope === null \? null : Number\(tee\.slope\)/);
 });
 
+test('admin membership roster names the member profile relationship', () => {
+  assert.match(
+    supabaseScript,
+    /profiles!tournament_memberships_user_id_fkey\(id, display_name, handicap_index\)/,
+  );
+  assert.doesNotMatch(
+    supabaseScript,
+    /tournament_memberships'\)\.select\('\*, profiles\(id, display_name, handicap_index\)'/,
+  );
+});
+
 test('Supabase layer saves match plans atomically through a database RPC', () => {
   assert.match(supabaseScript, /export async function saveMatchPlan/);
   assert.match(supabaseScript, /rpc\('save_match_plan'/);
