@@ -3,20 +3,20 @@ import assert from 'node:assert/strict';
 
 import * as supabaseModule from '../src/supabase.js';
 
-test('auth module exposes email, Google, and Apple entry points', () => {
+test('auth module exposes email and Google entry points', () => {
   for (const name of [
     'createAuthActions',
     'canSetNewPassword',
     'signUpWithEmail',
     'signInWithEmail',
     'signInWithGoogle',
-    'signInWithApple',
     'requestPasswordReset',
     'setNewPassword',
     'waitForPasswordRecovery',
   ]) {
     assert.equal(typeof supabaseModule[name], 'function', `${name} should be exported`);
   }
+  assert.equal('signInWithApple' in supabaseModule, false);
 });
 
 test('email signup normalizes identity and stores the chosen display name', async () => {
@@ -68,7 +68,7 @@ test('email signin normalizes the email address', async () => {
   assert.deepEqual(calls, [{ email: 'golfer@example.com', password: 'secret-password' }]);
 });
 
-test('social signin allows only Google and Apple and returns to the portal', async () => {
+test('social signin allows only Google and returns to the portal', async () => {
   const calls = [];
   const client = {
     auth: {
@@ -83,12 +83,11 @@ test('social signin allows only Google and Apple and returns to the portal', asy
   });
 
   await auth.signInWithProvider('google');
-  await auth.signInWithProvider('apple');
+  await assert.rejects(() => auth.signInWithProvider('apple'), /Unsupported sign-in provider/);
   await assert.rejects(() => auth.signInWithProvider('facebook'), /Unsupported sign-in provider/);
 
   assert.deepEqual(calls, [
     { provider: 'google', options: { redirectTo: 'https://example.test/portal.html' } },
-    { provider: 'apple', options: { redirectTo: 'https://example.test/portal.html' } },
   ]);
 });
 

@@ -9,7 +9,6 @@ import {
   saveProfile,
   saveRound,
   setNewPassword,
-  signInWithApple,
   signInWithEmail,
   signInWithGoogle,
   signOut,
@@ -316,7 +315,6 @@ async function beginProviderSignIn(action) {
 }
 
 document.querySelector('#googleSignIn').addEventListener('click', () => beginProviderSignIn(signInWithGoogle));
-document.querySelector('#appleSignIn').addEventListener('click', () => beginProviderSignIn(signInWithApple));
 document.querySelector('#signOutButton').addEventListener('click', async () => { await signOut(); window.location.reload(); });
 
 async function start() {

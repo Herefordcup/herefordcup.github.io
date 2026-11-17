@@ -104,7 +104,7 @@ A player profile includes:
 - Finalized round history
 - Basic profile settings
 
-Hereford Cup should include a player card, Google/Apple avatar, preferred name, handicap index, optional GHIN number, team history, Cup record, format records, partners, opponents, points earned, rounds, and achievements. The QR card is optional and lower priority.
+Hereford Cup should include a player card, Google avatar, preferred name, handicap index, optional GHIN number, team history, Cup record, format records, partners, opponents, points earned, rounds, and achievements. The QR card is optional and lower priority.
 
 ### Courses and yardage book
 
@@ -196,12 +196,11 @@ Required authentication options:
 
 - Create an account with email and password
 - Google sign-in
-- Apple sign-in
 - Email verification, forgotten-password recovery, and secure session management
 
 Recommended signup and first-login flow:
 
-1. User creates an email/password account or signs in with Google or Apple.
+1. User creates an email/password account or signs in with Google.
 2. The site verifies the email address when applicable.
 3. The site verifies an invitation or administrator allowlist.
 4. User confirms preferred display name and avatar.
@@ -209,7 +208,7 @@ Recommended signup and first-login flow:
 6. User accepts tournament rules and privacy notice.
 7. Admin assigns the player to a team and tournament roster.
 
-Authentication must not be the same thing as tournament membership. Creating an account or possessing a valid Google or Apple identity should not automatically grant access to private tournament data.
+Authentication must not be the same thing as tournament membership. Creating an account or possessing a valid Google identity should not automatically grant access to private tournament data.
 
 ## Authoritative data model
 
@@ -303,7 +302,6 @@ Calculations should be enforced transactionally in PostgreSQL functions or trust
 
 ### Add
 
-- Apple login
 - Invitation/allowlist enforcement
 - Complete profile onboarding
 - Tournament editions and multi-year history
@@ -319,7 +317,7 @@ Calculations should be enforced transactionally in PostgreSQL functions or trust
 
 ## Build sequence
 
-1. Provision and secure Supabase; configure verified email/password accounts plus Google and Apple with PKCE.
+1. Provision and secure Supabase; configure verified email/password accounts plus Google with PKCE.
 2. Add invitations, tournament editions, memberships, teams, sessions, and match assignments.
 3. Build complete admin workflows for rosters, courses, tees, sessions, and pairings.
 4. Build first-login profile onboarding and assigned-match dashboard.
@@ -327,7 +325,7 @@ Calculations should be enforced transactionally in PostgreSQL functions or trust
 6. Replace local placeholder standings with Supabase queries and realtime updates.
 7. Build the PostFajr-style Home, Matches, Cup, Players, Courses, Stats, History, and Rules views.
 8. Add recovery, correction, audit, accessibility, mobile, concurrency, and end-to-end tests.
-9. Deploy only after account creation, email verification/recovery, Google login, Apple login, two-client live scoring, match finalization, and Cup-total readback are verified in production.
+9. Deploy only after account creation, email verification/recovery, Google login, two-client live scoring, match finalization, and Cup-total readback are verified in production.
 
 ## Product direction
 

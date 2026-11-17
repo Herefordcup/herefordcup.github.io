@@ -46,7 +46,7 @@ export function createAuthActions(authClient, {
       return data;
     },
     async signInWithProvider(provider) {
-      if (!['google', 'apple'].includes(provider)) {
+      if (provider !== 'google') {
         throw new Error('Unsupported sign-in provider.');
       }
       const { data, error } = await authClient.auth.signInWithOAuth({
@@ -140,10 +140,6 @@ export async function waitForPasswordRecovery(timeoutMs) {
 
 export async function signInWithGoogle() {
   return (await configuredAuthActions()).signInWithProvider('google');
-}
-
-export async function signInWithApple() {
-  return (await configuredAuthActions()).signInWithProvider('apple');
 }
 
 export async function signOut() {

@@ -5,7 +5,7 @@ A mobile-first browser website for the annual Ryder Cup-style Hereford Cup golf 
 ## Features
 
 - Email/password account creation with email verification and password recovery
-- Optional Google and Apple sign-in through Supabase Auth
+- Google sign-in through Supabase Auth
 - Invitation or administrator approval required for tournament membership
 - Individual player profiles and handicap indexes
 - Administrator-managed courses, tees, ratings, slopes, pars, and hole data
@@ -19,7 +19,7 @@ A mobile-first browser website for the annual Ryder Cup-style Hereford Cup golf 
 1. Create a Supabase project.
 2. Run `supabase/migrations/001_hereford_cup.sql`, then `supabase/migrations/002_tournament_access.sql`, in the SQL editor.
 3. Enable Email under Authentication > Providers, require email confirmation, and disable anonymous access.
-4. Optionally configure Google and Apple under Authentication > Providers. Apple sign-in also requires an Apple Developer Services ID and key.
+4. Configure Google under Authentication > Providers.
 5. Set the production site URL to `https://pimentelaj.github.io/hereford-cup/` and allow `https://pimentelaj.github.io/hereford-cup/portal.html` plus `https://pimentelaj.github.io/hereford-cup/portal.html?recovery=1` as redirect URLs.
 6. Add the project URL and publishable key to `src/config.js`.
 7. Sign in once and promote the tournament administrator as described at the bottom of the migration.
