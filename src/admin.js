@@ -2,6 +2,7 @@ import { validateSegments } from './formats.js';
 import { easternDateTimeToIso, optionalNumber } from './admin-helpers.js';
 import {
   correctHoleScore,
+  deleteLegacyPhoto,
   getCurrentSession,
   generateMatchCommentary,
   finalizeMatchResults,
@@ -9,8 +10,11 @@ import {
   loadPlayerData,
   saveCommentarySettings,
   saveCourseWithTee,
+  saveLegacyEdition,
+  saveLegacyResult,
   saveMatchPlan,
   saveTournamentRule,
+  uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
 } from './supabase.js';
@@ -31,6 +35,10 @@ const resultFinalizationForm = document.querySelector('#resultFinalizationForm')
 const resultMatch = document.querySelector('#resultMatch');
 const resultSegmentRows = document.querySelector('#resultSegmentRows');
 const adminContent = document.querySelector('#adminContent');
+const legacyEditionForm = document.querySelector('#legacyEditionForm');
+const legacyEditionSelect = document.querySelector('#legacyEditionSelect');
+const legacyResultForm = document.querySelector('#legacyResultForm');
+const legacyPhotoForm = document.querySelector('#legacyPhotoForm');
 const defaultPars = [4, 4, 3, 5, 4, 4, 3, 5, 4, 4, 4, 3, 5, 4, 4, 3, 5, 4];
 
 let session;
@@ -137,6 +145,64 @@ function rpcSegments(segments) {
   }));
 }
 
+function populateLegacyChoices() {
+  const editions = adminData.legacyEditions;
+  const options = editions.map(edition => new Option(`${edition.edition_year} · ${edition.venue}`, edition.id));
+  const selectedEdition = legacyEditionSelect.value;
+  legacyEditionSelect.replaceChildren(new Option('Add a new edition', ''), ...options.map(option => option.cloneNode(true)));
+  legacyEditionSelect.value = editions.some(edition => edition.id === selectedEdition) ? selectedEdition : '';
+  for (const select of [document.querySelector('#legacyResultEdition'), document.querySelector('#legacyPhotoEdition')]) {
+    const selected = select.value;
+    select.replaceChildren(...options.map(option => option.cloneNode(true)));
+    if (editions.some(edition => edition.id === selected)) select.value = selected;
+  }
+  renderLegacyPhotoList();
+}
+
+function hydrateLegacyEdition() {
+  const edition = adminData.legacyEditions.find(item => item.id === legacyEditionSelect.value);
+  legacyEditionForm.reset();
+  legacyEditionForm.elements.editionId.value = edition?.id ?? '';
+  legacyEditionForm.elements.year.value = edition?.edition_year ?? '';
+  legacyEditionForm.elements.venue.value = edition?.venue ?? '';
+  legacyEditionForm.elements.destination.value = edition?.destination ?? '';
+  legacyEditionForm.elements.status.value = edition?.status ?? 'completed';
+  legacyEditionForm.elements.winnerName.value = edition?.winner_name ?? '';
+  legacyEditionForm.elements.runnerUpName.value = edition?.runner_up_name ?? '';
+  legacyEditionForm.elements.finalScore.value = edition?.final_score ?? '';
+  legacyEditionForm.elements.story.value = edition?.story ?? '';
+  legacyEditionForm.elements.published.checked = edition?.published ?? true;
+}
+
+function renderLegacyPhotoList() {
+  const container = document.querySelector('#legacyPhotoList');
+  container.replaceChildren();
+  const editionId = document.querySelector('#legacyPhotoEdition').value;
+  const edition = adminData.legacyEditions.find(item => item.id === editionId);
+  for (const photo of edition?.legacy_photos ?? []) {
+    const card = document.createElement('article');
+    card.className = 'approval-card';
+    const label = document.createElement('span');
+    label.textContent = photo.caption || 'Legacy photo';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'button';
+    remove.textContent = 'Delete photo';
+    remove.addEventListener('click', async () => {
+      if (!window.confirm('Delete this Legacy photo?')) return;
+      try {
+        await deleteLegacyPhoto(photo);
+        edition.legacy_photos = edition.legacy_photos.filter(item => item.id !== photo.id);
+        renderLegacyPhotoList();
+      } catch (error) {
+        setMessage(document.querySelector('#legacyPhotoMessage'), error.message, true);
+      }
+    });
+    card.append(label, remove);
+    container.append(card);
+  }
+}
+
 function populateAdminChoices() {
   const tournamentSelects = ['#matchTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
   for (const select of tournamentSelects) select.replaceChildren(...adminData.tournaments.map(tournament => new Option(`${tournament.name} · ${tournament.edition_year}`, tournament.id)));
@@ -158,6 +224,7 @@ function populateAdminChoices() {
       round.id,
     )),
   );
+  populateLegacyChoices();
 }
 
 function hydrateCommentarySettings() {
@@ -325,6 +392,84 @@ ruleForm.addEventListener('submit', async event => {
   } catch (error) { setMessage(document.querySelector('#ruleMessage'), error.message, true); }
 });
 
+legacyEditionSelect.addEventListener('change', hydrateLegacyEdition);
+document.querySelector('#legacyPhotoEdition').addEventListener('change', renderLegacyPhotoList);
+
+legacyEditionForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const data = new FormData(legacyEditionForm);
+  const message = document.querySelector('#legacyEditionMessage');
+  try {
+    setMessage(message, 'Saving…');
+    const existing = adminData.legacyEditions.find(item => item.id === data.get('editionId'));
+    const saved = await saveLegacyEdition({
+      id: data.get('editionId') || null,
+      year: data.get('year'),
+      venue: data.get('venue'),
+      destination: data.get('destination'),
+      status: data.get('status'),
+      winnerName: data.get('winnerName'),
+      runnerUpName: data.get('runnerUpName'),
+      finalScore: data.get('finalScore'),
+      story: data.get('story'),
+      published: data.get('published') === 'on',
+    });
+    const edition = {
+      ...saved,
+      legacy_results: existing?.legacy_results ?? [],
+      legacy_photos: existing?.legacy_photos ?? [],
+    };
+    adminData.legacyEditions = [...adminData.legacyEditions.filter(item => item.id !== saved.id), edition]
+      .sort((left, right) => left.edition_year - right.edition_year);
+    populateLegacyChoices();
+    legacyEditionSelect.value = saved.id;
+    hydrateLegacyEdition();
+    setMessage(message, saved.published ? 'Legacy edition saved and published.' : 'Legacy edition saved as hidden.');
+  } catch (error) { setMessage(message, error.message, true); }
+});
+
+legacyResultForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const data = new FormData(legacyResultForm);
+  const message = document.querySelector('#legacyResultMessage');
+  try {
+    const saved = await saveLegacyResult({
+      editionId: data.get('editionId'),
+      label: data.get('label'),
+      cardinalEntry: data.get('cardinalEntry'),
+      silverEntry: data.get('silverEntry'),
+      result: data.get('result'),
+      sortOrder: data.get('sortOrder'),
+    });
+    const edition = adminData.legacyEditions.find(item => item.id === saved.edition_id);
+    edition.legacy_results.push(saved);
+    legacyResultForm.reset();
+    document.querySelector('#legacyResultEdition').value = saved.edition_id;
+    setMessage(message, 'Legacy result added.');
+  } catch (error) { setMessage(message, error.message, true); }
+});
+
+legacyPhotoForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const data = new FormData(legacyPhotoForm);
+  const message = document.querySelector('#legacyPhotoMessage');
+  try {
+    setMessage(message, 'Uploading…');
+    const saved = await uploadLegacyPhoto({
+      editionId: data.get('editionId'),
+      file: document.querySelector('#legacyPhotoFile').files[0],
+      caption: data.get('caption'),
+      sortOrder: data.get('sortOrder'),
+    });
+    const edition = adminData.legacyEditions.find(item => item.id === saved.edition_id);
+    edition.legacy_photos.push(saved);
+    legacyPhotoForm.reset();
+    document.querySelector('#legacyPhotoEdition').value = saved.edition_id;
+    renderLegacyPhotoList();
+    setMessage(message, 'Legacy photo uploaded.');
+  } catch (error) { setMessage(message, error.message, true); }
+});
+
 document.querySelector('#correctionDelete').addEventListener('change', event => {
   const scoreInput = document.querySelector('#correctionScore');
   scoreInput.disabled = event.target.checked;
@@ -394,6 +539,7 @@ async function start() {
     if (playerData.profile.role !== 'admin') throw new Error('This page is limited to the tournament administrator.');
     adminData = await loadAdminData();
     populateAdminChoices();
+    hydrateLegacyEdition();
     hydrateCommentarySettings();
     addSegment({ startHole: 1, endHole: 9, format: 'scramble', pointValue: 0.5 });
     addSegment({ startHole: 10, endHole: 18, format: 'fourball', pointValue: 0.5 });
