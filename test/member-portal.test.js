@@ -111,8 +111,14 @@ test('partial match scoring resumes from persisted immutable scores and submits 
   ), /persisted course and tee/i);
 });
 
+test('round score embeds name the intended foreign key after integrity hardening adds a second relationship', () => {
+  const embeds = [...supabaseScript.matchAll(/scores(?:![a-z0-9_]+)?\(\*\)/g)].map(match => match[0]);
+  assert.equal(embeds.length, 4);
+  assert.deepEqual(new Set(embeds), new Set(['scores!scores_round_id_fkey(*)']));
+});
+
 test('score entry loads owned rounds and scores, excludes final matches, and binds course to assignment', () => {
-  assert.match(supabaseScript, /from\('rounds'\)[\s\S]*scores\(\*\)/);
+  assert.match(supabaseScript, /from\('rounds'\)[\s\S]*scores!scores_round_id_fkey\(\*\)/);
   assert.match(portalScript, /match\.status === 'final'/);
   assert.match(portalScript, /courseSelect\.disabled = Boolean\(match\)/);
   assert.match(portalScript, /teeSelect\.disabled = !course \|\| Boolean\(existingRound\)/);
