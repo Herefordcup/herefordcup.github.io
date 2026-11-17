@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { composeCommentary, phraseIdsForTone } from '../src/commentary.js';
 
 const edgeFunctionUrl = new URL('../supabase/functions/generate-match-commentary/index.ts', import.meta.url);
+const autoPublicationMigrationUrl = new URL('../supabase/migrations/007_auto_commentary_publication.sql', import.meta.url);
 
 test('commentary composition accepts only server-owned tone phrase identifiers', () => {
   assert.deepEqual(phraseIdsForTone('playful'), ['playful_pressure', 'playful_scoreboard']);
@@ -32,9 +33,25 @@ test('edge function constrains AI to deterministic anonymous facts and always sa
   assert.doesNotMatch(source, /status: approved \? 'approved' : 'draft'/);
 });
 
+test('automatic commentary migration publishes AI output without weakening write controls', async () => {
+  const sql = await readFile(autoPublicationMigrationUrl, 'utf8');
+  assert.match(sql, /alter column require_approval set default false/i);
+  assert.match(sql, /drop constraint if exists commentary_settings_require_approval_check/i);
+  assert.match(sql, /update public\.commentary_settings[\s\S]*require_approval = false/i);
+  assert.match(sql, /create or replace function public\.prepare_commentary_publication/i);
+  assert.match(sql, /before insert on public\.match_commentaries/i);
+  assert.match(sql, /new\.status := 'approved'/i);
+  assert.match(sql, /new\.approved_by := new\.generated_by/i);
+  assert.match(sql, /new\.approved_at := now\(\)/i);
+  assert.doesNotMatch(sql, /grant insert[^;]*match_commentaries[^;]*authenticated/i);
+});
+
 test('edge function authenticates an administrator and keeps AI credentials server-side', async () => {
   const source = await readFile(edgeFunctionUrl, 'utf8');
   assert.match(source, /Authorization/);
+  assert.match(source, /global: \{ headers: \{ Authorization: authorization \} \}/);
+  assert.match(source, /Authorization: `Bearer \$\{apiKey\}`/);
+  assert.doesNotMatch(source, /\*\*\*/);
   assert.match(source, /rpc\('is_admin'\)/);
   assert.match(source, /selectedSegments\.length !== 1/);
   assert.match(source, /AbortSignal\.timeout/);

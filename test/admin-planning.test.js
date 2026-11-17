@@ -80,11 +80,19 @@ test('admin result workflow finalizes authoritative segment results through RPC'
   assert.match(adminScript, /status: 'final'/);
 });
 
-test('admin controls fail closed and commentary approval is mandatory', () => {
+test('finalizing a match automatically generates commentary and reports retryable failures', () => {
+  assert.match(adminScript, /await finalizeMatchResults\([\s\S]*await generateMatchCommentary\(/);
+  assert.match(adminScript, /Match finalized, but automatic commentary failed/);
+  assert.match(adminScript, /commentary\.status === 'approved'/);
+  assert.match(supabaseScript, /require_approval: false/);
+  assert.doesNotMatch(html, /Administrator approval is mandatory/);
+});
+
+test('admin controls fail closed and commentary auto-publication is explicit', () => {
   assert.match(html, /id="adminContent" hidden/);
   assert.doesNotMatch(html, /name="requireApproval"/);
   assert.match(adminScript, /adminContent\.hidden = false/);
-  assert.match(supabaseScript, /require_approval: true/);
+  assert.match(supabaseScript, /require_approval: false/);
 });
 
 test('administrator score correction is usable and reads back the audited result', () => {

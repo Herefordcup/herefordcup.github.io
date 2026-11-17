@@ -287,13 +287,31 @@ resultFinalizationForm.addEventListener('submit', async event => {
       holes_played: Number(card.querySelector('[name="holesPlayed"]').value),
       status: 'final',
     }));
-    if (!resultMatch.value || !segmentResults.length) throw new Error('Select a planned match with segments.');
+    const matchId = resultMatch.value;
+    if (!matchId || !segmentResults.length) throw new Error('Select a planned match with segments.');
     setMessage(message, 'Validating rounds and finalizing…');
-    await finalizeMatchResults({ matchId: resultMatch.value, segmentResults });
-    const finalized = adminData.matches.find(match => match.id === resultMatch.value);
+    await finalizeMatchResults({ matchId, segmentResults });
+    const finalized = adminData.matches.find(match => match.id === matchId);
     finalized.status = 'final';
     populateAdminChoices();
     renderResultSegments();
+
+    const commentarySettings = adminData.settings.find(item => item.tournament_id === finalized.tournament_id);
+    if (commentarySettings?.enabled) {
+      try {
+        setMessage(message, 'Match finalized. Generating commentary…');
+        const commentary = await generateMatchCommentary(matchId);
+        adminData.commentaries.unshift(commentary);
+        renderCommentaryApprovals();
+        setMessage(message, commentary.status === 'approved'
+          ? 'Match finalized. Commentary generated and published.'
+          : 'Match finalized. Commentary generated and awaiting approval.');
+      } catch (commentaryError) {
+        setMessage(message, `Match finalized, but automatic commentary failed: ${commentaryError.message}. Use Generate match recap to retry.`, true);
+      }
+      return;
+    }
+
     setMessage(message, 'Match finalized. Cup points and official statistics are now available.');
   } catch (error) { setMessage(message, error.message, true); }
 });
