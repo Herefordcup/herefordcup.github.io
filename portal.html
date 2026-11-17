@@ -59,7 +59,7 @@
 
     <section class="dashboard member-shell" id="dashboardView" hidden>
       <div class="dashboard-head dashboard-utility">
-        <div><p class="eyebrow">PLAYER PORTAL</p><h1>Home</h1></div>
+        <div><p class="eyebrow">PLAYER PORTAL</p><h2>Home</h2></div>
         <div class="sync-status" id="syncStatus"><i></i> Ready</div>
       </div>
 
@@ -80,7 +80,7 @@
           <div class="home-title-row">
             <div>
               <p class="eyebrow">YOUR CUP AT A GLANCE</p>
-              <h2>Welcome back, <span id="playerName">Golfer</span>.</h2>
+              <h1>Welcome back, <span id="playerName">Golfer</span>.</h1>
               <p id="homeTournamentMeta">Your schedule, match status, and Cup movement in one place.</p>
             </div>
             <button class="button button-primary" type="button" data-open-view="score">Play now</button>
@@ -88,7 +88,7 @@
           <div class="home-stat-strip" aria-label="Player summary">
             <div><small>HANDICAP</small><strong id="homeHandicap">—</strong></div>
             <div><small>TEAM</small><strong id="homeTeam">—</strong></div>
-            <div><small>ROUNDS</small><strong id="homeRounds">0</strong></div>
+            <div><small>ROUNDS</small><strong id="homeRounds">—</strong></div>
           </div>
         </section>
 
@@ -100,13 +100,13 @@
 
         <div class="home-dashboard-grid">
           <section class="member-card home-results-card">
-            <div class="card-title-row"><div><div class="section-kicker">LATEST</div><h2>Matches & results</h2></div><button class="text-button" type="button" data-open-view="cup">All matches →</button></div>
+            <div class="card-title-row"><div><div class="section-kicker">MATCH CENTER</div><h2>Matches & results</h2></div><button class="text-button" type="button" data-open-view="cup">All matches →</button></div>
             <div id="recentResults" class="home-result-list"></div>
           </section>
           <aside class="home-sidebar">
             <section class="member-card home-cup-card">
               <div class="section-kicker">CUP SCORE</div>
-              <div id="cupScorePreview" class="cup-score-preview"><strong>0</strong><span>Cardinal</span><b>—</b><strong>0</strong><span>Silver</span></div>
+              <div id="cupScorePreview" class="cup-score-preview"><strong>—</strong><span>Cardinal</span><b>—</b><strong>—</strong><span>Silver</span></div>
               <button class="text-button" type="button" data-open-view="cup">See the Cup →</button>
             </section>
             <section class="member-card home-profile-card">

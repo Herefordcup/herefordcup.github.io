@@ -3,6 +3,7 @@ import { matchPoints } from './scoring.js';
 import { formatSegmentLabel, individualEntryBlockReason, segmentHoleCount } from './formats.js';
 import { summarizeLeagueStats, summarizePlayerStats } from './stats.js';
 import { assertRoundAssignment, mergePersistedScores, unsavedScoreRows } from './round-entry.js';
+import { formatHomeDate, formatMatchupPlayers, orderHomeMatches } from './home.js';
 import {
   assignedSegmentsForPlayer,
   nextUpcomingAssignment,
@@ -132,17 +133,6 @@ function showMemberView(viewName) {
   });
 }
 
-function formatHomeDate(value, options = {}) {
-  if (!value) return '';
-  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value;
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    month: 'short',
-    day: 'numeric',
-    ...options,
-  }).format(new Date(normalized));
-}
-
 function renderHomeSummary() {
   const tournament = playerData.tournament;
   const membership = playerData.memberships.find(item => item.tournaments?.id === tournament?.id)
@@ -177,7 +167,9 @@ function renderSchedule() {
   });
   for (const event of playerData.events) {
     const row = element('article', 'schedule-item');
-    row.append(element('time', '', formatter.format(new Date(event.starts_at))));
+    const time = element('time', '', formatter.format(new Date(event.starts_at)));
+    time.dateTime = event.starts_at;
+    row.append(time);
     const details = element('div');
     details.append(element('strong', '', event.title));
     if (event.notes) details.append(element('span', '', event.notes));
@@ -227,13 +219,7 @@ function renderLiveMatch() {
 function renderRecentResults() {
   const container = document.querySelector('#recentResults');
   container.replaceChildren();
-  const statusRank = { live: 0, scheduled: 1, final: 2 };
-  const matches = [...playerData.matches].sort((a, b) => {
-    const rank = (statusRank[a.status] ?? 3) - (statusRank[b.status] ?? 3);
-    if (rank) return rank;
-    const direction = a.status === 'final' ? -1 : 1;
-    return direction * (new Date(a.starts_at ?? 0) - new Date(b.starts_at ?? 0));
-  }).slice(0, 6);
+  const matches = orderHomeMatches(playerData.matches).slice(0, 6);
   if (!matches.length) {
     container.append(element('p', 'empty-panel', 'Matches will appear when pairings are published.'));
     return;
@@ -243,11 +229,13 @@ function renderRecentResults() {
     const meta = element('div', 'result-meta');
     const status = match.status === 'live' ? 'LIVE' : match.status === 'final' ? 'FINAL' : 'UP NEXT';
     meta.append(element('strong', match.status === 'live' ? 'is-live' : '', status));
-    meta.append(element('time', '', formatHomeDate(match.starts_at, { weekday: 'short' }).toUpperCase()));
+    const time = element('time', '', formatHomeDate(match.starts_at, { weekday: 'short' }).toUpperCase());
+    if (match.starts_at) time.dateTime = match.starts_at;
+    meta.append(time);
     const details = element('div', 'result-details');
     details.append(element('strong', '', match.name));
-    const names = (match.match_players ?? []).map(item => item.profiles?.display_name).filter(Boolean);
-    const context = [names.join(' vs '), match.courses?.name, formatName(match.format)].filter(Boolean).join(' · ');
+    const matchup = formatMatchupPlayers(match.match_players);
+    const context = [matchup, match.courses?.name, formatName(match.format)].filter(Boolean).join(' · ');
     details.append(element('span', '', context || 'Pairing details pending'));
     row.append(meta, details);
     container.append(row);
