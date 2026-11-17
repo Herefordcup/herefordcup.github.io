@@ -10,7 +10,7 @@ An installable, mobile-first Ryder Cup-style tournament site for the annual Here
 - Mobile hole-by-hole gross score entry
 - Gross or net match play for Singles, Four-Ball, and Foursomes
 - Automatic course handicaps, net scores, match status, and Cup points
-- Offline-ready progressive web app shell
+- Browser-based website for phones, tablets, and computers
 
 ## Supabase setup
 
