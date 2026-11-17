@@ -9,6 +9,7 @@
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="portal.css">
+  <link rel="stylesheet" href="home.css">
 </head>
 <body class="portal-body">
   <div class="top-rule"></div>
@@ -57,29 +58,66 @@
     </section>
 
     <section class="dashboard member-shell" id="dashboardView" hidden>
-      <div class="dashboard-head">
-        <div><p class="eyebrow">HEREFORD CUP 2027</p><h1>Welcome, <span id="playerName">Golfer</span>.</h1></div>
+      <div class="dashboard-head dashboard-utility">
+        <div><p class="eyebrow">PLAYER PORTAL</p><h1>Home</h1></div>
         <div class="sync-status" id="syncStatus"><i></i> Ready</div>
       </div>
 
       <nav class="member-nav" id="memberNav" aria-label="Member portal">
-        <button type="button" class="is-active" data-member-view="home">Home</button>
-        <button type="button" data-member-view="score">Score a Round</button>
-        <button type="button" data-member-view="cup">Cup</button>
-        <button type="button" data-member-view="stats">Stats</button>
-        <button type="button" data-member-view="more">More</button>
+        <button type="button" class="is-active" data-member-view="home"><span class="nav-icon" aria-hidden="true">⌂</span><span>Home</span></button>
+        <button type="button" data-member-view="score"><span class="nav-icon" aria-hidden="true">＋</span><span>Play</span></button>
+        <button type="button" data-member-view="cup"><span class="nav-icon" aria-hidden="true">◆</span><span>Cup</span></button>
+        <button type="button" data-member-view="stats"><span class="nav-icon" aria-hidden="true">▥</span><span>Stats</span></button>
+        <button type="button" data-member-view="more"><span class="nav-icon" aria-hidden="true">•••</span><span>More</span></button>
       </nav>
 
       <section class="member-view" id="homeView" data-view="home">
-        <div class="home-hero">
-          <div><p class="eyebrow">MARCH 18–21 · PINEHURST</p><h2>The road to the Cup starts here.</h2><p>Upcoming golf, assigned matches, and the latest Cup movement in one place.</p></div>
-          <button class="button button-primary" type="button" data-open-view="score">Open scorecard</button>
+        <section class="home-masthead">
+          <div class="home-season-line">
+            <span id="homeSeason">HEREFORD CUP</span>
+            <span class="tournament-status" id="homeTournamentStatus">SEASON</span>
+          </div>
+          <div class="home-title-row">
+            <div>
+              <p class="eyebrow">YOUR CUP AT A GLANCE</p>
+              <h2>Welcome back, <span id="playerName">Golfer</span>.</h2>
+              <p id="homeTournamentMeta">Your schedule, match status, and Cup movement in one place.</p>
+            </div>
+            <button class="button button-primary" type="button" data-open-view="score">Play now</button>
+          </div>
+          <div class="home-stat-strip" aria-label="Player summary">
+            <div><small>HANDICAP</small><strong id="homeHandicap">—</strong></div>
+            <div><small>TEAM</small><strong id="homeTeam">—</strong></div>
+            <div><small>ROUNDS</small><strong id="homeRounds">0</strong></div>
+          </div>
+        </section>
+
+        <section class="home-live-card" id="liveMatchPanel">
+          <div class="live-card-label"><i></i><span id="liveMatchLabel">NEXT MATCH</span></div>
+          <div id="matchPreview" class="match-preview empty-panel">No assigned match yet.</div>
+          <button class="text-button" type="button" data-open-view="cup">Open match center →</button>
+        </section>
+
+        <div class="home-dashboard-grid">
+          <section class="member-card home-results-card">
+            <div class="card-title-row"><div><div class="section-kicker">LATEST</div><h2>Matches & results</h2></div><button class="text-button" type="button" data-open-view="cup">All matches →</button></div>
+            <div id="recentResults" class="home-result-list"></div>
+          </section>
+          <aside class="home-sidebar">
+            <section class="member-card home-cup-card">
+              <div class="section-kicker">CUP SCORE</div>
+              <div id="cupScorePreview" class="cup-score-preview"><strong>0</strong><span>Cardinal</span><b>—</b><strong>0</strong><span>Silver</span></div>
+              <button class="text-button" type="button" data-open-view="cup">See the Cup →</button>
+            </section>
+            <section class="member-card home-profile-card">
+              <div class="section-kicker">YOUR PLAY</div>
+              <div id="homePlayerStats" class="stat-list"></div>
+              <button class="text-button" type="button" data-open-view="stats">Full stats →</button>
+            </section>
+          </aside>
         </div>
-        <div class="home-grid">
-          <section class="member-card"><div class="section-kicker">NEXT MATCH</div><div id="matchPreview" class="match-preview empty-panel">No assigned match yet.</div></section>
-          <section class="member-card"><div class="section-kicker">CUP SCORE</div><div id="cupScorePreview" class="cup-score-preview"><strong>0</strong><span>Cardinal</span><b>—</b><strong>0</strong><span>Silver</span></div></section>
-        </div>
-        <section class="member-card schedule-card"><div class="card-title-row"><div><div class="section-kicker">ITINERARY</div><h2>March 18–21, 2027</h2></div></div><div id="schedulePreview" class="schedule-list"></div></section>
+
+        <section class="member-card schedule-card"><div class="card-title-row"><div><div class="section-kicker">UP NEXT</div><h2 id="homeScheduleTitle">Tournament itinerary</h2></div></div><div id="schedulePreview" class="schedule-list"></div></section>
         <section class="member-card" id="commentaryCard" hidden><div class="section-kicker">CUP COMMENTATOR</div><div id="matchCommentary"></div></section>
       </section>
 
