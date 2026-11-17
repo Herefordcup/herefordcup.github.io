@@ -307,7 +307,7 @@ export async function saveCommentarySettings(settings) {
     enabled: Boolean(settings.enabled),
     tone: settings.tone,
     timing: settings.timing,
-    require_approval: true,
+    require_approval: false,
     max_characters: Number(settings.maxCharacters),
     updated_by: settings.userId,
     updated_at: new Date().toISOString(),

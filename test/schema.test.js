@@ -7,6 +7,8 @@ const baseMigrationUrl = new URL('../supabase/migrations/001_hereford_cup.sql', 
 const planningMigrationUrl = new URL('../supabase/migrations/003_2027_planning.sql', import.meta.url);
 const integrityMigrationUrl = new URL('../supabase/migrations/005_integrity_hardening.sql', import.meta.url);
 const automaticAccessMigrationUrl = new URL('../supabase/migrations/006_automatic_tournament_access.sql', import.meta.url);
+const autoPublicationMigrationUrl = new URL('../supabase/migrations/007_auto_commentary_publication.sql', import.meta.url);
+const ryderRulesMigrationUrl = new URL('../supabase/migrations/008_hereford_cup_ryder_rules.sql', import.meta.url);
 
 test('tournament access migration separates accounts from membership', async () => {
   const sql = await readFile(migrationUrl, 'utf8');
@@ -120,6 +122,24 @@ test('2027 planning migration supports itinerary, mixed formats, rules, and comm
   assert.match(sql, /approved_by uuid references public\.profiles/i);
 });
 
+test('Hereford Cup publishes Ryder-style rules without unrelated league mechanics', async () => {
+  const sql = await readFile(ryderRulesMigrationUrl, 'utf8');
+  assert.match(sql, /hereford-cup-2027/i);
+  for (const title of [
+    'Match play scoring',
+    'Handicap strokes',
+    'Singles and team formats',
+    'Points and halved segments',
+    'Concessions and pickups',
+    'Finalizing results',
+    'Corrections and disputes',
+  ]) {
+    assert.match(sql, new RegExp(title, 'i'), `missing rule: ${title}`);
+  }
+  assert.doesNotMatch(sql, /stableford|double or nothing|virtual league|playoffs|play at least/i);
+  assert.match(sql, /on conflict \(tournament_id, title\) do update/i);
+});
+
 test('official statistics require complete rounds and finalized matches freeze score data', async () => {
   const sql = await readFile(planningMigrationUrl, 'utf8');
   assert.match(sql, /create or replace view public\.official_round_statistics/i);
@@ -208,10 +228,13 @@ test('administrator result finalization is validated and RPC-only', async () => 
   assert.match(sql, /status = 'scheduled'/i);
 });
 
-test('commentary approval cannot be disabled', async () => {
-  const sql = await readFile(planningMigrationUrl, 'utf8');
-  assert.match(sql, /check \(require_approval\)/i);
-  assert.match(sql, /values \(tournament_id_value, true, 'playful', 'post_match', true, admin_id\)/i);
+test('automatic publication is introduced by an explicit forward migration', async () => {
+  const planningSql = await readFile(planningMigrationUrl, 'utf8');
+  const autoPublicationSql = await readFile(autoPublicationMigrationUrl, 'utf8');
+  assert.match(planningSql, /check \(require_approval\)/i);
+  assert.match(autoPublicationSql, /drop constraint if exists commentary_settings_require_approval_check/i);
+  assert.match(autoPublicationSql, /alter column require_approval set default false/i);
+  assert.match(autoPublicationSql, /publish_generated_commentary/i);
 });
 
 test('production access migration stays on its applied two-argument round authorization contract', async () => {
