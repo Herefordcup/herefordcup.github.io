@@ -56,32 +56,73 @@
       <p class="auth-note">You can safely close this page and return after approval.</p>
     </section>
 
-    <section class="dashboard" id="dashboardView" hidden>
+    <section class="dashboard member-shell" id="dashboardView" hidden>
       <div class="dashboard-head">
-        <div><p class="eyebrow">PLAYER SCORECARD</p><h1>Welcome, <span id="playerName">Golfer</span>.</h1></div>
+        <div><p class="eyebrow">HEREFORD CUP 2027</p><h1>Welcome, <span id="playerName">Golfer</span>.</h1></div>
         <div class="sync-status" id="syncStatus"><i></i> Ready</div>
       </div>
 
-      <div class="portal-grid">
-        <aside class="round-setup">
-          <div class="panel-heading"><span>01</span><div><small>ROUND SETUP</small><h2>Course & match</h2></div></div>
-          <label>Course<select id="courseSelect"><option value="">Select a course</option></select></label>
-          <label>Tees<select id="teeSelect" disabled><option value="">Select tees</option></select></label>
-          <div class="tee-facts" id="teeFacts"><span>Rating <b>—</b></span><span>Slope <b>—</b></span><span>Par <b>—</b></span></div>
-          <label>Handicap index<input id="handicapIndex" type="number" inputmode="decimal" min="-10" max="54" step="0.1" placeholder="0.0"></label>
-          <div class="calculated-handicap">Course handicap <strong id="courseHandicap">—</strong></div>
-          <label>Assigned match<select id="matchSelect"><option value="">Individual scorecard</option></select></label>
-          <div class="mode-grid"><div><small>FORMAT</small><strong id="matchFormat">Individual</strong></div><div><small>SCORING</small><strong id="scoringMode">Gross</strong></div></div>
-        </aside>
+      <nav class="member-nav" id="memberNav" aria-label="Member portal">
+        <button type="button" class="is-active" data-member-view="home">Home</button>
+        <button type="button" data-member-view="score">Score a Round</button>
+        <button type="button" data-member-view="cup">Cup</button>
+        <button type="button" data-member-view="stats">Stats</button>
+        <button type="button" data-member-view="more">More</button>
+      </nav>
 
-        <section class="score-entry">
-          <div class="panel-heading"><span>02</span><div><small>HOLE-BY-HOLE</small><h2>Enter your score</h2></div></div>
-          <div class="score-summary"><div><small>THRU</small><strong id="holesCompleted">0</strong></div><div><small>GROSS</small><strong id="grossTotal">—</strong></div><div><small>NET</small><strong id="netTotal">—</strong></div><div><small>TO PAR</small><strong id="toPar">E</strong></div></div>
-          <div class="empty-scorecard" id="emptyScorecard"><span>18</span><p>Select a course and tee to open your scorecard.</p></div>
-          <div class="scorecard" id="scorecard" hidden></div>
-          <div class="save-row"><span id="saveMessage"></span><button class="button button-primary" id="saveRound" type="button" disabled>Save round</button></div>
-        </section>
-      </div>
+      <section class="member-view" id="homeView" data-view="home">
+        <div class="home-hero">
+          <div><p class="eyebrow">MARCH 18–21 · PINEHURST</p><h2>The road to the Cup starts here.</h2><p>Upcoming golf, assigned matches, and the latest Cup movement in one place.</p></div>
+          <button class="button button-primary" type="button" data-open-view="score">Open scorecard</button>
+        </div>
+        <div class="home-grid">
+          <section class="member-card"><div class="section-kicker">NEXT MATCH</div><div id="matchPreview" class="match-preview empty-panel">No assigned match yet.</div></section>
+          <section class="member-card"><div class="section-kicker">CUP SCORE</div><div id="cupScorePreview" class="cup-score-preview"><strong>0</strong><span>Cardinal</span><b>—</b><strong>0</strong><span>Silver</span></div></section>
+        </div>
+        <section class="member-card schedule-card"><div class="card-title-row"><div><div class="section-kicker">ITINERARY</div><h2>March 18–21, 2027</h2></div></div><div id="schedulePreview" class="schedule-list"></div></section>
+        <section class="member-card" id="commentaryCard" hidden><div class="section-kicker">CUP COMMENTATOR</div><div id="matchCommentary"></div></section>
+      </section>
+
+      <section class="member-view" id="scoreView" data-view="score" hidden>
+        <div class="view-heading"><p class="eyebrow">SCORE A ROUND</p><h2>Player scorecard</h2></div>
+        <div class="portal-grid">
+          <aside class="round-setup">
+            <div class="panel-heading"><span>01</span><div><small>ROUND SETUP</small><h2>Course & match</h2></div></div>
+            <label>Course<select id="courseSelect"><option value="">Select a course</option></select></label>
+            <label>Tees<select id="teeSelect" disabled><option value="">Select tees</option></select></label>
+            <div class="tee-facts" id="teeFacts"><span>Rating <b>—</b></span><span>Slope <b>—</b></span><span>Par <b>—</b></span></div>
+            <label>Handicap index<input id="handicapIndex" type="number" inputmode="decimal" min="-10" max="54" step="0.1" placeholder="0.0"></label>
+            <div class="calculated-handicap">Course handicap <strong id="courseHandicap">—</strong></div>
+            <label>Assigned match<select id="matchSelect"><option value="">Individual scorecard</option></select></label>
+            <div class="mode-grid"><div><small>FORMAT</small><strong id="matchFormat">Individual</strong></div><div><small>SCORING</small><strong id="scoringMode">Gross</strong></div></div>
+          </aside>
+
+          <section class="score-entry">
+            <div class="panel-heading"><span>02</span><div><small>HOLE-BY-HOLE</small><h2>Enter your score</h2></div></div>
+            <div class="score-summary"><div><small>THRU</small><strong id="holesCompleted">0</strong></div><div><small>GROSS</small><strong id="grossTotal">—</strong></div><div><small id="adjustedLabel">ADJUSTED</small><strong id="netTotal">—</strong></div><div><small>TO PAR</small><strong id="toPar">E</strong></div></div>
+            <div id="segmentSummaries" class="stat-list" aria-live="polite"></div>
+            <p class="auth-note">Submitted scores are locked and require an administrator correction.</p>
+            <div class="empty-scorecard" id="emptyScorecard"><span>18</span><p>Select a course and tee to open your scorecard.</p></div>
+            <div class="scorecard" id="scorecard" hidden></div>
+            <div class="save-row"><span id="saveMessage"></span><button class="button button-primary" id="saveRound" type="button" disabled>Save round</button></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="member-view" id="cupView" data-view="cup" hidden>
+        <div class="view-heading"><p class="eyebrow">MATCH CENTER</p><h2>Cup matches</h2></div>
+        <div class="member-card" id="cupMatchList"><p class="empty-panel">Pairings will appear after the administrator publishes them.</p></div>
+      </section>
+
+      <section class="member-view" id="statsView" data-view="stats" hidden>
+        <div class="view-heading"><p class="eyebrow">FINALIZED ROUNDS ONLY</p><h2>League and player stats</h2></div>
+        <div class="stats-grid"><section class="member-card"><div class="section-kicker">LEAGUE</div><div id="leagueStats" class="stat-list"></div></section><section class="member-card"><div class="section-kicker">YOUR PLAY</div><div id="playerStats" class="stat-list"></div></section></div>
+      </section>
+
+      <section class="member-view" id="moreView" data-view="more" hidden>
+        <div class="view-heading"><p class="eyebrow">TOURNAMENT GUIDE</p><h2>Rules</h2></div>
+        <div class="member-card"><div id="rulesList" class="rules-list"><p class="empty-panel">Rules will appear after the administrator publishes them.</p></div></div>
+      </section>
     </section>
   </main>
 
