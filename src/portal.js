@@ -132,6 +132,36 @@ function showMemberView(viewName) {
   });
 }
 
+function formatHomeDate(value, options = {}) {
+  if (!value) return '';
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value;
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short',
+    day: 'numeric',
+    ...options,
+  }).format(new Date(normalized));
+}
+
+function renderHomeSummary() {
+  const tournament = playerData.tournament;
+  const membership = playerData.memberships.find(item => item.tournaments?.id === tournament?.id)
+    ?? playerData.memberships[0];
+  document.querySelector('#homeSeason').textContent = tournament?.name
+    ?? `${tournament?.edition_year ?? ''} Hereford Cup`.trim();
+  document.querySelector('#homeTournamentStatus').textContent = (tournament?.status ?? 'season').toUpperCase();
+  document.querySelector('#homeHandicap').textContent = playerData.profile.handicap_index ?? '—';
+  document.querySelector('#homeTeam').textContent = membership?.team
+    ? membership.team.charAt(0).toUpperCase() + membership.team.slice(1)
+    : 'Unassigned';
+  document.querySelector('#homeRounds').textContent = summarizePlayerStats(playerData.statistics, session.user.id).rounds;
+  const start = formatHomeDate(tournament?.starts_on, { year: 'numeric' });
+  document.querySelector('#homeTournamentMeta').textContent = start
+    ? `${start} · Your schedule, matches, and Cup standing.`
+    : 'Your schedule, matches, and Cup standing in one place.';
+  document.querySelector('#homeScheduleTitle').textContent = start ? `${start} itinerary` : 'Tournament itinerary';
+}
+
 function renderSchedule() {
   const container = document.querySelector('#schedulePreview');
   container.replaceChildren();
@@ -157,10 +187,14 @@ function renderSchedule() {
   }
 }
 
-function renderMatchPreview() {
+function renderLiveMatch() {
   const preview = document.querySelector('#matchPreview');
-  const upcoming = nextUpcomingAssignment(playerData.assignments);
+  const live = playerData.assignments.find(item => item.matches?.status === 'live');
+  const upcoming = live ?? nextUpcomingAssignment(playerData.assignments);
+  const label = document.querySelector('#liveMatchLabel');
   preview.replaceChildren();
+  label.textContent = live ? 'LIVE NOW' : 'NEXT MATCH';
+  document.querySelector('#liveMatchPanel').classList.toggle('is-live', Boolean(live));
   if (!upcoming) {
     preview.classList.add('empty-panel');
     preview.textContent = 'No upcoming assigned match.';
@@ -169,7 +203,8 @@ function renderMatchPreview() {
   preview.classList.remove('empty-panel');
   preview.append(element('strong', '', upcoming.matches.name));
   const course = upcoming.matches.courses?.name ?? 'Course to be announced';
-  preview.append(element('span', '', `${course} · ${formatName(upcoming.matches.format)} · ${formatName(upcoming.matches.scoring_mode)}`));
+  const date = formatHomeDate(upcoming.matches.starts_at, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  preview.append(element('span', '', [date, course, formatName(upcoming.matches.format), formatName(upcoming.matches.scoring_mode)].filter(Boolean).join(' · ')));
   const matchSegments = playerData.segments.filter(segment => segment.match_id === upcoming.matches.id);
   const segments = assignedSegmentsForPlayer(matchSegments, session.user.id);
   for (const segment of segments) {
@@ -186,6 +221,36 @@ function renderMatchPreview() {
       preview.append(element('span', '', `Partner: ${relationships.partners.join(', ')}`));
     }
     preview.append(element('span', '', `Opponent${relationships.opponents.length === 1 ? '' : 's'}: ${relationships.opponents.join(', ') || 'TBA'}`));
+  }
+}
+
+function renderRecentResults() {
+  const container = document.querySelector('#recentResults');
+  container.replaceChildren();
+  const statusRank = { live: 0, scheduled: 1, final: 2 };
+  const matches = [...playerData.matches].sort((a, b) => {
+    const rank = (statusRank[a.status] ?? 3) - (statusRank[b.status] ?? 3);
+    if (rank) return rank;
+    const direction = a.status === 'final' ? -1 : 1;
+    return direction * (new Date(a.starts_at ?? 0) - new Date(b.starts_at ?? 0));
+  }).slice(0, 6);
+  if (!matches.length) {
+    container.append(element('p', 'empty-panel', 'Matches will appear when pairings are published.'));
+    return;
+  }
+  for (const match of matches) {
+    const row = element('article', 'home-result-item');
+    const meta = element('div', 'result-meta');
+    const status = match.status === 'live' ? 'LIVE' : match.status === 'final' ? 'FINAL' : 'UP NEXT';
+    meta.append(element('strong', match.status === 'live' ? 'is-live' : '', status));
+    meta.append(element('time', '', formatHomeDate(match.starts_at, { weekday: 'short' }).toUpperCase()));
+    const details = element('div', 'result-details');
+    details.append(element('strong', '', match.name));
+    const names = (match.match_players ?? []).map(item => item.profiles?.display_name).filter(Boolean);
+    const context = [names.join(' vs '), match.courses?.name, formatName(match.format)].filter(Boolean).join(' · ');
+    details.append(element('span', '', context || 'Pairing details pending'));
+    row.append(meta, details);
+    container.append(row);
   }
 }
 
@@ -243,8 +308,10 @@ function renderStats() {
   const mine = summarizePlayerStats(playerData.statistics, session.user.id);
   const leagueContainer = document.querySelector('#leagueStats');
   const playerContainer = document.querySelector('#playerStats');
+  const homePlayerContainer = document.querySelector('#homePlayerStats');
   leagueContainer.replaceChildren();
   playerContainer.replaceChildren();
+  homePlayerContainer.replaceChildren();
   appendStat(leagueContainer, 'ROUNDS', league.rounds);
   appendStat(leagueContainer, 'PLAYERS', league.players);
   appendStat(leagueContainer, 'HOLES', league.holes);
@@ -253,6 +320,9 @@ function renderStats() {
   appendStat(playerContainer, 'HOLES', mine.holes);
   appendStat(playerContainer, 'AVG GROSS', mine.averageGross);
   appendStat(playerContainer, 'BEST TO PAR', mine.bestToPar);
+  appendStat(homePlayerContainer, 'OFFICIAL ROUNDS', mine.rounds);
+  appendStat(homePlayerContainer, 'HOLES', mine.holes);
+  appendStat(homePlayerContainer, 'BEST TO PAR', mine.bestToPar);
 }
 
 function renderRules() {
@@ -284,8 +354,10 @@ function renderCommentary() {
 }
 
 function renderMemberHome() {
+  renderHomeSummary();
   renderSchedule();
-  renderMatchPreview();
+  renderLiveMatch();
+  renderRecentResults();
   renderCup();
   renderStats();
   renderRules();

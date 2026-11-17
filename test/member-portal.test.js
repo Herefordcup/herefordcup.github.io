@@ -30,10 +30,30 @@ test('member portal opens with home and provides primary navigation', () => {
   ]) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   }
-  for (const label of ['Home', 'Score a Round', 'Cup', 'Stats', 'More']) {
+  for (const label of ['Home', 'Play', 'Cup', 'Stats', 'More']) {
     assert.match(html, new RegExp(`>${label}<`), `missing ${label} navigation`);
   }
   assert.match(portalScript, /showMemberView\('home'\)/);
+});
+
+test('member home is a summary-first dashboard with live action, player snapshot, results, and schedule', () => {
+  for (const id of [
+    'homeSeason',
+    'homeTournamentStatus',
+    'homeHandicap',
+    'homeTeam',
+    'homeRounds',
+    'liveMatchPanel',
+    'recentResults',
+    'schedulePreview',
+    'cupScorePreview',
+  ]) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(html, /data-open-view="score"[^>]*>Play now</);
+  assert.match(portalScript, /function renderHomeSummary\(/);
+  assert.match(portalScript, /function renderRecentResults\(/);
+  assert.match(portalScript, /function renderLiveMatch\(/);
 });
 
 test('member data loader requests itinerary, segments, rules, official stats, and commentary', () => {
