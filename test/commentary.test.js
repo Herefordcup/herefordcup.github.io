@@ -65,6 +65,14 @@ test('automatic commentary retries ignore hidden recaps and recover concurrent g
   assert.match(source, /return json\(\{ commentary: existingCommentary, reused: true \}\)/);
 });
 
+test('edge function CORS permits Supabase browser SDK headers', async () => {
+  const source = await readFile(edgeFunctionUrl, 'utf8');
+  const allowHeaders = source.match(/'Access-Control-Allow-Headers': '([^']+)'/)?.[1]
+    .split(',')
+    .map(header => header.trim());
+  assert.ok(allowHeaders?.includes('x-client-info'));
+});
+
 test('edge function authenticates an administrator and keeps AI credentials server-side', async () => {
   const source = await readFile(edgeFunctionUrl, 'utf8');
   assert.match(source, /Authorization/);
