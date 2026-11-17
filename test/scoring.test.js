@@ -23,16 +23,16 @@ test('applyHoleResult leaves the differential unchanged for a halved hole', () =
   });
 });
 
-test('formatMatchStatus reports all square and team leads', () => {
+test('formatMatchStatus reports all square and Blue or White leads', () => {
   assert.equal(formatMatchStatus({ differential: 0, holesPlayed: 9 }), 'All Square');
-  assert.equal(formatMatchStatus({ differential: 3, holesPlayed: 10 }), 'Cardinal 3 Up');
-  assert.equal(formatMatchStatus({ differential: -1, holesPlayed: 17 }), 'Silver 1 Up');
+  assert.equal(formatMatchStatus({ differential: 3, holesPlayed: 10 }), 'Blue 3 Up');
+  assert.equal(formatMatchStatus({ differential: -1, holesPlayed: 17 }), 'White 1 Up');
 });
 
 test('formatMatchStatus closes a mathematically finished match', () => {
-  assert.equal(formatMatchStatus({ differential: 3, holesPlayed: 16 }), 'Cardinal wins 3 & 2');
-  assert.equal(formatMatchStatus({ differential: -2, holesPlayed: 17 }), 'Silver wins 2 & 1');
-  assert.equal(formatMatchStatus({ differential: 2, holesPlayed: 18 }), 'Cardinal wins 2 Up');
+  assert.equal(formatMatchStatus({ differential: 3, holesPlayed: 16 }), 'Blue wins 3 & 2');
+  assert.equal(formatMatchStatus({ differential: -2, holesPlayed: 17 }), 'White wins 2 & 1');
+  assert.equal(formatMatchStatus({ differential: 2, holesPlayed: 18 }), 'Blue wins 2 Up');
 });
 
 test('matchPoints awards one point for a win and halves for a tie', () => {

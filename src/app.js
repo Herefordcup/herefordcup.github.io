@@ -8,30 +8,30 @@ const sessions = {
     title: 'Four-Ball',
     note: 'Each golfer plays his own ball. The lowest score for each side represents the team on every hole.',
     matches: [
-      ['Cardinal Pair 1', 'Silver Pair 1'],
-      ['Cardinal Pair 2', 'Silver Pair 2'],
-      ['Cardinal Pair 3', 'Silver Pair 3'],
-      ['Cardinal Pair 4', 'Silver Pair 4'],
+      ['Blue Pair 1', 'White Pair 1'],
+      ['Blue Pair 2', 'White Pair 2'],
+      ['Blue Pair 3', 'White Pair 3'],
+      ['Blue Pair 4', 'White Pair 4'],
     ],
   },
   foursomes: {
     title: 'Foursomes',
     note: 'Partners play one ball and alternate shots. The side winning the hole moves one point up in the match.',
     matches: [
-      ['Cardinal Pair 1', 'Silver Pair 1'],
-      ['Cardinal Pair 2', 'Silver Pair 2'],
-      ['Cardinal Pair 3', 'Silver Pair 3'],
-      ['Cardinal Pair 4', 'Silver Pair 4'],
+      ['Blue Pair 1', 'White Pair 1'],
+      ['Blue Pair 2', 'White Pair 2'],
+      ['Blue Pair 3', 'White Pair 3'],
+      ['Blue Pair 4', 'White Pair 4'],
     ],
   },
   singles: {
     title: 'Singles',
     note: 'One-on-one match play closes the trip. Each match is worth one full point, or a half point when tied.',
     matches: [
-      ['Cardinal Player 1', 'Silver Player 1'],
-      ['Cardinal Player 2', 'Silver Player 2'],
-      ['Cardinal Player 3', 'Silver Player 3'],
-      ['Cardinal Player 4', 'Silver Player 4'],
+      ['Blue Player 1', 'White Player 1'],
+      ['Blue Player 2', 'White Player 2'],
+      ['Blue Player 3', 'White Player 3'],
+      ['Blue Player 4', 'White Player 4'],
     ],
   },
 };
@@ -96,18 +96,18 @@ function matchCard(match) {
   card.className = 'match-card';
   card.innerHTML = `
     <div class="match-number">${String(match.index + 1).padStart(2, '0')}</div>
-    <div class="pairing"><small>TEAM CARDINAL</small><strong>${cardinalPlayers}</strong></div>
+    <div class="pairing"><small>TEAM BLUE</small><strong>${cardinalPlayers}</strong></div>
     <div class="match-status">
       <strong>${formatMatchStatus(match)}</strong>
       <small>${complete ? 'FINAL' : `${match.holesPlayed} HOLES PLAYED`}</small>
       <div class="hole-controls">
-        <button type="button" data-result="cardinal" title="Cardinal wins hole" aria-label="Cardinal wins next hole" ${complete ? 'disabled' : ''}>C</button>
+        <button type="button" data-result="cardinal" title="Blue wins hole" aria-label="Blue wins next hole" ${complete ? 'disabled' : ''}>B</button>
         <button type="button" data-result="halve" title="Hole halved" aria-label="Halve next hole" ${complete ? 'disabled' : ''}>=</button>
-        <button type="button" data-result="silver" title="Silver wins hole" aria-label="Silver wins next hole" ${complete ? 'disabled' : ''}>S</button>
+        <button type="button" data-result="silver" title="White wins hole" aria-label="White wins next hole" ${complete ? 'disabled' : ''}>W</button>
         <button type="button" data-result="undo" title="Undo last hole" aria-label="Undo last hole" ${match.history.length ? '' : 'disabled'}>↶</button>
       </div>
     </div>
-    <div class="pairing silver"><small>TEAM SILVER</small><strong>${silverPlayers}</strong></div>`;
+    <div class="pairing silver"><small>TEAM WHITE</small><strong>${silverPlayers}</strong></div>`;
 
   card.querySelector('.hole-controls').addEventListener('click', event => {
     const result = event.target.dataset.result;

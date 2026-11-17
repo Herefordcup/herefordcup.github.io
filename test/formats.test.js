@@ -13,7 +13,7 @@ import {
 
 test('nine-hole segment completion uses its own hole count', () => {
   assert.equal(isMatchComplete({ differential: 2, holesPlayed: 8 }, 9), true);
-  assert.equal(formatMatchStatus({ differential: 2, holesPlayed: 8 }, 9), 'Cardinal wins 2 & 1');
+  assert.equal(formatMatchStatus({ differential: 2, holesPlayed: 8 }, 9), 'Blue wins 2 & 1');
   assert.deepEqual(matchPoints({ differential: 0, holesPlayed: 9 }, 9, 0.5), {
     cardinal: 0.25,
     silver: 0.25,

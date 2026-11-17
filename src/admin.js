@@ -81,7 +81,7 @@ function createPlayerSlot(slotNumber) {
   sideLabel.textContent = 'Match side';
   const sideSelect = document.createElement('select');
   sideSelect.dataset.sideSelect = 'true';
-  sideSelect.append(new Option('Cardinal side', 'cardinal'), new Option('Silver side', 'silver'));
+  sideSelect.append(new Option('Blue side', 'cardinal'), new Option('White side', 'silver'));
   sideLabel.append(sideSelect);
   wrapper.append(playerLabel, sideLabel);
   return wrapper;
@@ -247,7 +247,7 @@ function renderResultSegments() {
         <label>Official differential<input name="differential" type="number" min="-${segment.end_hole - segment.start_hole + 1}" max="${segment.end_hole - segment.start_hole + 1}" value="${segment.differential ?? 0}" required></label>
         <label>Holes played<input name="holesPlayed" type="number" min="1" max="${segment.end_hole - segment.start_hole + 1}" value="${segment.holes_played || segment.end_hole - segment.start_hole + 1}" required></label>
         <label>Result status<input value="Final" disabled></label>
-      </div><p>Positive differential = Cardinal lead; negative = Silver; zero = halved.</p>`;
+      </div><p>Positive differential = Blue lead; negative = White; zero = halved.</p>`;
     resultSegmentRows.append(card);
   }
 }
@@ -336,7 +336,7 @@ matchPlanForm.addEventListener('submit', async event => {
     const segments = collectSegments();
     const errors = validateSegments(segments);
     if (errors.length) throw new Error(errors[0]);
-    if (segments.some(segment => segment.players.some(player => !player.team))) throw new Error('Every assigned player must belong to Cardinal or Silver.');
+    if (segments.some(segment => segment.players.some(player => !player.team))) throw new Error('Every assigned player must belong to Blue or White.');
     setMessage(matchPlanMessage, 'Saving…');
     await saveMatchPlan({ match: { name: data.get('matchName'), session: data.get('session'), starts_at: easternDateTimeToIso(data.get('startsAt')), course_id: data.get('courseId') || null, tournament_id: data.get('tournamentId'), status: 'scheduled' }, segments: rpcSegments(segments) });
     setMessage(matchPlanMessage, 'Match plan saved.');

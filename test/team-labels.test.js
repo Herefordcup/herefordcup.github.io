@@ -1,0 +1,29 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('public and administrator interfaces label the teams Blue and White', () => {
+  const index = read('index.html');
+  const portal = read('portal.html');
+  const admin = read('admin.html');
+  const app = read('src/app.js');
+  const adminScript = read('src/admin.js');
+
+  assert.match(index, /<h3>Blue<\/h3>/);
+  assert.match(index, /<h3>White<\/h3>/);
+  assert.match(portal, /<span>Blue<\/span>[\s\S]*<span>White<\/span>/);
+  assert.match(app, /TEAM BLUE/);
+  assert.match(app, /TEAM WHITE/);
+  assert.match(app, /Blue wins next hole/);
+  assert.match(app, /White wins next hole/);
+  assert.match(adminScript, /new Option\('Blue side', 'cardinal'\)/);
+  assert.match(adminScript, /new Option\('White side', 'silver'\)/);
+  assert.match(admin, /Blue entry/);
+  assert.match(admin, /White entry/);
+
+  for (const source of [index, portal, admin, app, adminScript]) {
+    assert.doesNotMatch(source, /(?:Team |TEAM |Pair |Player |side|entry|lead|wins |belong to )(?:Cardinal|Silver)|(?:Cardinal|Silver)(?: Pair| Player| side| entry| lead| wins| won)/i);
+  }
+});

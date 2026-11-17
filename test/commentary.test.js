@@ -9,11 +9,11 @@ const autoPublicationMigrationUrl = new URL('../supabase/migrations/007_auto_com
 test('commentary composition accepts only server-owned tone phrase identifiers', () => {
   assert.deepEqual(phraseIdsForTone('playful'), ['playful_pressure', 'playful_scoreboard']);
   assert.equal(
-    composeCommentary('Cardinal wins 2 & 1', 'playful', 'playful_scoreboard'),
-    'Cardinal wins 2 & 1. The scoreboard gets the final word.',
+    composeCommentary('Blue wins 2 & 1', 'playful', 'playful_scoreboard'),
+    'Blue wins 2 & 1. The scoreboard gets the final word.',
   );
   assert.throws(
-    () => composeCommentary('Cardinal wins 2 & 1', 'playful', 'invented_claim'),
+    () => composeCommentary('Blue wins 2 & 1', 'playful', 'invented_claim'),
     /Invalid commentary phrase identifier/,
   );
 });
@@ -26,6 +26,9 @@ test('edge function constrains AI to deterministic anonymous facts and always sa
   assert.match(source, /selectedSegments\.some\(.*status !== 'final'/s);
   assert.match(source, /function deterministicResult/);
   assert.match(source, /function deterministicMatchResult/);
+  assert.match(source, /differential > 0 \? 'Blue' : 'White'/);
+  assert.match(source, /totals\.cardinal > totals\.silver \? 'Blue' : 'White'/);
+  assert.doesNotMatch(source, /'Cardinal'|'Silver'/);
   assert.match(source, /result: commentaryType === 'segment'[\s\S]*deterministicMatchResult/);
   assert.match(source, /Do not name or quote people/i);
   assert.match(source, /injuries, weather, shots, emotions, or events/i);
