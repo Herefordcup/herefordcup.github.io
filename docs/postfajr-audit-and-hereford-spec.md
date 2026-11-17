@@ -159,7 +159,7 @@ This preserves PostFajr's strongest mobile pattern without retaining its install
 
 ### Player-facing pages
 
-- Sign in / invitation acceptance
+- Sign in / account creation
 - First-login profile setup
 - Home dashboard
 - Tournament schedule
@@ -178,7 +178,7 @@ This preserves PostFajr's strongest mobile pattern without retaining its install
 ### Administrator pages
 
 - Tournament editions
-- Invitations and membership approvals
+- Account management and signup controls
 - Roles and captains
 - Teams and rosters
 - Courses, tees, and holes
@@ -202,13 +202,13 @@ Recommended signup and first-login flow:
 
 1. User creates an email/password account or signs in with Google.
 2. The site verifies the email address when applicable.
-3. The site verifies an invitation or administrator allowlist.
+3. The account automatically receives active access to existing and future tournaments.
 4. User confirms preferred display name and avatar.
 5. User enters handicap index and optional GHIN number.
 6. User accepts tournament rules and privacy notice.
-7. Admin assigns the player to a team and tournament roster.
+7. Admin assigns the player to a team, roster, and matches.
 
-Authentication must not be the same thing as tournament membership. Creating an account or possessing a valid Google identity should not automatically grant access to private tournament data.
+Every registered account receives tournament access. Team membership, captain or administrator role, and match assignments remain tournament-specific and administrator-controlled.
 
 ## Authoritative data model
 
@@ -218,7 +218,6 @@ Core entities:
 
 - `profiles`
 - `identities` / provider metadata
-- `invitations`
 - `tournaments`
 - `tournament_memberships`
 - `teams`
@@ -302,7 +301,8 @@ Calculations should be enforced transactionally in PostgreSQL functions or trust
 
 ### Add
 
-- Invitation/allowlist enforcement
+- Automatic tournament enrollment for every registered account
+- Administrator controls for enabling or disabling new account registration
 - Complete profile onboarding
 - Tournament editions and multi-year history
 - Teams, rosters, captains, sessions, groups, pairings, and tee times
@@ -318,7 +318,7 @@ Calculations should be enforced transactionally in PostgreSQL functions or trust
 ## Build sequence
 
 1. Provision and secure Supabase; configure verified email/password accounts plus Google with PKCE.
-2. Add invitations, tournament editions, memberships, teams, sessions, and match assignments.
+2. Add automatic account enrollment, tournament editions, memberships, teams, sessions, and match assignments.
 3. Build complete admin workflows for rosters, courses, tees, sessions, and pairings.
 4. Build first-login profile onboarding and assigned-match dashboard.
 5. Connect hole-by-hole scoring to authoritative match calculations and finalization.

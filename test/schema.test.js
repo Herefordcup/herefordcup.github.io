@@ -6,6 +6,7 @@ const migrationUrl = new URL('../supabase/migrations/002_tournament_access.sql',
 const baseMigrationUrl = new URL('../supabase/migrations/001_hereford_cup.sql', import.meta.url);
 const planningMigrationUrl = new URL('../supabase/migrations/003_2027_planning.sql', import.meta.url);
 const integrityMigrationUrl = new URL('../supabase/migrations/005_integrity_hardening.sql', import.meta.url);
+const automaticAccessMigrationUrl = new URL('../supabase/migrations/006_automatic_tournament_access.sql', import.meta.url);
 
 test('tournament access migration separates accounts from membership', async () => {
   const sql = await readFile(migrationUrl, 'utf8');
@@ -31,6 +32,27 @@ test('unapproved accounts cannot read tournament scoring data', async () => {
     assert.match(sql, new RegExp(`drop policy if exists "${policy}"`, 'i'), `broad policy remains: ${policy}`);
   }
   assert.match(sql, /public\.has_any_tournament_access\(\)/i);
+});
+
+test('every account receives active access to existing and future tournaments', async () => {
+  const sql = await readFile(automaticAccessMigrationUrl, 'utf8');
+  assert.match(sql, /insert into public\.tournament_memberships[\s\S]*from public\.tournaments/i,
+    'new accounts must be enrolled in all tournaments');
+  assert.match(sql, /insert into public\.tournament_memberships[\s\S]*from public\.profiles/i,
+    'new tournaments must enroll every account');
+  assert.match(sql, /cross join public\.tournaments/i,
+    'existing accounts and tournaments must be backfilled');
+  assert.match(sql, /status[\s\S]*'active'/i);
+  assert.match(sql, /role[\s\S]*'player'/i);
+  assert.match(sql, /on conflict \(tournament_id, user_id\) do nothing/i,
+    'automatic enrollment must not reactivate an explicitly removed membership');
+  assert.match(sql, /create trigger enroll_accounts_for_new_tournament/i);
+  assert.ok((sql.match(/pg_advisory_xact_lock/g) ?? []).length >= 2,
+    'account and tournament creation must serialize to avoid a missing membership race');
+  assert.match(sql, /lock table auth\.users in share row exclusive mode[\s\S]*create or replace function public\.handle_new_user/i,
+    'migration deployment must wait for in-flight signups and block new signups through backfill');
+  assert.match(sql, /lock table public\.tournaments in share row exclusive mode/i,
+    'migration deployment must also block tournament creation through backfill');
 });
 
 test('score writes require round ownership and assigned match access', async () => {
