@@ -1,10 +1,12 @@
 # Hereford Cup
 
-An installable, mobile-first Ryder Cup-style tournament site for the annual Hereford Cup golf trip.
+A mobile-first browser website for the annual Ryder Cup-style Hereford Cup golf trip.
 
 ## Features
 
-- Google sign-in through Supabase Auth
+- Email/password account creation with email verification and password recovery
+- Optional Google and Apple sign-in through Supabase Auth
+- Invitation or administrator approval required for tournament membership
 - Individual player profiles and handicap indexes
 - Administrator-managed courses, tees, ratings, slopes, pars, and hole data
 - Mobile hole-by-hole gross score entry
@@ -15,11 +17,12 @@ An installable, mobile-first Ryder Cup-style tournament site for the annual Here
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Run `supabase/migrations/001_hereford_cup.sql` in its SQL editor.
-3. Enable Google under Authentication > Providers.
-4. Set the production site URL to `https://pimentelaj.github.io/hereford-cup/` and allow `https://pimentelaj.github.io/hereford-cup/portal.html` as a redirect URL.
-5. Add the project URL and publishable key to `src/config.js`.
-6. Sign in once and promote the tournament administrator as described at the bottom of the migration.
+2. Run `supabase/migrations/001_hereford_cup.sql`, then `supabase/migrations/002_tournament_access.sql`, in the SQL editor.
+3. Enable Email under Authentication > Providers, require email confirmation, and disable anonymous access.
+4. Optionally configure Google and Apple under Authentication > Providers. Apple sign-in also requires an Apple Developer Services ID and key.
+5. Set the production site URL to `https://pimentelaj.github.io/hereford-cup/` and allow `https://pimentelaj.github.io/hereford-cup/portal.html` plus `https://pimentelaj.github.io/hereford-cup/portal.html?recovery=1` as redirect URLs.
+6. Add the project URL and publishable key to `src/config.js`.
+7. Sign in once and promote the tournament administrator as described at the bottom of the migration.
 
 The browser receives only Supabase's publishable key. Database writes are protected by row-level security; never put a service-role key in this repository.
 
@@ -32,4 +35,4 @@ npm run serve
 
 ## Hosting
 
-The site is deployed through GitHub Pages. This first edition stores scores on the current device. A shared live-scoring backend can be connected after teams, players, dates, and tournament rules are finalized.
+The static browser interface is deployed through GitHub Pages. Supabase provides authentication and will become the authoritative shared source for membership, tournaments, pairings, scores, and standings once the project is connected and its migrations are applied.

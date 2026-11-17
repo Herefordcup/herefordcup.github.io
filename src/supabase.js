@@ -2,25 +2,148 @@ import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, hasSupabaseConfig } from './con
 
 let client;
 
+export function validateAuthInput({ mode, displayName = '', email = '', password = '' }) {
+  const errors = {};
+  if (mode === 'signup' && !displayName.trim()) errors.displayName = 'Enter your name.';
+  if (mode !== 'recovery' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.email = 'Enter a valid email address.';
+  if (password.length < 8) errors.password = 'Use at least 8 characters.';
+  return errors;
+}
+
+export function hasActiveTournamentMembership(memberships = []) {
+  return memberships.some(membership => membership.status === 'active');
+}
+
+export function canSetNewPassword(mode, recoveryVerified) {
+  return mode === 'recovery' && recoveryVerified === true;
+}
+
+export function createAuthActions(authClient, {
+  emailRedirectTo,
+  oauthRedirectTo,
+  passwordResetRedirectTo,
+} = {}) {
+  return {
+    async signUpWithEmail({ email, password, displayName }) {
+      const normalizedName = displayName.trim();
+      const { data, error } = await authClient.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password,
+        options: {
+          emailRedirectTo,
+          data: { display_name: normalizedName, full_name: normalizedName },
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    async signInWithEmail(email, password) {
+      const { data, error } = await authClient.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+      if (error) throw error;
+      return data;
+    },
+    async signInWithProvider(provider) {
+      if (!['google', 'apple'].includes(provider)) {
+        throw new Error('Unsupported sign-in provider.');
+      }
+      const { data, error } = await authClient.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: oauthRedirectTo },
+      });
+      if (error) throw error;
+      return data;
+    },
+    async requestPasswordReset(email) {
+      const { data, error } = await authClient.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        { redirectTo: passwordResetRedirectTo },
+      );
+      if (error) throw error;
+      return data;
+    },
+    async setNewPassword(password) {
+      const { data, error } = await authClient.auth.updateUser({ password });
+      if (error) throw error;
+      return data;
+    },
+    waitForPasswordRecovery(timeoutMs = 8000) {
+      return new Promise(resolve => {
+        let subscription;
+        let timer;
+        let finished = false;
+        const finish = session => {
+          if (finished) return;
+          finished = true;
+          if (timer) clearTimeout(timer);
+          subscription?.unsubscribe();
+          resolve(session);
+        };
+        const response = authClient.auth.onAuthStateChange((event, session) => {
+          if (event === 'PASSWORD_RECOVERY') finish(session);
+        });
+        subscription = response.data.subscription;
+        if (finished) {
+          subscription.unsubscribe();
+          return;
+        }
+        timer = setTimeout(() => finish(null), timeoutMs);
+      });
+    },
+  };
+}
+
 export async function getSupabase() {
   if (!hasSupabaseConfig()) return null;
   if (client) return client;
   const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
   client = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-    auth: { persistSession: true, detectSessionInUrl: true, flowType: 'implicit' },
+    auth: { persistSession: true, detectSessionInUrl: true, flowType: 'pkce' },
   });
   return client;
 }
 
-export async function signInWithGoogle() {
+async function configuredAuthActions() {
   const supabase = await getSupabase();
   if (!supabase) throw new Error('Supabase has not been configured yet.');
-  const redirectTo = new URL('portal.html', window.location.href).href;
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo },
+  const portalUrl = new URL('portal.html', window.location.href);
+  const recoveryUrl = new URL(portalUrl.href);
+  recoveryUrl.searchParams.set('recovery', '1');
+  return createAuthActions(supabase, {
+    emailRedirectTo: portalUrl.href,
+    oauthRedirectTo: portalUrl.href,
+    passwordResetRedirectTo: recoveryUrl.href,
   });
-  if (error) throw error;
+}
+
+export async function signUpWithEmail(details) {
+  return (await configuredAuthActions()).signUpWithEmail(details);
+}
+
+export async function signInWithEmail(email, password) {
+  return (await configuredAuthActions()).signInWithEmail(email, password);
+}
+
+export async function requestPasswordReset(email) {
+  return (await configuredAuthActions()).requestPasswordReset(email);
+}
+
+export async function setNewPassword(password) {
+  return (await configuredAuthActions()).setNewPassword(password);
+}
+
+export async function waitForPasswordRecovery(timeoutMs) {
+  return (await configuredAuthActions()).waitForPasswordRecovery(timeoutMs);
+}
+
+export async function signInWithGoogle() {
+  return (await configuredAuthActions()).signInWithProvider('google');
+}
+
+export async function signInWithApple() {
+  return (await configuredAuthActions()).signInWithProvider('apple');
 }
 
 export async function signOut() {
@@ -38,16 +161,21 @@ export async function getCurrentSession() {
 
 export async function loadPlayerData(userId) {
   const supabase = await getSupabase();
-  const [profileResult, coursesResult, matchesResult] = await Promise.all([
+  const [profileResult, membershipsResult, coursesResult, matchesResult] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', userId).single(),
+    supabase
+      .from('tournament_memberships')
+      .select('status, role, team, tournaments(id, name, slug, edition_year, status)')
+      .eq('user_id', userId),
     supabase.from('courses').select('*, tees(*, holes(*))').eq('active', true).order('name'),
     supabase.from('match_players').select('team, matches(*, courses(name)), profiles(display_name)').eq('user_id', userId),
   ]);
-  for (const result of [profileResult, coursesResult, matchesResult]) {
+  for (const result of [profileResult, membershipsResult, coursesResult, matchesResult]) {
     if (result.error) throw result.error;
   }
   return {
     profile: profileResult.data,
+    memberships: membershipsResult.data ?? [],
     courses: coursesResult.data ?? [],
     assignments: matchesResult.data ?? [],
   };

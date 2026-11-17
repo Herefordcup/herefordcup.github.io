@@ -1,15 +1,25 @@
 import { calculateCourseHandicap, netScore } from './golf.js';
 import { hasSupabaseConfig } from './config.js';
 import {
+  canSetNewPassword,
   getCurrentSession,
+  hasActiveTournamentMembership,
   loadPlayerData,
+  requestPasswordReset,
   saveProfile,
   saveRound,
+  setNewPassword,
+  signInWithApple,
+  signInWithEmail,
   signInWithGoogle,
   signOut,
+  signUpWithEmail,
+  validateAuthInput,
+  waitForPasswordRecovery,
 } from './supabase.js';
 
 const authView = document.querySelector('#authView');
+const accessPendingView = document.querySelector('#accessPendingView');
 const dashboardView = document.querySelector('#dashboardView');
 const setupMessage = document.querySelector('#setupMessage');
 const courseSelect = document.querySelector('#courseSelect');
@@ -19,11 +29,63 @@ const handicapInput = document.querySelector('#handicapIndex');
 const scorecard = document.querySelector('#scorecard');
 const emptyScorecard = document.querySelector('#emptyScorecard');
 const saveButton = document.querySelector('#saveRound');
+const authForm = document.querySelector('#emailAuthForm');
+const authMessage = document.querySelector('#authMessage');
+const displayNameField = document.querySelector('#displayNameField');
+const displayNameInput = document.querySelector('#displayName');
+const emailInput = document.querySelector('#emailAddress');
+const passwordInput = document.querySelector('#emailPassword');
+const forgotPasswordButton = document.querySelector('#forgotPassword');
+const authSubmitButton = document.querySelector('#emailAuthSubmit');
+const signInModeButton = document.querySelector('#authModeSignIn');
+const signUpModeButton = document.querySelector('#authModeSignUp');
+const authModeSelector = document.querySelector('#authModeSelector');
+const emailAddressField = document.querySelector('#emailAddressField');
+const authDivider = document.querySelector('#authDivider');
+const providerAccess = document.querySelector('#providerAccess');
+const authAccessNote = document.querySelector('#authAccessNote');
+const authTitle = document.querySelector('#authTitle');
+const authIntro = document.querySelector('#authIntro');
 
 let session;
 let playerData;
 let selectedTee;
+let authMode = 'signin';
+let recoveryVerified = false;
 let scores = Array.from({ length: 18 }, (_, index) => ({ hole_number: index + 1, gross_score: null }));
+
+function showAuthMessage(message, isError = false) {
+  authMessage.textContent = message;
+  authMessage.classList.toggle('is-error', isError);
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const isSignUp = mode === 'signup';
+  const isRecovery = mode === 'recovery';
+  if (!isRecovery) recoveryVerified = false;
+  authSubmitButton.disabled = isRecovery && !recoveryVerified;
+  displayNameField.hidden = !isSignUp;
+  displayNameInput.required = isSignUp;
+  emailAddressField.hidden = isRecovery;
+  emailInput.required = !isRecovery;
+  passwordInput.autocomplete = isSignUp || isRecovery ? 'new-password' : 'current-password';
+  forgotPasswordButton.hidden = isSignUp || isRecovery;
+  authSubmitButton.textContent = isRecovery ? 'Set new password' : isSignUp ? 'Create account' : 'Sign in';
+  authModeSelector.hidden = isRecovery;
+  authDivider.hidden = isRecovery;
+  providerAccess.hidden = isRecovery;
+  authAccessNote.hidden = isRecovery;
+  authTitle.innerHTML = isRecovery ? 'Set a new<br><em>password.</em>' : 'Your round.<br><em>Your team.</em>';
+  authIntro.textContent = isRecovery
+    ? 'Choose a new password with at least 8 characters.'
+    : 'Sign in or create an account to join your team, follow every match, and keep your scores in one place.';
+  signInModeButton.classList.toggle('is-active', !isSignUp);
+  signUpModeButton.classList.toggle('is-active', isSignUp);
+  signInModeButton.setAttribute('aria-selected', String(!isSignUp));
+  signUpModeButton.setAttribute('aria-selected', String(isSignUp));
+  showAuthMessage('');
+}
 
 function setSyncStatus(message, busy = false) {
   const element = document.querySelector('#syncStatus');
@@ -179,9 +241,82 @@ saveButton.addEventListener('click', async () => {
   }
 });
 
-document.querySelector('#googleSignIn').addEventListener('click', async () => {
-  try { await signInWithGoogle(); } catch (error) { setupMessage.hidden = false; setupMessage.querySelector('p').textContent = error.message; }
+signInModeButton.addEventListener('click', () => setAuthMode('signin'));
+signUpModeButton.addEventListener('click', () => setAuthMode('signup'));
+
+authForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (authMode === 'recovery' && !canSetNewPassword(authMode, recoveryVerified)) {
+    showAuthMessage('Verify the password reset link before choosing a new password.', true);
+    return;
+  }
+  const values = {
+    mode: authMode,
+    displayName: displayNameInput.value,
+    email: emailInput.value,
+    password: passwordInput.value,
+  };
+  const errors = validateAuthInput(values);
+  if (Object.keys(errors).length) {
+    showAuthMessage(Object.values(errors)[0], true);
+    return;
+  }
+  try {
+    authSubmitButton.disabled = true;
+    showAuthMessage(authMode === 'recovery'
+      ? 'Saving your new password…'
+      : authMode === 'signup' ? 'Creating your account…' : 'Signing in…');
+    if (authMode === 'recovery') {
+      await setNewPassword(values.password);
+      await signOut();
+      window.history.replaceState({}, '', new URL('portal.html', window.location.href).href);
+      passwordInput.value = '';
+      setAuthMode('signin');
+      showAuthMessage('Password updated. Sign in with your new password.');
+      return;
+    }
+    if (authMode === 'signup') {
+      const result = await signUpWithEmail(values);
+      if (!result.session) {
+        showAuthMessage('Check your email to verify your account, then return here to sign in.');
+        return;
+      }
+    } else {
+      await signInWithEmail(values.email, values.password);
+    }
+    window.location.reload();
+  } catch (error) {
+    showAuthMessage(error.message, true);
+  } finally {
+    authSubmitButton.disabled = false;
+  }
 });
+
+forgotPasswordButton.addEventListener('click', async () => {
+  const errors = validateAuthInput({ mode: 'signin', email: emailInput.value, password: 'recovery' });
+  if (errors.email) {
+    showAuthMessage(errors.email, true);
+    return;
+  }
+  try {
+    await requestPasswordReset(emailInput.value);
+    showAuthMessage('Password reset instructions are on the way.');
+  } catch (error) {
+    showAuthMessage(error.message, true);
+  }
+});
+
+async function beginProviderSignIn(action) {
+  try {
+    showAuthMessage('Opening secure sign-in…');
+    await action();
+  } catch (error) {
+    showAuthMessage(error.message, true);
+  }
+}
+
+document.querySelector('#googleSignIn').addEventListener('click', () => beginProviderSignIn(signInWithGoogle));
+document.querySelector('#appleSignIn').addEventListener('click', () => beginProviderSignIn(signInWithApple));
 document.querySelector('#signOutButton').addEventListener('click', async () => { await signOut(); window.location.reload(); });
 
 async function start() {
@@ -190,21 +325,47 @@ async function start() {
     return;
   }
   try {
+    const isRecovery = new URL(window.location.href).searchParams.get('recovery') === '1';
+    if (isRecovery) {
+      authView.hidden = false;
+      accessPendingView.hidden = true;
+      dashboardView.hidden = true;
+      setAuthMode('recovery');
+      recoveryVerified = false;
+      authSubmitButton.disabled = true;
+      showAuthMessage('Verifying your password reset link…');
+      session = await waitForPasswordRecovery();
+      if (!session) {
+        showAuthMessage('This password reset link is invalid or has expired. Request a new link.', true);
+      } else {
+        recoveryVerified = true;
+        authSubmitButton.disabled = false;
+        showAuthMessage('Reset link verified. Choose your new password.');
+      }
+      return;
+    }
     session = await getCurrentSession();
     if (!session) return;
     authView.hidden = true;
-    dashboardView.hidden = false;
     document.querySelector('#signOutButton').hidden = false;
     document.querySelector('#playerIdentity').textContent = session.user.email;
-    setSyncStatus('Loading…', true);
     playerData = await loadPlayerData(session.user.id);
     document.querySelector('#adminLink').hidden = playerData.profile.role !== 'admin';
+    if (playerData.profile.role !== 'admin' && !hasActiveTournamentMembership(playerData.memberships)) {
+      accessPendingView.hidden = false;
+      dashboardView.hidden = true;
+      return;
+    }
+    accessPendingView.hidden = true;
+    dashboardView.hidden = false;
+    setSyncStatus('Loading…', true);
     document.querySelector('#playerName').textContent = playerData.profile.display_name || session.user.user_metadata?.full_name || 'Golfer';
     handicapInput.value = playerData.profile.handicap_index ?? '';
     populateCourses();
     setSyncStatus('Synced');
   } catch (error) {
     authView.hidden = false;
+    accessPendingView.hidden = true;
     dashboardView.hidden = true;
     setupMessage.hidden = false;
     setupMessage.querySelector('p').textContent = error.message;
