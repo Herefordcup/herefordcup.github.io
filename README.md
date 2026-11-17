@@ -30,7 +30,7 @@ A mobile-first browser website for the annual Ryder Cup-style Hereford Cup golf 
    - `supabase/migrations/002_tournament_access.sql`
 3. Enable Email under Authentication > Providers, require email confirmation, and disable anonymous access.
 4. Configure Google under Authentication > Providers.
-5. Set the production site URL to `https://pimentelaj.github.io/hereford-cup/` and allow `https://pimentelaj.github.io/hereford-cup/portal.html` plus `https://pimentelaj.github.io/hereford-cup/portal.html?recovery=1` as redirect URLs.
+5. Set the production site URL to `https://herefordcup.github.io/` and allow `https://herefordcup.github.io/portal.html` plus `https://herefordcup.github.io/portal.html?recovery=1` as redirect URLs.
 6. Add the project URL and publishable key to `src/config.js`.
 7. Create and verify the first account, sign in once, then promote that exact user to `admin` in the SQL editor. Read the profile row back and confirm its ID, email join, and `role = 'admin'` before continuing.
 8. Run the feature migrations only after the administrator exists, so the 2027 seed is created:
