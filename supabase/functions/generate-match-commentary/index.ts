@@ -122,6 +122,20 @@ Deno.serve(async request => {
     if (selectedSegments.some((segment: { status: string }) => segment.status !== 'final')) {
       return json({ error: 'Commentary requires finalized segments' }, 409);
     }
+
+    let existingQuery = supabase
+      .from('match_commentaries')
+      .select('*')
+      .eq('match_id', match.id)
+      .eq('commentary_type', commentaryType)
+      .neq('status', 'rejected');
+    existingQuery = segmentId
+      ? existingQuery.eq('segment_id', segmentId)
+      : existingQuery.is('segment_id', null);
+    const { data: existingCommentary, error: existingError } = await existingQuery.maybeSingle();
+    if (existingError) throw existingError;
+    if (existingCommentary) return json({ commentary: existingCommentary, reused: true });
+
     const facts = {
       status: match.status,
       format: match.format,

@@ -46,6 +46,18 @@ test('automatic commentary migration publishes AI output without weakening write
   assert.doesNotMatch(sql, /grant insert[^;]*match_commentaries[^;]*authenticated/i);
 });
 
+test('automatic commentary retries reuse an existing active recap instead of duplicating publication', async () => {
+  const [source, sql] = await Promise.all([
+    readFile(edgeFunctionUrl, 'utf8'),
+    readFile(autoPublicationMigrationUrl, 'utf8'),
+  ]);
+  assert.match(sql, /create unique index[^;]*match_commentaries[^;]*post_match/is);
+  assert.match(sql, /status <> 'rejected'/i);
+  assert.match(source, /from\('match_commentaries'\)/);
+  assert.match(source, /\.neq\('status', 'rejected'\)/);
+  assert.match(source, /return json\(\{ commentary: existingCommentary, reused: true \}\)/);
+});
+
 test('edge function authenticates an administrator and keeps AI credentials server-side', async () => {
   const source = await readFile(edgeFunctionUrl, 'utf8');
   assert.match(source, /Authorization/);

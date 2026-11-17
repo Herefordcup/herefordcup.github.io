@@ -10,6 +10,18 @@ update public.commentary_settings
 set require_approval = false,
     updated_at = now();
 
+create unique index if not exists match_commentaries_one_active_post_match
+  on public.match_commentaries(match_id, commentary_type)
+  where commentary_type = 'post_match'
+    and segment_id is null
+    and status <> 'rejected';
+
+create unique index if not exists match_commentaries_one_active_segment
+  on public.match_commentaries(match_id, segment_id, commentary_type)
+  where commentary_type = 'segment'
+    and segment_id is not null
+    and status <> 'rejected';
+
 create or replace function public.prepare_commentary_publication()
 returns trigger
 language plpgsql
