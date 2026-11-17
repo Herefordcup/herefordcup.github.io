@@ -1,0 +1,98 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { easternDateTimeToIso, optionalNumber } from '../src/admin-helpers.js';
+
+const html = await readFile(new URL('../admin.html', import.meta.url), 'utf8');
+const adminScript = await readFile(new URL('../src/admin.js', import.meta.url), 'utf8');
+const supabaseScript = await readFile(new URL('../src/supabase.js', import.meta.url), 'utf8');
+
+test('admin portal exposes planning, rules, and commentary controls', () => {
+  for (const id of [
+    'matchPlanForm',
+    'segmentRows',
+    'addSegment',
+    'ruleForm',
+    'commentarySettingsForm',
+    'commentaryMatch',
+    'generateCommentary',
+    'commentaryApprovalList',
+  ]) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  for (const format of ['singles', 'fourball', 'foursomes', 'scramble', 'shamble', 'chapman']) {
+    assert.match(html, new RegExp(`value=["']${format}["']`), `missing ${format}`);
+  }
+});
+
+test('admin planner validates and saves independent segment lineups', () => {
+  assert.match(adminScript, /validateSegments/);
+  assert.match(adminScript, /saveMatchPlan/);
+  assert.match(adminScript, /match_segment_players/);
+});
+
+test('course form supports unrated tees and match times are interpreted in Eastern time', () => {
+  assert.doesNotMatch(html, /name="rating" required/);
+  assert.doesNotMatch(html, /name="slope" required/);
+  assert.equal(optionalNumber(''), null);
+  assert.equal(optionalNumber('72.5'), 72.5);
+  assert.equal(easternDateTimeToIso('2027-03-19T08:00'), '2027-03-19T12:00:00.000Z');
+  assert.equal(easternDateTimeToIso('2027-01-19T08:00'), '2027-01-19T13:00:00.000Z');
+  assert.match(adminScript, /easternDateTimeToIso/);
+  assert.match(adminScript, /optionalNumber/);
+  assert.match(supabaseScript, /rating: tee\.rating === null \? null : Number\(tee\.rating\)/);
+  assert.match(supabaseScript, /slope: tee\.slope === null \? null : Number\(tee\.slope\)/);
+});
+
+test('Supabase layer saves match plans atomically through a database RPC', () => {
+  assert.match(supabaseScript, /export async function saveMatchPlan/);
+  assert.match(supabaseScript, /rpc\('save_match_plan'/);
+  assert.match(supabaseScript, /export async function saveTournamentRule/);
+  assert.match(supabaseScript, /export async function saveCommentarySettings/);
+  assert.match(supabaseScript, /export async function generateMatchCommentary/);
+  assert.match(supabaseScript, /functions\.invoke\('generate-match-commentary'/);
+  assert.match(supabaseScript, /export async function updateCommentaryText/);
+  assert.match(adminScript, /Save edit/);
+  assert.match(supabaseScript, /export async function updateCommentaryStatus/);
+  assert.match(supabaseScript, /rpc\('edit_commentary_draft'/);
+  assert.match(supabaseScript, /rpc\('set_commentary_status'/);
+});
+
+test('admin result workflow finalizes authoritative segment results through RPC', () => {
+  for (const id of ['resultFinalizationForm', 'resultMatch', 'resultSegmentRows']) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(supabaseScript, /export async function finalizeMatchResults/);
+  assert.match(supabaseScript, /rpc\('finalize_match_results'/);
+  assert.match(adminScript, /differential/);
+  assert.match(adminScript, /holes_played/);
+  assert.match(adminScript, /status: 'final'/);
+});
+
+test('admin controls fail closed and commentary approval is mandatory', () => {
+  assert.match(html, /id="adminContent" hidden/);
+  assert.doesNotMatch(html, /name="requireApproval"/);
+  assert.match(adminScript, /adminContent\.hidden = false/);
+  assert.match(supabaseScript, /require_approval: true/);
+});
+
+test('administrator score correction is usable and reads back the audited result', () => {
+  for (const id of ['scoreCorrectionForm', 'correctionRound', 'correctionHole', 'correctionScore', 'correctionDelete', 'correctionReason', 'correctionMessage']) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(supabaseScript, /export async function correctHoleScore/);
+  assert.match(supabaseScript, /target_reason:/);
+  assert.match(supabaseScript, /from\('score_correction_audit'\)/);
+  assert.match(adminScript, /await correctHoleScore/);
+  assert.match(adminScript, /Correction saved and audited/);
+});
+
+test('commentary settings hydrate on tournament change and approved copy stays manageable', () => {
+  assert.match(adminScript, /function hydrateCommentarySettings/);
+  assert.match(adminScript, /commentaryTournament.*addEventListener\('change', hydrateCommentarySettings\)/s);
+  assert.match(adminScript, /\['draft', 'approved'\]\.includes\(commentary\.status\)/);
+  assert.match(adminScript, /commentary\.status === 'draft'.*Approve/s);
+  assert.match(adminScript, /copy\.readOnly = true/);
+  assert.match(adminScript, /edit\.textContent = 'Edit'/);
+  assert.match(adminScript, /Hide/);
+});
