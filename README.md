@@ -6,7 +6,7 @@ A mobile-first browser website for the annual Ryder Cup-style Hereford Cup golf 
 
 - Email/password account creation with email verification and password recovery
 - Google sign-in through Supabase Auth
-- Invitation or administrator approval required for tournament membership
+- Every registered account automatically receives access to existing and future tournaments
 - Individual player profiles and handicap indexes
 - Administrator-managed courses, tees, nullable ratings/slopes, pars, and hole data
 - Mobile hole-by-hole gross score entry that resumes assigned-match rounds, locks submitted holes, and sends only newly entered holes
@@ -37,11 +37,12 @@ A mobile-first browser website for the annual Ryder Cup-style Hereford Cup golf 
    - `supabase/migrations/003_2027_planning.sql`
    - `supabase/migrations/004_course_catalog.sql`
    - `supabase/migrations/005_integrity_hardening.sql`
-9. Read back the 2027 tournament, itinerary/course links, segment constraints, score ownership constraint, immutable-score grants, administrator correction RPC/audit table, commentary RPC signatures/revokes, and seeded course/tee/hole counts. Treat these migrations as staging-only until that readback succeeds in a disposable or staging project.
+   - `supabase/migrations/006_automatic_tournament_access.sql`
+9. Read back the 2027 tournament, automatic account memberships, itinerary/course links, segment constraints, score ownership constraint, immutable-score grants, administrator correction RPC/audit table, commentary RPC signatures/revokes, and seeded course/tee/hole counts. Treat these migrations as staging-only until that readback succeeds in a disposable or staging project.
 10. Configure Edge Function secrets by name only: `AI_API_KEY`; optionally `AI_API_BASE_URL` and `AI_MODEL`.
 11. Deploy `supabase/functions/generate-match-commentary` with JWT verification enabled.
 
-Migration `002_tournament_access.sql` is already applied in production and must not be edited. Migration `005_integrity_hardening.sql` performs the forward-only authorization upgrade, safely validates existing score ownership before adding the composite foreign key, and replaces the unsafe commentary draft RPC. Apply `003`, `004`, and `005` in order in staging before any production rollout.
+Migration `002_tournament_access.sql` is already applied in production and must not be edited. Migration `005_integrity_hardening.sql` performs the forward-only authorization upgrade, safely validates existing score ownership before adding the composite foreign key, and replaces the unsafe commentary draft RPC. Migration `006_automatic_tournament_access.sql` enrolls every existing and future account in every tournament while preserving explicitly removed memberships. Apply `003` through `006` in order in staging before any production rollout.
 
 Player scoring is intentionally monitored rather than segment-write-enforced in the database. A player still needs an active membership, an assigned non-final match, and their own round, but may enter any hole on that assigned match. Match selection fixes the course; an existing round also fixes its persisted tee. Saved holes reload as read-only, and later saves insert only new holes. After insertion, authenticated players cannot update or delete a score. Administrators correct, insert, or delete a hole only through `correct_hole_score`; a reason is required and each correction is written to `score_correction_audit`.
 

@@ -13,14 +13,14 @@ This document is the continuation point for a separate Hermes installation. It c
 - Default branch: `main`
 - Current deployed feature commit: `2c167ae3ac953ade041b6a51f89aadc8b0a55358`
 - Pull request: `https://github.com/Herefordcup/herefordcup.github.io/pull/3` (merged)
-- GitHub Pages serves `main`. Do not assume migrations `003`–`005` or the Edge Function are deployed.
+- GitHub Pages serves `main`. Do not assume migrations `003`–`006` or the Edge Function are deployed.
 
 ## Product boundaries
 
 - This is a conventional responsive browser website, not an installable app or PWA.
 - Do not add a web manifest, installation prompts, service-worker caching, or offline/app-store positioning.
 - Authentication supports verified email/password and Google OAuth. Apple remains disabled.
-- Authentication and tournament membership are separate. A signed-in account still needs an invitation, approval, or administrator role.
+- Every registered account automatically receives active access to existing and future tournaments. Team, captain, and tournament-administrator assignments remain tournament-specific.
 - Static assets deploy through GitHub Pages. Supabase provides Auth, PostgreSQL, RLS, and Edge Functions.
 - Browser code may contain only the Supabase project URL and publishable key. Never commit a service-role key, OAuth client secret, database password, or AI-provider key.
 
@@ -29,7 +29,7 @@ This document is the continuation point for a separate Hermes installation. It c
 ### Static browser layer
 
 - `index.html`, `styles.css`, `src/app.js`: public landing page.
-- `portal.html`, `portal.css`, `src/portal.js`: account flows, membership gate, member Home, scoring, Cup/matches, statistics, rules, and approved commentary.
+- `portal.html`, `portal.css`, `src/portal.js`: account flows, automatic tournament access, member Home, scoring, Cup/matches, statistics, rules, and approved commentary.
 - `admin.html`, `admin.css`, `src/admin.js`: course entry, match/segment planning, independent segment lineups, audited score corrections, rules, commentary settings, generation, editing, approval, and hiding.
 - `src/supabase.js`: browser-safe Supabase client and data operations.
 - `src/golf.js`: course handicaps, stroke allocation, net scores, and format-aware hole scoring helpers.
@@ -42,7 +42,7 @@ This document is the continuation point for a separate Hermes installation. It c
 
 ### Supabase layer
 
-For a fresh project, apply `001` and `002`, authenticate and promote the first administrator with an exact email/ID join and readback, then apply `003`, `004`, and `005`. The 2027 seed intentionally skips when no administrator exists. Production already has `002`; keep it byte-for-byte at HEAD and use `005` for all forward authorization changes.
+For a fresh project, apply `001` and `002`, authenticate and promote the first administrator with an exact email/ID join and readback, then apply `003` through `006`. The 2027 seed intentionally skips when no administrator exists. Production already has `002`; keep it byte-for-byte at HEAD and use forward-only migrations for authorization changes.
 
 1. `supabase/migrations/001_hereford_cup.sql`
    - Profiles, courses, tees, holes, matches, match players, rounds, scores, base RLS.
@@ -54,6 +54,8 @@ For a fresh project, apply `001` and `002`, authenticate and promote the first a
    - Source provenance and availability metadata; nine-hole/unrated tee support; verified Tobacco Road and Pinehurst catalog; itinerary-to-course links.
 5. `supabase/migrations/005_integrity_hardening.sql`
    - Course/tee-aware round authorization; score-to-round ownership constraint; monitored honor-system, insert-only player scores; audited administrator-only score correction RPC; finalized metadata guards; and server-derived commentary drafts/edit audit.
+6. `supabase/migrations/006_automatic_tournament_access.sql`
+   - Backfills active memberships for all registered accounts, enrolls new accounts in every tournament, and enrolls all accounts when a new tournament is created. Explicitly removed memberships remain removed.
 
 Edge Function:
 
