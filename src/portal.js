@@ -4,6 +4,7 @@ import { formatSegmentLabel, individualEntryBlockReason, segmentHoleCount } from
 import { summarizeLeagueStats, summarizePlayerStats } from './stats.js';
 import { assertRoundAssignment, mergePersistedScores, unsavedScoreRows } from './round-entry.js';
 import { formatHomeDate, formatMatchupPlayers, orderHomeMatches } from './home.js';
+import { avatarInitials, normalizeProfileInput, profileAvatarUrl } from './profile.js';
 import {
   assignedSegmentsForPlayer,
   nextUpcomingAssignment,
@@ -55,6 +56,11 @@ const providerAccess = document.querySelector('#providerAccess');
 const authAccessNote = document.querySelector('#authAccessNote');
 const authTitle = document.querySelector('#authTitle');
 const authIntro = document.querySelector('#authIntro');
+const profileSetupDialog = document.querySelector('#profileSetupDialog');
+const profileSetupForm = document.querySelector('#profileSetupForm');
+const profileDisplayName = document.querySelector('#profileDisplayName');
+const profileHandicap = document.querySelector('#profileHandicap');
+const profileSetupMessage = document.querySelector('#profileSetupMessage');
 
 let session;
 let playerData;
@@ -133,13 +139,46 @@ function showMemberView(viewName) {
   });
 }
 
+function renderProfileAvatar() {
+  const name = playerData?.profile?.display_name || session?.user?.user_metadata?.full_name || 'Golfer';
+  const avatarUrl = profileAvatarUrl(session?.user?.user_metadata);
+  document.querySelectorAll('[data-profile-avatar]').forEach(avatar => {
+    avatar.replaceChildren();
+    if (avatarUrl) {
+      const image = document.createElement('img');
+      image.src = avatarUrl;
+      image.alt = '';
+      image.referrerPolicy = 'no-referrer';
+      avatar.append(image);
+    } else {
+      avatar.textContent = avatarInitials(name);
+    }
+  });
+}
+
+function openProfileSetup() {
+  profileDisplayName.value = playerData.profile.display_name || session.user.user_metadata?.full_name || '';
+  profileHandicap.value = playerData.profile.handicap_index ?? '';
+  profileSetupMessage.textContent = '';
+  profileSetupMessage.classList.remove('is-error');
+  renderProfileAvatar();
+  profileSetupDialog.showModal();
+  profileDisplayName.focus();
+}
+
+function closeProfileSetup() {
+  profileSetupDialog.close();
+}
+
 function renderHomeSummary() {
   const tournament = playerData.tournament;
   const membership = playerData.memberships.find(item => item.tournaments?.id === tournament?.id)
     ?? playerData.memberships[0];
   document.querySelector('#homeSeason').textContent = tournament?.name
     ?? `${tournament?.edition_year ?? ''} Hereford Cup`.trim();
-  document.querySelector('#homeTournamentStatus').textContent = (tournament?.status ?? 'season').toUpperCase();
+  const statusLabels = { setup: 'Preseason', open: 'Open', live: 'Live', complete: 'Complete', archived: 'Archived' };
+  document.querySelector('#homeTournamentStatus').textContent = (statusLabels[tournament?.status] ?? 'Season').toUpperCase();
+  renderProfileAvatar();
   document.querySelector('#homeHandicap').textContent = playerData.profile.handicap_index ?? '—';
   document.querySelector('#homeTeam').textContent = membership?.team
     ? membership.team.charAt(0).toUpperCase() + membership.team.slice(1)
@@ -706,6 +745,37 @@ async function beginProviderSignIn(action) {
 
 document.querySelector('#googleSignIn').addEventListener('click', () => beginProviderSignIn(signInWithGoogle));
 document.querySelector('#signOutButton').addEventListener('click', async () => { await signOut(); window.location.reload(); });
+document.querySelector('#profileSetupButton').addEventListener('click', openProfileSetup);
+document.querySelector('#profileSetupClose').addEventListener('click', closeProfileSetup);
+document.querySelector('#profileSetupCancel').addEventListener('click', closeProfileSetup);
+profileSetupDialog.addEventListener('click', event => {
+  if (event.target === profileSetupDialog) closeProfileSetup();
+});
+profileSetupForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const submitButton = profileSetupForm.querySelector('[type="submit"]');
+  try {
+    submitButton.disabled = true;
+    profileSetupMessage.textContent = 'Saving…';
+    profileSetupMessage.classList.remove('is-error');
+    const values = normalizeProfileInput(profileDisplayName.value, profileHandicap.value);
+    await saveProfile(session.user.id, values.displayName, values.handicapIndex);
+    playerData.profile.display_name = values.displayName;
+    playerData.profile.handicap_index = values.handicapIndex;
+    handicapInput.value = values.handicapIndex;
+    document.querySelector('#playerName').textContent = values.displayName;
+    renderHomeSummary();
+    updateCourseHandicap();
+    profileSetupMessage.textContent = 'Profile saved.';
+    setSyncStatus('Synced');
+    window.setTimeout(closeProfileSetup, 350);
+  } catch (error) {
+    profileSetupMessage.textContent = error.message;
+    profileSetupMessage.classList.add('is-error');
+  } finally {
+    submitButton.disabled = false;
+  }
+});
 
 async function start() {
   if (!hasSupabaseConfig()) {

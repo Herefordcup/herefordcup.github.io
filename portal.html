@@ -74,8 +74,11 @@
       <section class="member-view" id="homeView" data-view="home">
         <section class="home-masthead">
           <div class="home-season-line">
-            <span id="homeSeason">HEREFORD CUP</span>
-            <span class="tournament-status" id="homeTournamentStatus">SEASON</span>
+            <span class="home-season-name"><span id="homeSeason">HEREFORD CUP</span><span class="season-status" id="homeTournamentStatus">SEASON</span></span>
+            <button class="profile-setup-button" id="profileSetupButton" type="button" aria-haspopup="dialog">
+              <span class="profile-avatar profile-avatar-small" id="profileAvatar" data-profile-avatar aria-hidden="true">HC</span>
+              <span>Edit profile</span>
+            </button>
           </div>
           <div class="home-title-row">
             <div>
@@ -163,6 +166,22 @@
       </section>
     </section>
   </main>
+
+  <dialog class="profile-dialog" id="profileSetupDialog" aria-labelledby="profileSetupTitle">
+    <form class="profile-setup-form" id="profileSetupForm" method="dialog">
+      <button class="profile-dialog-close" id="profileSetupClose" type="button" aria-label="Close profile setup">×</button>
+      <div class="profile-dialog-heading">
+        <span class="profile-avatar profile-avatar-large" id="profileDialogAvatar" data-profile-avatar aria-hidden="true">HC</span>
+        <div><p class="eyebrow">PLAYER PROFILE</p><h2 id="profileSetupTitle">Your player setup</h2></div>
+      </div>
+      <p class="profile-dialog-intro">Update your name and handicap index. Your Google profile photo appears automatically when available.</p>
+      <label>Display name<input id="profileDisplayName" name="displayName" autocomplete="name" minlength="2" maxlength="60" required></label>
+      <label>Handicap index<input id="profileHandicap" name="handicapIndex" type="number" inputmode="decimal" min="-10" max="54" step="0.1" required></label>
+      <p class="profile-help">Submitted round scores stay locked. Updating your handicap affects future course-handicap calculations.</p>
+      <p class="profile-message" id="profileSetupMessage" role="status"></p>
+      <div class="profile-dialog-actions"><button class="button" id="profileSetupCancel" type="button">Cancel</button><button class="button button-primary" type="submit">Save profile</button></div>
+    </form>
+  </dialog>
 
   <script type="module" src="src/portal.js"></script>
 </body>
