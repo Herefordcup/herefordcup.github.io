@@ -1,7 +1,8 @@
 -- Hereford Cup database schema for Supabase
 -- Run this entire migration in the Supabase SQL editor.
 
-create extension if not exists pgcrypto;
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -113,7 +114,8 @@ create or replace function public.prevent_role_escalation()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
   if old.role is distinct from new.role
-     and current_user not in ('postgres', 'service_role')
+     and session_user not in ('postgres', 'supabase_admin')
+     and coalesce(auth.role(), '') <> 'service_role'
      and not public.is_admin() then
     raise exception 'Only an administrator can change roles';
   end if;
@@ -165,5 +167,5 @@ create policy "admins manage scores" on public.scores for all to authenticated u
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 
--- After your first Google sign-in, promote yourself once in the SQL editor:
+-- After your first account sign-in, promote yourself once in the SQL editor:
 -- update public.profiles set role = 'admin' where id = '<your auth user id>';

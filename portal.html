@@ -21,11 +21,39 @@
     <section class="auth-card" id="authView">
       <div class="auth-shield"><span>H</span></div>
       <p class="eyebrow">HEREFORD CUP PLAYER ACCESS</p>
-      <h1>Your round.<br><em>Your team.</em></h1>
-      <p>Sign in to choose your course and tees, enter each hole, and see the match calculated in gross or net play.</p>
-      <button class="google-button" id="googleSignIn" type="button"><span>G</span> Continue with Google</button>
-      <p class="auth-note">Access is limited to invited Hereford Cup players.</p>
-      <div class="setup-message" id="setupMessage" hidden><strong>Backend setup pending</strong><p>The scoring portal is built. Connect the Hereford Cup Supabase project to activate player accounts.</p></div>
+      <h1 id="authTitle">Your round.<br><em>Your team.</em></h1>
+      <p id="authIntro">Sign in or create an account to join your team, follow every match, and keep your scores in one place.</p>
+
+      <div class="auth-mode" id="authModeSelector" role="tablist" aria-label="Account access">
+        <button class="auth-mode-button is-active" id="authModeSignIn" type="button" role="tab" aria-selected="true">Sign in</button>
+        <button class="auth-mode-button" id="authModeSignUp" type="button" role="tab" aria-selected="false">Create account</button>
+      </div>
+
+      <form class="email-auth-form" id="emailAuthForm" novalidate>
+        <label id="displayNameField" hidden>Display name<input id="displayName" name="displayName" autocomplete="name" maxlength="60"></label>
+        <label id="emailAddressField">Email address<input id="emailAddress" name="email" type="email" autocomplete="email" required></label>
+        <label>Password<input id="emailPassword" name="password" type="password" autocomplete="current-password" minlength="8" required></label>
+        <div class="auth-form-row">
+          <button class="forgot-password" id="forgotPassword" type="button">Forgot password?</button>
+          <button class="button button-primary" id="emailAuthSubmit" type="submit">Sign in</button>
+        </div>
+      </form>
+
+      <p class="auth-message" id="authMessage" role="status" aria-live="polite"></p>
+      <div class="auth-divider" id="authDivider"><span>or continue with</span></div>
+      <div class="provider-grid" id="providerAccess">
+        <button class="provider-button google-button" id="googleSignIn" type="button"><span aria-hidden="true">G</span> Google</button>
+      </div>
+      <p class="auth-note" id="authAccessNote">Accounts require a Hereford Cup invitation or administrator approval.</p>
+      <div class="setup-message" id="setupMessage" hidden><strong>Backend setup pending</strong><p>The account experience is built. Connect the Hereford Cup Supabase project to activate sign-in and shared scoring.</p></div>
+    </section>
+
+    <section class="auth-card" id="accessPendingView" hidden>
+      <div class="auth-shield"><span>H</span></div>
+      <p class="eyebrow">HEREFORD CUP MEMBERSHIP</p>
+      <h1>Account ready.<br><em>Access pending.</em></h1>
+      <p id="accessPendingMessage">Your account is secure. A tournament administrator must approve your Hereford Cup membership before scores and player information become available.</p>
+      <p class="auth-note">You can safely close this page and return after approval.</p>
     </section>
 
     <section class="dashboard" id="dashboardView" hidden>
