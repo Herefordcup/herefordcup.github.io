@@ -18,7 +18,7 @@ export function formatMatchStatus({ differential, holesPlayed }, totalHoles = TO
     return holesPlayed >= totalHoles ? 'Match Halved' : 'All Square';
   }
 
-  const team = differential > 0 ? 'Cardinal' : 'Silver';
+  const team = differential > 0 ? 'Blue' : 'White';
   const lead = Math.abs(differential);
   const holesRemaining = totalHoles - holesPlayed;
 

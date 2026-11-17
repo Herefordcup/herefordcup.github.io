@@ -9,6 +9,7 @@ const integrityMigrationUrl = new URL('../supabase/migrations/005_integrity_hard
 const automaticAccessMigrationUrl = new URL('../supabase/migrations/006_automatic_tournament_access.sql', import.meta.url);
 const autoPublicationMigrationUrl = new URL('../supabase/migrations/007_auto_commentary_publication.sql', import.meta.url);
 const ryderRulesMigrationUrl = new URL('../supabase/migrations/008_hereford_cup_ryder_rules.sql', import.meta.url);
+const teamLabelsMigrationUrl = new URL('../supabase/migrations/010_blue_white_team_labels.sql', import.meta.url);
 
 test('tournament access migration separates accounts from membership', async () => {
   const sql = await readFile(migrationUrl, 'utf8');
@@ -332,4 +333,13 @@ test('2027 itinerary seed omits private payment and contact details', async () =
   assert.match(sql, /Tobacco Road/i);
   assert.match(sql, /Pinehurst No\. 2/i);
   assert.doesNotMatch(sql, /Venmo|Alexander-Gilbert|235-8403|\$2,160|\$300/i);
+});
+
+test('forward migration relabels the tournament sides without changing persisted side values', async () => {
+  const sql = await readFile(teamLabelsMigrationUrl, 'utf8');
+  assert.match(sql, /create or replace function public\.create_commentary_draft/i);
+  assert.match(sql, /then 'Blue' else 'White'/i);
+  assert.match(sql, /update public\.tournament_rules[\s\S]*replace\(replace\(body, 'Cardinal', 'Blue'\), 'Silver', 'White'\)/i);
+  assert.match(sql, /update public\.match_commentaries/i);
+  assert.doesNotMatch(sql, /update[\s\S]{0,80}(?:team|side)\s*=/i);
 });

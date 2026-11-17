@@ -32,7 +32,7 @@ function deterministicResult(segment: Record<string, unknown>) {
   const holesPlayed = Number(segment.holes_played);
   const totalHoles = Number(segment.end_hole) - Number(segment.start_hole) + 1;
   if (differential === 0) return 'Match halved';
-  const winner = differential > 0 ? 'Cardinal' : 'Silver';
+  const winner = differential > 0 ? 'Blue' : 'White';
   const lead = Math.abs(differential);
   const holesRemaining = Math.max(0, totalHoles - holesPlayed);
   return holesRemaining === 0 ? `${winner} wins ${lead} Up` : `${winner} wins ${lead} & ${holesRemaining}`;
@@ -53,7 +53,7 @@ function deterministicMatchResult(segments: Array<Record<string, unknown>>) {
     return result;
   }, { cardinal: 0, silver: 0 });
   if (totals.cardinal === totals.silver) return `Match halved ${totals.cardinal}-${totals.silver}`;
-  const winner = totals.cardinal > totals.silver ? 'Cardinal' : 'Silver';
+  const winner = totals.cardinal > totals.silver ? 'Blue' : 'White';
   return `${winner} wins ${totals.cardinal}-${totals.silver}`;
 }
 
