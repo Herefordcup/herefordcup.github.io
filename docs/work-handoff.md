@@ -6,15 +6,14 @@ This document is the continuation point for a separate Hermes installation. It c
 
 ## Repository state
 
-- Repository: `https://github.com/pimentelaj/hereford-cup`
-- Production site: `https://pimentelaj.github.io/hereford-cup/`
-- Production portal: `https://pimentelaj.github.io/hereford-cup/portal.html`
-- Production admin page: `https://pimentelaj.github.io/hereford-cup/admin.html`
-- Feature branch: `feat/2027-cup-formats-commentary`
-- Base commit: `db10b9e` (`feat: add account and tournament access foundation (#2)`)
-- Verified feature commit: `a7416e796bfa584239a6c47c14908eaa150d6473`
-- Pull request: `https://github.com/pimentelaj/hereford-cup/pull/3` (open; not merged)
-- Production remains on `main`. Do not assume this branch's migrations or Edge Function are deployed.
+- Repository: `https://github.com/Herefordcup/herefordcup.github.io`
+- Production site: `https://herefordcup.github.io/`
+- Production portal: `https://herefordcup.github.io/portal.html`
+- Production admin page: `https://herefordcup.github.io/admin.html`
+- Default branch: `main`
+- Current deployed feature commit: `2c167ae3ac953ade041b6a51f89aadc8b0a55358`
+- Pull request: `https://github.com/Herefordcup/herefordcup.github.io/pull/3` (merged)
+- GitHub Pages serves `main`. Do not assume migrations `003`–`005` or the Edge Function are deployed.
 
 ## Product boundaries
 
@@ -150,10 +149,9 @@ Do not replace the publishable key with a secret/service-role key.
 ## Setup on another computer
 
 ```sh
-git clone https://github.com/pimentelaj/hereford-cup.git
-cd hereford-cup
+git clone https://github.com/Herefordcup/herefordcup.github.io.git
+cd herefordcup.github.io
 git fetch origin
-git checkout feat/2027-cup-formats-commentary
 npm test
 npm run serve
 ```
