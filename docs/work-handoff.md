@@ -12,7 +12,8 @@ This document is the continuation point for a separate Hermes installation. It c
 - Production admin page: `https://pimentelaj.github.io/hereford-cup/admin.html`
 - Feature branch: `feat/2027-cup-formats-commentary`
 - Base commit: `db10b9e` (`feat: add account and tournament access foundation (#2)`)
-- Pull request: recorded in the PR body after creation
+- Verified feature commit: `a7416e796bfa584239a6c47c14908eaa150d6473`
+- Pull request: `https://github.com/pimentelaj/hereford-cup/pull/3` (open; not merged)
 - Production remains on `main`. Do not assume this branch's migrations or Edge Function are deployed.
 
 ## Product boundaries
