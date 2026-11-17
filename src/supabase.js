@@ -216,7 +216,7 @@ export async function loadPlayerData(userId) {
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
       .limit(5),
-    supabase.from('rounds').select('*, scores(*)')
+    supabase.from('rounds').select('*, scores!scores_round_id_fkey(*)')
       .eq('user_id', userId),
   ]);
   for (const result of [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult]) {
@@ -389,7 +389,7 @@ export async function loadAdminData() {
     supabase.from('matches').select('*, match_segments(*, match_segment_players(*))').order('starts_at'),
     supabase.from('commentary_settings').select('*'),
     supabase.from('match_commentaries').select('*, matches(name)').order('created_at', { ascending: false }),
-    supabase.from('rounds').select('*, profiles(display_name), courses(name), tees(name), scores(*)').order('created_at', { ascending: false }),
+    supabase.from('rounds').select('*, profiles(display_name), courses(name), tees(name), scores!scores_round_id_fkey(*)').order('created_at', { ascending: false }),
   ]);
   for (const result of [tournaments, memberships, courses, matches, settings, commentaries, rounds]) {
     if (result.error) throw result.error;
@@ -418,7 +418,7 @@ export async function saveRound({ userId, matchId, courseId, teeId, courseHandic
   let round;
   if (matchId) {
     const { data: existing, error: lookupError } = await supabase.from('rounds')
-      .select('*, scores(*)').eq('user_id', userId).eq('match_id', matchId).maybeSingle();
+      .select('*, scores!scores_round_id_fkey(*)').eq('user_id', userId).eq('match_id', matchId).maybeSingle();
     if (lookupError) throw lookupError;
     if (existing) {
       if (existingRound && existing.id !== existingRound.id) throw new Error('The saved round changed. Reload before submitting scores.');
@@ -452,7 +452,7 @@ export async function saveRound({ userId, matchId, courseId, teeId, courseHandic
     }
   }
   const { data: refreshed, error: refreshError } = await supabase.from('rounds')
-    .select('*, scores(*)').eq('id', round.id).single();
+    .select('*, scores!scores_round_id_fkey(*)').eq('id', round.id).single();
   if (refreshError) throw refreshError;
   return refreshed;
 }
