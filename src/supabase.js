@@ -300,6 +300,91 @@ export async function saveTournamentRule({ tournamentId, title, body, sortOrder 
   return data;
 }
 
+export async function loadLegacyArchive() {
+  const supabase = await getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('legacy_editions')
+    .select('*, legacy_results(*), legacy_photos(*)')
+    .eq('published', true)
+    .order('edition_year', { ascending: true })
+    .order('sort_order', { referencedTable: 'legacy_results', ascending: true })
+    .order('sort_order', { referencedTable: 'legacy_photos', ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export function legacyPhotoUrl(storagePath) {
+  const encoded = String(storagePath ?? '').split('/').map(encodeURIComponent).join('/');
+  return `${SUPABASE_URL}/storage/v1/object/public/legacy-photos/${encoded}`;
+}
+
+export async function saveLegacyEdition({ id = null, year, venue, destination, status, winnerName, runnerUpName, finalScore, story, published }) {
+  const supabase = await getSupabase();
+  const payload = {
+    edition_year: Number(year),
+    venue: venue.trim(),
+    destination: destination.trim(),
+    status,
+    winner_name: winnerName?.trim() || null,
+    runner_up_name: runnerUpName?.trim() || null,
+    final_score: finalScore?.trim() || null,
+    story: story?.trim() || null,
+    published: Boolean(published),
+  };
+  const query = id
+    ? supabase.from('legacy_editions').update(payload).eq('id', id)
+    : supabase.from('legacy_editions').insert(payload);
+  const { data, error } = await query.select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function saveLegacyResult({ editionId, label, cardinalEntry, silverEntry, result, sortOrder }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.from('legacy_results').insert({
+    edition_id: editionId,
+    label: label.trim(),
+    cardinal_entry: cardinalEntry?.trim() || null,
+    silver_entry: silverEntry?.trim() || null,
+    result: result.trim(),
+    sort_order: Number(sortOrder || 0),
+  }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function uploadLegacyPhoto({ editionId, file, caption, sortOrder }) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file?.type ?? '')) throw new Error('Choose a JPEG, PNG, or WebP image.');
+  if (file.size > 8 * 1024 * 1024) throw new Error('Legacy photos must be 8 MB or smaller.');
+  const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[file.type];
+  const storagePath = `${editionId}/${crypto.randomUUID()}.${extension}`;
+  const supabase = await getSupabase();
+  const { error: uploadError } = await supabase.storage.from('legacy-photos').upload(storagePath, file, {
+    contentType: file.type,
+    upsert: false,
+  });
+  if (uploadError) throw uploadError;
+  const { data, error } = await supabase.from('legacy_photos').insert({
+    edition_id: editionId,
+    storage_path: storagePath,
+    caption: caption?.trim() || null,
+    sort_order: Number(sortOrder || 0),
+  }).select().single();
+  if (error) {
+    await supabase.storage.from('legacy-photos').remove([storagePath]);
+    throw error;
+  }
+  return data;
+}
+
+export async function deleteLegacyPhoto(photo) {
+  const supabase = await getSupabase();
+  const { error: storageError } = await supabase.storage.from('legacy-photos').remove([photo.storage_path]);
+  if (storageError) throw storageError;
+  const { error } = await supabase.from('legacy_photos').delete().eq('id', photo.id);
+  if (error) throw error;
+}
+
 export async function saveCommentarySettings(settings) {
   const supabase = await getSupabase();
   const { data, error } = await supabase.from('commentary_settings').upsert({
@@ -382,7 +467,7 @@ export async function correctHoleScore({ roundId, holeNumber, grossScore = null,
 
 export async function loadAdminData() {
   const supabase = await getSupabase();
-  const [tournaments, memberships, courses, matches, settings, commentaries, rounds] = await Promise.all([
+  const [tournaments, memberships, courses, matches, settings, commentaries, rounds, legacyEditions] = await Promise.all([
     supabase.from('tournaments').select('*').order('edition_year', { ascending: false }),
     supabase.from('tournament_memberships').select('*, profiles!tournament_memberships_user_id_fkey(id, display_name, handicap_index)').eq('status', 'active'),
     supabase.from('courses').select('id, name').eq('active', true).order('name'),
@@ -390,8 +475,9 @@ export async function loadAdminData() {
     supabase.from('commentary_settings').select('*'),
     supabase.from('match_commentaries').select('*, matches(name)').order('created_at', { ascending: false }),
     supabase.from('rounds').select('*, profiles(display_name), courses(name), tees(name), scores!scores_round_id_fkey(*)').order('created_at', { ascending: false }),
+    supabase.from('legacy_editions').select('*, legacy_results(*), legacy_photos(*)').order('edition_year', { ascending: true }),
   ]);
-  for (const result of [tournaments, memberships, courses, matches, settings, commentaries, rounds]) {
+  for (const result of [tournaments, memberships, courses, matches, settings, commentaries, rounds, legacyEditions]) {
     if (result.error) throw result.error;
   }
   return {
@@ -402,6 +488,7 @@ export async function loadAdminData() {
     settings: settings.data ?? [],
     commentaries: commentaries.data ?? [],
     rounds: rounds.data ?? [],
+    legacyEditions: legacyEditions.data ?? [],
   };
 }
 

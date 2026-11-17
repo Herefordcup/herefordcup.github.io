@@ -1,4 +1,6 @@
 import { applyHoleResult, calculateTeamTotals, formatMatchStatus, isMatchComplete } from './scoring.js';
+import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js';
+import { knownLegacyTrips, renderLegacyArchive } from './legacy.js';
 
 const STORAGE_KEY = 'hereford-cup-state-v1';
 const sessions = {
@@ -148,6 +150,22 @@ document.querySelector('#resetScores').addEventListener('click', () => {
 });
 
 render();
+
+async function startLegacyArchive() {
+  const target = {
+    timeline: document.querySelector('#legacyTimeline'),
+    details: document.querySelector('#legacyDetails'),
+    gallery: document.querySelector('#legacyGallery'),
+    photoUrl: legacyPhotoUrl,
+  };
+  try {
+    renderLegacyArchive({ ...target, editions: await loadLegacyArchive() });
+  } catch {
+    renderLegacyArchive({ ...target, editions: knownLegacyTrips });
+  }
+}
+
+startLegacyArchive();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(registrations => {
