@@ -123,17 +123,21 @@ Deno.serve(async request => {
       return json({ error: 'Commentary requires finalized segments' }, 409);
     }
 
-    let existingQuery = supabase
-      .from('match_commentaries')
-      .select('*')
-      .eq('match_id', match.id)
-      .eq('commentary_type', commentaryType)
-      .neq('status', 'rejected');
-    existingQuery = segmentId
-      ? existingQuery.eq('segment_id', segmentId)
-      : existingQuery.is('segment_id', null);
-    const { data: existingCommentary, error: existingError } = await existingQuery.maybeSingle();
-    if (existingError) throw existingError;
+    const findActiveCommentary = async () => {
+      let query = supabase
+        .from('match_commentaries')
+        .select('*')
+        .eq('match_id', match.id)
+        .eq('commentary_type', commentaryType)
+        .neq('status', 'hidden');
+      query = segmentId
+        ? query.eq('segment_id', segmentId)
+        : query.is('segment_id', null);
+      const { data, error } = await query.maybeSingle();
+      if (error) throw error;
+      return data;
+    };
+    const existingCommentary = await findActiveCommentary();
     if (existingCommentary) return json({ commentary: existingCommentary, reused: true });
 
     const facts = {
@@ -188,6 +192,10 @@ Deno.serve(async request => {
       target_phrase_id: phraseId,
       target_model: model,
     });
+    if (saveError?.code === '23505') {
+      const concurrentCommentary = await findActiveCommentary();
+      if (concurrentCommentary) return json({ commentary: concurrentCommentary, reused: true });
+    }
     if (saveError) throw saveError;
     return json({ commentary: saved });
   } catch (error) {

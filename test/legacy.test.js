@@ -9,6 +9,7 @@ const appScript = await readFile(new URL('src/app.js', root), 'utf8');
 const adminScript = await readFile(new URL('src/admin.js', root), 'utf8');
 const supabaseScript = await readFile(new URL('src/supabase.js', root), 'utf8');
 const migrationUrl = new URL('supabase/migrations/009_legacy_archive.sql', root);
+const hardeningMigrationUrl = new URL('supabase/migrations/012_commentary_and_legacy_hardening.sql', root);
 
 test('public site establishes the Cup in 2023 and exposes a data-backed Legacy archive', () => {
   assert.doesNotMatch(indexHtml, /EST\. 2026/);
@@ -62,4 +63,44 @@ test('legacy rendering uses text nodes for administrator-authored content', asyn
   assert.doesNotMatch(legacyScript, /innerHTML/);
   assert.match(legacyScript, /textContent/);
   assert.match(legacyScript, /replaceChildren/);
+});
+
+test('Legacy photos are private, publication-aware, and use signed URLs', async () => {
+  const sql = await readFile(hardeningMigrationUrl, 'utf8');
+  assert.match(sql, /update storage\.buckets[\s\S]*set public = false[\s\S]*legacy-photos/i);
+  assert.match(sql, /published legacy photos are readable/i);
+  assert.match(sql, /edition\.published/i);
+  assert.match(supabaseScript, /createSignedUrl\(photo\.storage_path/);
+  assert.doesNotMatch(supabaseScript, /object\/public\/legacy-photos/);
+});
+
+test('Legacy photo deletion removes metadata before attempting storage cleanup', async () => {
+  const sql = await readFile(hardeningMigrationUrl, 'utf8');
+  assert.match(sql, /function public\.delete_legacy_photo\(target_photo_id uuid\)/i);
+  assert.match(sql, /if not public\.is_admin\(\)/i);
+  assert.match(supabaseScript, /rpc\('delete_legacy_photo'/);
+  const rpcPosition = supabaseScript.indexOf("rpc('delete_legacy_photo'");
+  const removePosition = supabaseScript.indexOf("storage.from('legacy-photos').remove", rpcPosition);
+  assert.ok(rpcPosition >= 0 && removePosition > rpcPosition);
+});
+
+test('Legacy publication state is authoritative and tab controls are keyboard accessible', async () => {
+  const legacyScript = await readFile(new URL('src/legacy.js', root), 'utf8');
+  const sql = await readFile(hardeningMigrationUrl, 'utf8');
+  assert.match(sql, /alter column published set default false/i);
+  assert.doesNotMatch(adminHtml, /name="published" type="checkbox" checked/);
+  assert.doesNotMatch(appScript, /editions: knownLegacyTrips/);
+  assert.doesNotMatch(legacyScript, /editions\?\.length \? editions : knownLegacyTrips/);
+  assert.match(legacyScript, /aria-controls/);
+  assert.match(legacyScript, /ArrowLeft|ArrowRight/);
+  assert.match(legacyScript, /tabIndex/);
+});
+
+test('administrators can update and remove Legacy result rows', () => {
+  for (const fn of ['saveLegacyResult', 'deleteLegacyResult']) {
+    assert.match(supabaseScript, new RegExp(`export async function ${fn}`));
+    assert.match(adminScript, new RegExp(fn));
+  }
+  assert.match(adminHtml, /id="legacyResultList"/);
+  assert.match(adminScript, /renderLegacyResultList/);
 });

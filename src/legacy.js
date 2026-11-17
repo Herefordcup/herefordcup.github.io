@@ -14,12 +14,19 @@ function node(tag, className, text) {
 }
 
 function normalizedEditions(editions) {
-  return [...(editions?.length ? editions : knownLegacyTrips)]
+  return [...(editions ?? [])]
     .sort((left, right) => left.edition_year - right.edition_year);
 }
 
-export function renderLegacyArchive({ timeline, details, gallery, editions, photoUrl }) {
+export function renderLegacyArchive({ timeline, details, gallery, editions, photoUrl, emptyMessage = 'No published Legacy editions yet.' }) {
   const archive = normalizedEditions(editions);
+  timeline.replaceChildren();
+  details.replaceChildren();
+  gallery.replaceChildren();
+  if (!archive.length) {
+    details.append(node('p', 'legacy-pending', emptyMessage));
+    return;
+  }
   let selected = archive.find(edition => edition.status === 'planned') ?? archive.at(-1);
 
   function renderSelected() {
@@ -29,6 +36,8 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
       const active = Number(button.dataset.year) === selected.edition_year;
       button.classList.toggle('is-active', active);
       button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
+      if (active) details.setAttribute('aria-labelledby', button.id);
     });
 
     const heading = node('div', 'legacy-edition-heading');
@@ -71,7 +80,7 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
     for (const photo of [...(selected.legacy_photos ?? [])].sort((a, b) => a.sort_order - b.sort_order)) {
       const figure = node('figure', 'legacy-photo');
       const image = node('img');
-      image.src = photoUrl(photo.storage_path);
+      image.src = photoUrl(photo);
       image.alt = photo.caption || `${selected.venue} ${selected.edition_year}`;
       image.loading = 'lazy';
       figure.append(image);
@@ -80,18 +89,35 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
     }
   }
 
-  timeline.replaceChildren();
-  for (const edition of archive) {
+  const buttons = [];
+  for (const [index, edition] of archive.entries()) {
     const button = node('button', '', String(edition.edition_year));
     button.type = 'button';
+    button.id = `legacy-tab-${edition.edition_year}`;
     button.dataset.year = String(edition.edition_year);
     button.setAttribute('role', 'tab');
+    button.setAttribute('aria-controls', details.id);
     button.append(node('small', '', edition.venue));
     button.addEventListener('click', () => {
       selected = edition;
       renderSelected();
     });
+    button.addEventListener('keydown', event => {
+      let nextIndex;
+      if (event.key === 'ArrowRight') nextIndex = (index + 1) % archive.length;
+      if (event.key === 'ArrowLeft') nextIndex = (index - 1 + archive.length) % archive.length;
+      if (event.key === 'Home') nextIndex = 0;
+      if (event.key === 'End') nextIndex = archive.length - 1;
+      if (nextIndex === undefined) return;
+      event.preventDefault();
+      selected = archive[nextIndex];
+      renderSelected();
+      buttons[nextIndex].focus();
+    });
+    buttons.push(button);
     timeline.append(button);
   }
+  details.setAttribute('role', 'tabpanel');
+  details.tabIndex = 0;
   renderSelected();
 }

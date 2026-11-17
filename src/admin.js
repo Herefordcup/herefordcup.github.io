@@ -3,6 +3,7 @@ import { easternDateTimeToIso, optionalNumber } from './admin-helpers.js';
 import {
   correctHoleScore,
   deleteLegacyPhoto,
+  deleteLegacyResult,
   getCurrentSession,
   generateMatchCommentary,
   finalizeMatchResults,
@@ -156,7 +157,51 @@ function populateLegacyChoices() {
     select.replaceChildren(...options.map(option => option.cloneNode(true)));
     if (editions.some(edition => edition.id === selected)) select.value = selected;
   }
+  renderLegacyResultList();
   renderLegacyPhotoList();
+}
+
+function renderLegacyResultList() {
+  const container = document.querySelector('#legacyResultList');
+  container.replaceChildren();
+  const editionId = document.querySelector('#legacyResultEdition').value;
+  const edition = adminData.legacyEditions.find(item => item.id === editionId);
+  for (const result of [...(edition?.legacy_results ?? [])].sort((a, b) => a.sort_order - b.sort_order)) {
+    const card = document.createElement('article');
+    card.className = 'approval-card';
+    const label = document.createElement('span');
+    label.textContent = `${result.label}: ${result.result}`;
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'button';
+    edit.textContent = 'Edit result';
+    edit.addEventListener('click', () => {
+      legacyResultForm.elements.resultId.value = result.id;
+      legacyResultForm.elements.editionId.value = result.edition_id;
+      legacyResultForm.elements.label.value = result.label;
+      legacyResultForm.elements.cardinalEntry.value = result.cardinal_entry ?? '';
+      legacyResultForm.elements.silverEntry.value = result.silver_entry ?? '';
+      legacyResultForm.elements.result.value = result.result;
+      legacyResultForm.elements.sortOrder.value = result.sort_order;
+      legacyResultForm.querySelector('button[type="submit"]').textContent = 'Update result';
+    });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'button';
+    remove.textContent = 'Delete result';
+    remove.addEventListener('click', async () => {
+      if (!window.confirm('Delete this Legacy result?')) return;
+      try {
+        await deleteLegacyResult(result.id);
+        edition.legacy_results = edition.legacy_results.filter(item => item.id !== result.id);
+        renderLegacyResultList();
+      } catch (error) {
+        setMessage(document.querySelector('#legacyResultMessage'), error.message, true);
+      }
+    });
+    card.append(label, edit, remove);
+    container.append(card);
+  }
 }
 
 function hydrateLegacyEdition() {
@@ -171,7 +216,7 @@ function hydrateLegacyEdition() {
   legacyEditionForm.elements.runnerUpName.value = edition?.runner_up_name ?? '';
   legacyEditionForm.elements.finalScore.value = edition?.final_score ?? '';
   legacyEditionForm.elements.story.value = edition?.story ?? '';
-  legacyEditionForm.elements.published.checked = edition?.published ?? true;
+  legacyEditionForm.elements.published.checked = edition?.published ?? false;
 }
 
 function renderLegacyPhotoList() {
@@ -393,6 +438,7 @@ ruleForm.addEventListener('submit', async event => {
 });
 
 legacyEditionSelect.addEventListener('change', hydrateLegacyEdition);
+document.querySelector('#legacyResultEdition').addEventListener('change', renderLegacyResultList);
 document.querySelector('#legacyPhotoEdition').addEventListener('change', renderLegacyPhotoList);
 
 legacyEditionForm.addEventListener('submit', async event => {
@@ -434,6 +480,7 @@ legacyResultForm.addEventListener('submit', async event => {
   const message = document.querySelector('#legacyResultMessage');
   try {
     const saved = await saveLegacyResult({
+      id: data.get('resultId') || null,
       editionId: data.get('editionId'),
       label: data.get('label'),
       cardinalEntry: data.get('cardinalEntry'),
@@ -442,10 +489,13 @@ legacyResultForm.addEventListener('submit', async event => {
       sortOrder: data.get('sortOrder'),
     });
     const edition = adminData.legacyEditions.find(item => item.id === saved.edition_id);
-    edition.legacy_results.push(saved);
+    edition.legacy_results = [...edition.legacy_results.filter(item => item.id !== saved.id), saved];
     legacyResultForm.reset();
+    legacyResultForm.elements.resultId.value = '';
     document.querySelector('#legacyResultEdition').value = saved.edition_id;
-    setMessage(message, 'Legacy result added.');
+    legacyResultForm.querySelector('button[type="submit"]').textContent = 'Save result';
+    renderLegacyResultList();
+    setMessage(message, data.get('resultId') ? 'Legacy result updated.' : 'Legacy result added.');
   } catch (error) { setMessage(message, error.message, true); }
 });
 

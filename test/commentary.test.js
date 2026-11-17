@@ -5,6 +5,7 @@ import { composeCommentary, phraseIdsForTone } from '../src/commentary.js';
 
 const edgeFunctionUrl = new URL('../supabase/functions/generate-match-commentary/index.ts', import.meta.url);
 const autoPublicationMigrationUrl = new URL('../supabase/migrations/007_auto_commentary_publication.sql', import.meta.url);
+const commentaryLifecycleMigrationUrl = new URL('../supabase/migrations/012_commentary_and_legacy_hardening.sql', import.meta.url);
 
 test('commentary composition accepts only server-owned tone phrase identifiers', () => {
   assert.deepEqual(phraseIdsForTone('playful'), ['playful_pressure', 'playful_scoreboard']);
@@ -49,15 +50,18 @@ test('automatic commentary migration publishes AI output without weakening write
   assert.doesNotMatch(sql, /grant insert[^;]*match_commentaries[^;]*authenticated/i);
 });
 
-test('automatic commentary retries reuse an existing active recap instead of duplicating publication', async () => {
-  const [source, sql] = await Promise.all([
+test('automatic commentary retries ignore hidden recaps and recover concurrent generation', async () => {
+  const [source, initialSql, lifecycleSql] = await Promise.all([
     readFile(edgeFunctionUrl, 'utf8'),
     readFile(autoPublicationMigrationUrl, 'utf8'),
+    readFile(commentaryLifecycleMigrationUrl, 'utf8'),
   ]);
-  assert.match(sql, /create unique index[^;]*match_commentaries[^;]*post_match/is);
-  assert.match(sql, /status <> 'rejected'/i);
-  assert.match(source, /from\('match_commentaries'\)/);
-  assert.match(source, /\.neq\('status', 'rejected'\)/);
+  assert.match(initialSql, /create unique index[^;]*match_commentaries[^;]*post_match/is);
+  assert.match(lifecycleSql, /drop index if exists public\.match_commentaries_one_active_post_match/i);
+  assert.match(lifecycleSql, /status <> 'hidden'/i);
+  assert.match(source, /\.neq\('status', 'hidden'\)/);
+  assert.match(source, /saveError\?\.code === '23505'/);
+  assert.match(source, /return json\(\{ commentary: concurrentCommentary, reused: true \}\)/);
   assert.match(source, /return json\(\{ commentary: existingCommentary, reused: true \}\)/);
 });
 
