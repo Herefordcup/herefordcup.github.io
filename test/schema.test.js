@@ -10,6 +10,7 @@ const automaticAccessMigrationUrl = new URL('../supabase/migrations/006_automati
 const autoPublicationMigrationUrl = new URL('../supabase/migrations/007_auto_commentary_publication.sql', import.meta.url);
 const ryderRulesMigrationUrl = new URL('../supabase/migrations/008_hereford_cup_ryder_rules.sql', import.meta.url);
 const teamLabelsMigrationUrl = new URL('../supabase/migrations/010_blue_white_team_labels.sql', import.meta.url);
+const standardFormatsRuleMigrationUrl = new URL('../supabase/migrations/011_standard_ryder_formats_rule.sql', import.meta.url);
 
 test('tournament access migration separates accounts from membership', async () => {
   const sql = await readFile(migrationUrl, 'utf8');
@@ -342,4 +343,13 @@ test('forward migration relabels the tournament sides without changing persisted
   assert.match(sql, /update public\.tournament_rules[\s\S]*replace\(replace\(body, 'Cardinal', 'Blue'\), 'Silver', 'White'\)/i);
   assert.match(sql, /update public\.match_commentaries/i);
   assert.doesNotMatch(sql, /update[\s\S]{0,80}(?:team|side)\s*=/i);
+});
+
+test('published Ryder formats are limited to singles, four-ball, and foursomes', async () => {
+  const sql = await readFile(standardFormatsRuleMigrationUrl, 'utf8');
+  assert.match(sql, /Singles/i);
+  assert.match(sql, /Four-ball/i);
+  assert.match(sql, /Foursomes/i);
+  assert.doesNotMatch(sql, /Scramble|Shamble|Chapman/i);
+  assert.match(sql, /where[\s\S]*slug = 'hereford-cup-2027'/i);
 });
