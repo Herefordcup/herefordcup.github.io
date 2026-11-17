@@ -384,7 +384,7 @@ export async function loadAdminData() {
   const supabase = await getSupabase();
   const [tournaments, memberships, courses, matches, settings, commentaries, rounds] = await Promise.all([
     supabase.from('tournaments').select('*').order('edition_year', { ascending: false }),
-    supabase.from('tournament_memberships').select('*, profiles(id, display_name, handicap_index)').eq('status', 'active'),
+    supabase.from('tournament_memberships').select('*, profiles!tournament_memberships_user_id_fkey(id, display_name, handicap_index)').eq('status', 'active'),
     supabase.from('courses').select('id, name').eq('active', true).order('name'),
     supabase.from('matches').select('*, match_segments(*, match_segment_players(*))').order('starts_at'),
     supabase.from('commentary_settings').select('*'),
