@@ -1,5 +1,6 @@
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, hasSupabaseConfig } from './config.js';
 import { selectActiveTournament } from './member.js';
+import { validateProfilePhoto } from './profile.js';
 
 let client;
 
@@ -186,10 +187,12 @@ export async function loadPlayerData(userId) {
       statistics: [],
       commentaries: [],
       rounds: [],
+      players: [],
+      profilePhotoUrls: {},
     };
   }
 
-  const [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult] = await Promise.all([
+  const [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult, playersResult] = await Promise.all([
     supabase.from('match_players')
       .select('team, matches!inner(*, courses(name)), profiles(display_name)')
       .eq('user_id', userId)
@@ -218,9 +221,27 @@ export async function loadPlayerData(userId) {
       .limit(5),
     supabase.from('rounds').select('*, scores!scores_round_id_fkey(*)')
       .eq('user_id', userId),
+    supabase.from('tournament_memberships')
+      .select('user_id, status, role, team, joined_at, profiles(display_name, handicap_index, profile_photo_path)')
+      .eq('tournament_id', tournament.id)
+      .eq('status', 'active'),
   ]);
-  for (const result of [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult]) {
+  for (const result of [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult, playersResult]) {
     if (result.error) throw result.error;
+  }
+  const photoPaths = [...new Set([
+    profileResult.data?.profile_photo_path,
+    ...(playersResult.data ?? []).map(player => player.profiles?.profile_photo_path),
+  ].filter(Boolean))];
+  const profilePhotoUrls = {};
+  if (photoPaths.length) {
+    const { data: signedPhotos, error: signedPhotosError } = await supabase.storage
+      .from('profile-photos')
+      .createSignedUrls(photoPaths, 60 * 60);
+    if (signedPhotosError) throw signedPhotosError;
+    for (const photo of signedPhotos ?? []) {
+      if (photo.signedUrl) profilePhotoUrls[photo.path] = photo.signedUrl;
+    }
   }
   return {
     profile: profileResult.data,
@@ -235,7 +256,66 @@ export async function loadPlayerData(userId) {
     statistics: statisticsResult.data ?? [],
     commentaries: commentaryResult.data ?? [],
     rounds: roundsResult.data ?? [],
+    players: playersResult.data ?? [],
+    profilePhotoUrls,
   };
+}
+
+export async function uploadProfilePhoto(file) {
+  const { extension } = validateProfilePhoto(file);
+  const supabase = await getSupabase();
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  const user = userData.user;
+  if (!user) throw new Error('Sign in before uploading a profile picture.');
+
+  const { data: profile, error: profileError } = await supabase.from('profiles')
+    .select('profile_photo_path')
+    .eq('id', user.id)
+    .single();
+  if (profileError) throw profileError;
+
+  const path = `${user.id}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await supabase.storage.from('profile-photos').upload(path, file, {
+    cacheControl: '3600',
+    contentType: file.type,
+    upsert: false,
+  });
+  if (uploadError) throw uploadError;
+
+  const { error: updateError } = await supabase.from('profiles')
+    .update({ profile_photo_path: path })
+    .eq('id', user.id);
+  if (updateError) {
+    await supabase.storage.from('profile-photos').remove([path]);
+    throw updateError;
+  }
+
+  if (profile?.profile_photo_path && profile.profile_photo_path !== path) {
+    await supabase.storage.from('profile-photos').remove([profile.profile_photo_path]);
+  }
+  return path;
+}
+
+export async function removeProfilePhoto() {
+  const supabase = await getSupabase();
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  const user = userData.user;
+  if (!user) throw new Error('Sign in before removing a profile picture.');
+
+  const { data: profile, error: profileError } = await supabase.from('profiles')
+    .select('profile_photo_path')
+    .eq('id', user.id)
+    .single();
+  if (profileError) throw profileError;
+  if (!profile?.profile_photo_path) return;
+
+  const { error: updateError } = await supabase.from('profiles')
+    .update({ profile_photo_path: null })
+    .eq('id', user.id);
+  if (updateError) throw updateError;
+  await supabase.storage.from('profile-photos').remove([profile.profile_photo_path]);
 }
 
 export async function saveProfile(userId, displayName, handicapIndex) {

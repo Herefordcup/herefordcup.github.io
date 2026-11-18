@@ -26,8 +26,15 @@ test('home profile control opens an accessible setup dialog', () => {
   for (const id of ['profileSetupButton', 'profileSetupDialog', 'profileSetupForm', 'profileDisplayName', 'profileHandicap', 'profileAvatar']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   }
-  assert.match(html, /Update your name and handicap index/);
+  assert.match(html, /Update your name, handicap index, and player picture/);
   assert.match(portalScript, /profileSetupDialog\.showModal\(\)/);
   assert.match(portalScript, /await saveProfile\(/);
   assert.match(portalScript, /renderProfileAvatar/);
+});
+
+test('profile setup loads a fresh script and has a non-dialog fallback', () => {
+  assert.match(html, /src="src\/portal\.js\?v=profile-photos-1"/);
+  assert.match(html, /href="home\.css\?v=profile-photos-1"/);
+  assert.match(portalScript, /typeof profileSetupDialog\.showModal === 'function'/);
+  assert.match(portalScript, /profileSetupDialog\.setAttribute\('open',\s*''\)/);
 });

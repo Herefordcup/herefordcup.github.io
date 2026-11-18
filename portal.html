@@ -7,9 +7,9 @@
   <meta name="description" content="Hereford Cup player scoring portal">
   <title>Player Portal · Hereford Cup</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="portal.css">
-  <link rel="stylesheet" href="home.css">
+  <link rel="stylesheet" href="styles.css?v=profile-photos-1">
+  <link rel="stylesheet" href="portal.css?v=profile-photos-1">
+  <link rel="stylesheet" href="home.css?v=profile-photos-1">
 </head>
 <body class="portal-body">
   <div class="top-rule"></div>
@@ -161,8 +161,14 @@
       </section>
 
       <section class="member-view" id="moreView" data-view="more" hidden>
-        <div class="view-heading"><p class="eyebrow">TOURNAMENT GUIDE</p><h2>Rules</h2></div>
-        <div class="member-card"><div id="rulesList" class="rules-list"><p class="empty-panel">Rules will appear after the administrator publishes them.</p></div></div>
+        <div class="view-heading"><p class="eyebrow">TOURNAMENT GUIDE</p><h2>More</h2></div>
+        <div class="more-grid">
+          <section class="member-card players-card"><div class="section-kicker">MEMBERS</div><h2>Players</h2><p class="member-card-intro">The active Hereford Cup roster, team assignments, handicaps, and finalized rounds.</p><div id="playersList" class="players-list"><p class="empty-panel">Players will appear when the roster is published.</p></div></section>
+          <div class="more-side-stack">
+            <a class="member-card more-link-card" href="past-trips.html"><div class="section-kicker">CUP HISTORY</div><h2>Past Trips</h2><p>Revisit every destination, champion, result, story, and moment captured.</p><span class="text-button">Open the full archive →</span></a>
+            <section class="member-card"><div class="section-kicker">TOURNAMENT GUIDE</div><h2>Rules</h2><div id="rulesList" class="rules-list"><p class="empty-panel">Rules will appear after the administrator publishes them.</p></div></section>
+          </div>
+        </div>
       </section>
     </section>
   </main>
@@ -174,7 +180,12 @@
         <span class="profile-avatar profile-avatar-large" id="profileDialogAvatar" data-profile-avatar aria-hidden="true">HC</span>
         <div><p class="eyebrow">PLAYER PROFILE</p><h2 id="profileSetupTitle">Your player setup</h2></div>
       </div>
-      <p class="profile-dialog-intro">Update your name and handicap index. Your Google profile photo appears automatically when available.</p>
+      <p class="profile-dialog-intro">Update your name, handicap index, and player picture. If you do not upload one, your Google photo or initials are used.</p>
+      <div class="profile-photo-controls">
+        <label class="button profile-photo-picker">Choose picture<input class="profile-photo-input" id="profilePhotoInput" type="file" accept="image/jpeg,image/png,image/webp"></label>
+        <button class="text-button" id="profilePhotoRemove" type="button">Remove uploaded picture</button>
+        <small>JPG, PNG, or WebP · maximum 5 MB</small>
+      </div>
       <label>Display name<input id="profileDisplayName" name="displayName" autocomplete="name" minlength="2" maxlength="60" required></label>
       <label>Handicap index<input id="profileHandicap" name="handicapIndex" type="number" inputmode="decimal" min="-10" max="54" step="0.1" required></label>
       <p class="profile-help">Submitted round scores stay locked. Updating your handicap affects future course-handicap calculations.</p>
@@ -183,6 +194,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="src/portal.js"></script>
+  <script type="module" src="src/portal.js?v=profile-photos-1"></script>
 </body>
 </html>

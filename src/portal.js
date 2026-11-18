@@ -1,13 +1,14 @@
-import { courseHandicapForTee, scoreIndividualHoleForSegment } from './golf.js';
+import { courseHandicapForTee, scoreIndividualHoleForSegment } from './golf.js?v=course-ratings-1';
 import { matchPoints } from './scoring.js';
 import { formatSegmentLabel, individualEntryBlockReason, segmentHoleCount } from './formats.js';
 import { summarizeLeagueStats, summarizePlayerStats } from './stats.js';
 import { assertRoundAssignment, mergePersistedScores, unsavedScoreRows } from './round-entry.js';
 import { formatHomeDate, formatMatchupPlayers, orderHomeMatches } from './home.js';
-import { avatarInitials, normalizeProfileInput, profileAvatarUrl } from './profile.js';
+import { avatarInitials, normalizeProfileInput, profileAvatarUrl, validateProfilePhoto } from './profile.js';
 import {
   assignedSegmentsForPlayer,
   nextUpcomingAssignment,
+  playerDirectoryEntries,
   segmentRelationships,
 } from './member.js';
 import { hasSupabaseConfig } from './config.js';
@@ -17,6 +18,7 @@ import {
   hasActiveTournamentMembership,
   loadPlayerData,
   requestPasswordReset,
+  removeProfilePhoto,
   saveProfile,
   saveRound,
   setNewPassword,
@@ -24,6 +26,7 @@ import {
   signInWithGoogle,
   signOut,
   signUpWithEmail,
+  uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
 } from './supabase.js';
@@ -60,6 +63,8 @@ const profileSetupDialog = document.querySelector('#profileSetupDialog');
 const profileSetupForm = document.querySelector('#profileSetupForm');
 const profileDisplayName = document.querySelector('#profileDisplayName');
 const profileHandicap = document.querySelector('#profileHandicap');
+const profilePhotoInput = document.querySelector('#profilePhotoInput');
+const profilePhotoRemove = document.querySelector('#profilePhotoRemove');
 const profileSetupMessage = document.querySelector('#profileSetupMessage');
 
 let session;
@@ -141,7 +146,9 @@ function showMemberView(viewName) {
 
 function renderProfileAvatar() {
   const name = playerData?.profile?.display_name || session?.user?.user_metadata?.full_name || 'Golfer';
-  const avatarUrl = profileAvatarUrl(session?.user?.user_metadata);
+  const uploadedPath = playerData?.profile?.profile_photo_path;
+  const avatarUrl = playerData?.profilePhotoUrls?.[uploadedPath] || profileAvatarUrl(session?.user?.user_metadata);
+  profilePhotoRemove.hidden = !uploadedPath;
   document.querySelectorAll('[data-profile-avatar]').forEach(avatar => {
     avatar.replaceChildren();
     if (avatarUrl) {
@@ -159,15 +166,24 @@ function renderProfileAvatar() {
 function openProfileSetup() {
   profileDisplayName.value = playerData.profile.display_name || session.user.user_metadata?.full_name || '';
   profileHandicap.value = playerData.profile.handicap_index ?? '';
+  profilePhotoInput.value = '';
   profileSetupMessage.textContent = '';
   profileSetupMessage.classList.remove('is-error');
   renderProfileAvatar();
-  profileSetupDialog.showModal();
+  if (typeof profileSetupDialog.showModal === 'function') {
+    if (!profileSetupDialog.open) profileSetupDialog.showModal();
+  } else {
+    profileSetupDialog.setAttribute('open', '');
+  }
   profileDisplayName.focus();
 }
 
 function closeProfileSetup() {
-  profileSetupDialog.close();
+  if (typeof profileSetupDialog.close === 'function' && profileSetupDialog.open) {
+    profileSetupDialog.close();
+  } else {
+    profileSetupDialog.removeAttribute('open');
+  }
 }
 
 function renderHomeSummary() {
@@ -352,6 +368,42 @@ function renderStats() {
   appendStat(homePlayerContainer, 'BEST TO PAR', mine.bestToPar);
 }
 
+function renderPlayers() {
+  const container = document.querySelector('#playersList');
+  const players = playerDirectoryEntries(playerData.players, playerData.statistics);
+  container.replaceChildren();
+  if (!players.length) {
+    container.append(element('p', 'empty-panel', 'Players will appear when the roster is published.'));
+    return;
+  }
+  for (const player of players) {
+    const card = element('article', `player-directory-card${player.userId === session.user.id ? ' is-you' : ''}`);
+    const avatar = element('span', 'profile-avatar player-directory-avatar', avatarInitials(player.displayName));
+    const photoUrl = playerData.profilePhotoUrls?.[player.photoPath];
+    if (photoUrl) {
+      const image = document.createElement('img');
+      image.src = photoUrl;
+      image.alt = '';
+      image.referrerPolicy = 'no-referrer';
+      avatar.replaceChildren(image);
+    }
+    avatar.setAttribute('aria-hidden', 'true');
+    const identity = element('div', 'player-directory-identity');
+    const nameRow = element('div', 'player-directory-name');
+    nameRow.append(element('strong', '', player.displayName));
+    if (player.userId === session.user.id) nameRow.append(element('span', 'player-you-badge', 'You'));
+    identity.append(nameRow, element('small', '', `${player.team} · ${player.role}`));
+    const metrics = element('div', 'player-directory-metrics');
+    const handicap = element('span');
+    handicap.append(element('small', '', 'HANDICAP'), element('strong', '', player.handicapIndex ?? '—'));
+    const rounds = element('span');
+    rounds.append(element('small', '', 'ROUNDS'), element('strong', '', player.rounds));
+    metrics.append(handicap, rounds);
+    card.append(avatar, identity, metrics);
+    container.append(card);
+  }
+}
+
 function renderRules() {
   const container = document.querySelector('#rulesList');
   container.replaceChildren();
@@ -387,6 +439,7 @@ function renderMemberHome() {
   renderRecentResults();
   renderCup();
   renderStats();
+  renderPlayers();
   renderRules();
   renderCommentary();
   showMemberView('home');
@@ -748,6 +801,48 @@ document.querySelector('#signOutButton').addEventListener('click', async () => {
 document.querySelector('#profileSetupButton').addEventListener('click', openProfileSetup);
 document.querySelector('#profileSetupClose').addEventListener('click', closeProfileSetup);
 document.querySelector('#profileSetupCancel').addEventListener('click', closeProfileSetup);
+profilePhotoInput.addEventListener('change', async () => {
+  const file = profilePhotoInput.files?.[0];
+  if (!file) return;
+  try {
+    validateProfilePhoto(file);
+    profilePhotoInput.disabled = true;
+    profilePhotoRemove.disabled = true;
+    profileSetupMessage.textContent = 'Uploading picture…';
+    profileSetupMessage.classList.remove('is-error');
+    await uploadProfilePhoto(file);
+    playerData = await loadPlayerData(session.user.id);
+    renderMemberPage();
+    profileSetupMessage.textContent = 'Picture uploaded.';
+    setSyncStatus('Synced');
+  } catch (error) {
+    profileSetupMessage.textContent = error.message;
+    profileSetupMessage.classList.add('is-error');
+  } finally {
+    profilePhotoInput.value = '';
+    profilePhotoInput.disabled = false;
+    profilePhotoRemove.disabled = false;
+  }
+});
+profilePhotoRemove.addEventListener('click', async () => {
+  try {
+    profilePhotoInput.disabled = true;
+    profilePhotoRemove.disabled = true;
+    profileSetupMessage.textContent = 'Removing picture…';
+    profileSetupMessage.classList.remove('is-error');
+    await removeProfilePhoto();
+    playerData = await loadPlayerData(session.user.id);
+    renderMemberPage();
+    profileSetupMessage.textContent = 'Uploaded picture removed.';
+    setSyncStatus('Synced');
+  } catch (error) {
+    profileSetupMessage.textContent = error.message;
+    profileSetupMessage.classList.add('is-error');
+  } finally {
+    profilePhotoInput.disabled = false;
+    profilePhotoRemove.disabled = false;
+  }
+});
 profileSetupDialog.addEventListener('click', event => {
   if (event.target === profileSetupDialog) closeProfileSetup();
 });

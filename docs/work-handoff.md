@@ -97,7 +97,7 @@ Edge Function:
 
 All times use the Eastern timezone.
 
-- Thursday, March 18: Tobacco Road fun round at 1:00 PM; Thistle Dhu at 7:00 PM; dinner at The Deuce.
+- Thursday, March 18: Tobacco Road at 1:00 PM; Thistle Dhu at 7:00 PM; dinner at The Deuce.
 - Friday, March 19: Pinehurst No. 3 at 8:00 AM; Pinehurst No. 4 at 2:00 PM; dinner at Pinehurst Brewing Company.
 - Saturday, March 20: Pinehurst No. 2 at 10:00–10:30 AM; long drive at 4:00 PM; The Cradle at 6:00 PM; dinner.
 - Sunday, March 21: Pinehurst No. 10 at 7:30–8:00 AM; walking only.
@@ -108,10 +108,9 @@ All times use the Eastern timezone.
 - Pinehurst currently lists Nos. 1–11 plus The Cradle.
 - Pinehurst No. 7 closes January 18, 2027 and is expected to reopen in late July 2027. It is inactive for this event, and pre-renovation tees are intentionally not seeded as event-ready data.
 - Pinehurst No. 11 opens March 29, 2027, after the event. It is inactive and has no invented scorecard data.
-- Pinehurst No. 2 and No. 3 current Pinehurst card lengths conflict with their USGA registered rows. Their current hole geometry is seeded, but ratings are null until confirmed.
-- Pinehurst No. 5 Gold has conflicting current 6,823/6,828-yard official rows. The live 6,823-yard geometry is retained without attaching the 6,828-yard rating.
-- Pinehurst No. 9 reopened after an August 2026 renovation. Current hole geometry is seeded; stale/mismatched rating records are not attached.
-- The Cradle current Pinehurst card is 789 yards, while USGA ratings refer to 766 yards. The 789-yard course is seeded unrated.
+- Current USGA NCRDB ratings and slopes are supplied for every active seeded tee through forward migration `015_current_course_ratings.sql`; the migration preserves existing tee IDs and scorecard hole geometry while recording the NCRDB tee name and registered length on each corrected tee.
+- Where Pinehurst scorecard totals differ from the live USGA NCRDB registered length, the mapping is explicit in `tees.source_notes` rather than hidden. Net-handicap calculations use the rating row's `rating_par` when it differs from the retained scorecard par.
+- Pinehurst No. 7 remains inactive until its 2027 renovation is complete, and No. 11 opens after the event; neither has event-ready tee geometry to rate.
 - Tobacco Road's named tees have no verified color mapping. Do not invent colors. Its first-party single-row card conflicts with the detailed current rating listings, so provenance notes remain attached.
 - An unrated tee is labeled `Rating pending`. Gross scoring can use it; net scoring is blocked until rating and slope are confirmed.
 
