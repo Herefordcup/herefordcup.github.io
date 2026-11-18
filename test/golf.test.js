@@ -39,6 +39,16 @@ test('handicapStrokesForHole allocates full rotations and the remainder by strok
   assert.equal(handicapStrokesForHole(7, 8), 0);
 });
 
+test('plus course handicaps add strokes back on the highest stroke-index holes', () => {
+  assert.equal(handicapStrokesForHole(-2, 16), 0);
+  assert.equal(handicapStrokesForHole(-2, 17), -1);
+  assert.equal(handicapStrokesForHole(-2, 18), -1);
+  assert.equal(handicapStrokesForHole(-20, 16), -1);
+  assert.equal(handicapStrokesForHole(-20, 17), -2);
+  assert.equal(handicapStrokesForHole(-20, 18), -2);
+  assert.equal(netScore(4, -2, 18), 5);
+});
+
 test('netScore subtracts allocated handicap strokes in net play', () => {
   assert.equal(netScore(6, 20, 2), 4);
   assert.equal(netScore(5, 7, 8), 5);

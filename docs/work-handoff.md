@@ -79,10 +79,12 @@ Edge Function:
 - Added atomic administrator match-plan saving with format cardinality, unique-player/order, and side validation; tournament membership remains the trusted source for each player's Cardinal/Silver team. Direct authenticated segment writes are revoked.
 - Added the March 18–21, 2027 itinerary without lodging price, payment handle, deposit amount, shuttle phone number, or other private trip details.
 - Added Tobacco Road and the current Pinehurst roster with current hole geometry where authoritative data was available.
-- Added rating categories so men's and women's ratings can coexist for one named tee.
+- Added rating categories so authoritative tee geometry and rating provenance remain explicit. Migration `016_male_only_tees.sql` removes unused women's rating rows for this all-male event, fails closed if a historical round references one, prevents new women's rows, and the player portal filters them as defense in depth.
 - Preserved official-source conflicts rather than joining mismatched ratings to current hole rows.
 - Added an enabled, administrator-controlled AI recap workflow with Clean/Playful/Ruthless tones, anonymous deterministic result facts, template-constrained server-side generation, mandatory draft approval, edit, hide, and approved member display.
 - Added allowance-aware mixed gross/net display for individual-score-compatible segments. Scramble, Foursomes, and Chapman remain plannable but are blocked in individual score entry with a clear team-score limitation.
+- Clarified that an unassigned round is a standalone gross scorecard. Assigned matches use each administrator-defined segment's format, gross/net mode, hole range, and explicit allowance. The portal now calculates and displays the selected tee's actual course handicap even when the active segment is gross; gross holes ignore it and net holes apply it.
+- Added correct negative/plus course-handicap stroke allocation: plus players give strokes back beginning with stroke index 18.
 - Added a validated `SECURITY DEFINER` administrator result workflow. It records one authoritative final differential/holes-played result per segment, verifies complete coherent rounds for individual-score-compatible assignments, finalizes the match, and produces Cup points and official statistics. This does not fabricate player scores for team-score formats.
 - Course rating and slope are nullable in the administrator form, and match datetime-local values are interpreted explicitly in `America/New_York`.
 - Kept all AI calculations out of authoritative scoring.

@@ -33,7 +33,7 @@ test('home profile control opens an accessible setup dialog', () => {
 });
 
 test('profile setup loads a fresh script and has a non-dialog fallback', () => {
-  assert.match(html, /src="src\/portal\.js\?v=member-directory-1"/);
+  assert.match(html, /src="src\/portal\.js\?v=handicap-scoring-1"/);
   assert.match(html, /href="home\.css\?v=profile-photos-1"/);
   assert.match(portalScript, /typeof profileSetupDialog\.showModal === 'function'/);
   assert.match(portalScript, /profileSetupDialog\.setAttribute\('open',\s*''\)/);

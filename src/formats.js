@@ -18,6 +18,11 @@ export function formatSegmentLabel(segment) {
   return `Holes ${segment.startHole}–${segment.endHole} · ${format} · ${scoring}${allowance} · ${Number(segment.pointValue)} pts`;
 }
 
+export function assignedRoundScoringMode(match, segments = []) {
+  if (segments.length) return segments.some(segment => segment.scoring_mode === 'net') ? 'net' : 'gross';
+  return match?.scoring_mode === 'net' ? 'net' : 'gross';
+}
+
 export function individualEntryBlockReason(segments = []) {
   const teamScoreFormats = new Set(['scramble', 'foursomes', 'chapman']);
   if (!segments.some(segment => teamScoreFormats.has(segment.format))) return null;

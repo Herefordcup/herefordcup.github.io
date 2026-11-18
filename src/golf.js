@@ -16,10 +16,13 @@ export function courseHandicapForTee(handicapIndex, tee, scoringMode = 'net') {
 }
 
 export function handicapStrokesForHole(courseHandicap, strokeIndex) {
-  const handicap = Math.max(0, Math.round(Number(courseHandicap)));
+  const handicap = Math.round(Number(courseHandicap));
   const index = Number(strokeIndex);
   if (!Number.isInteger(index) || index < 1 || index > 18) throw new RangeError('Stroke index must be 1 through 18');
-  return Math.floor(handicap / 18) + (index <= handicap % 18 ? 1 : 0);
+  if (handicap >= 0) return Math.floor(handicap / 18) + (index <= handicap % 18 ? 1 : 0);
+  const plusHandicap = Math.abs(handicap);
+  const strokesGiven = Math.floor(plusHandicap / 18) + (index > 18 - (plusHandicap % 18) ? 1 : 0);
+  return strokesGiven ? -strokesGiven : 0;
 }
 
 export function netScore(grossScore, courseHandicap, strokeIndex) {
