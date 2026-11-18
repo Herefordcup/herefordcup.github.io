@@ -99,11 +99,15 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
 
     for (const photo of [...(selected.legacy_photos ?? [])].sort((a, b) => a.sort_order - b.sort_order)) {
       const figure = node('figure', 'legacy-photo');
+      const openButton = node('button', 'legacy-photo-open');
+      openButton.type = 'button';
+      openButton.setAttribute('aria-label', `View ${photo.caption || `${selected.venue} ${selected.edition_year}`} full size`);
       const image = node('img');
       image.src = photoUrl(photo);
       image.alt = photo.caption || `${selected.venue} ${selected.edition_year}`;
       image.loading = 'lazy';
-      figure.append(image);
+      openButton.append(image);
+      figure.append(openButton);
       if (photo.caption) figure.append(node('figcaption', '', photo.caption));
       gallery.append(figure);
     }

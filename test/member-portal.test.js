@@ -176,6 +176,32 @@ test('partial match scoring resumes from persisted immutable scores and submits 
   ), /persisted course and tee/i);
 });
 
+test('standalone rounds can select 18 holes, the front nine, or the back nine', async () => {
+  const { holeNumbersForRound } = await import('../src/round-entry.js');
+  assert.deepEqual(holeNumbersForRound('18'), Array.from({ length: 18 }, (_, index) => index + 1));
+  assert.deepEqual(holeNumbersForRound('front9'), Array.from({ length: 9 }, (_, index) => index + 1));
+  assert.deepEqual(holeNumbersForRound('back9'), Array.from({ length: 9 }, (_, index) => index + 10));
+});
+
+test('assigned match segments determine the playable holes instead of the standalone selection', async () => {
+  const { holeNumbersForRound } = await import('../src/round-entry.js');
+  const segments = [
+    { start_hole: 1, end_hole: 6 },
+    { start_hole: 7, end_hole: 9 },
+  ];
+  assert.deepEqual(holeNumbersForRound('back9', segments), Array.from({ length: 9 }, (_, index) => index + 1));
+});
+
+test('scorecard setup includes an 18-hole, front-nine, and back-nine selector', () => {
+  assert.match(html, /How many holes\?<select id="holeRangeSelect">/);
+  assert.match(html, /<option value="18">18 holes<\/option>/);
+  assert.match(html, /<option value="front9">Front 9 \(holes 1–9\)<\/option>/);
+  assert.match(html, /<option value="back9">Back 9 \(holes 10–18\)<\/option>/);
+  assert.match(portalScript, /holeNumbersForRound\(holeRangeSelect\.value, selectedMatchSegments\(\)\)/);
+  assert.match(html, /src="src\/portal\.js\?v=round-holes-1"/);
+  assert.match(portalScript, /from '\.\/round-entry\.js\?v=round-holes-1'/);
+});
+
 test('round score embeds name the intended foreign key after integrity hardening adds a second relationship', () => {
   const embeds = [...supabaseScript.matchAll(/scores(?:![a-z0-9_]+)?\(\*\)/g)].map(match => match[0]);
   assert.equal(embeds.length, 4);

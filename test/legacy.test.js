@@ -7,6 +7,7 @@ const indexHtml = await readFile(new URL('index.html', root), 'utf8');
 const portalHtml = await readFile(new URL('portal.html', root), 'utf8');
 const pastTripsHtml = await readFile(new URL('past-trips.html', root), 'utf8');
 const pastTripsScript = await readFile(new URL('src/past-trips.js', root), 'utf8');
+const legacyScript = await readFile(new URL('src/legacy.js', root), 'utf8');
 const adminHtml = await readFile(new URL('admin.html', root), 'utf8');
 const appScript = await readFile(new URL('src/app.js', root), 'utf8');
 const adminScript = await readFile(new URL('src/admin.js', root), 'utf8');
@@ -32,6 +33,19 @@ test('More links to a full Past Trips page with stories, results, and moments', 
   assert.match(pastTripsHtml, /MOMENTS CAPTURED/i);
   assert.match(pastTripsScript, /loadLegacyArchive/);
   assert.match(pastTripsScript, /renderLegacyArchive/);
+});
+
+test('uploaded Past Trips photos open in an accessible full-view dialog', () => {
+  for (const id of ['legacyPhotoDialog', 'legacyPhotoFull', 'legacyPhotoCaption', 'legacyPhotoClose']) {
+    assert.match(pastTripsHtml, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(legacyScript, /legacy-photo-open/);
+  assert.match(legacyScript, /View .* full size/);
+  assert.match(pastTripsScript, /showModal\(\)/);
+  assert.match(pastTripsScript, /legacyPhotoDialog\.close\(\)/);
+  assert.match(pastTripsHtml, /href="past-trips\.css\?v=photo-lightbox-1"/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=photo-lightbox-1"/);
+  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=photo-lightbox-1'/);
 });
 
 test('legacy schema is publicly readable, admin-write-only, and seeds the known trips without fabricated winners', async () => {

@@ -135,6 +135,8 @@
             <label>Handicap index<input id="handicapIndex" type="number" inputmode="decimal" min="-10" max="54" step="0.1" placeholder="0.0"></label>
             <div class="calculated-handicap">Course handicap <strong id="courseHandicap">—</strong></div>
             <label>Assigned match<select id="matchSelect"><option value="">Standalone gross scorecard</option></select></label>
+            <label>How many holes?<select id="holeRangeSelect"><option value="18">18 holes</option><option value="front9">Front 9 (holes 1–9)</option><option value="back9">Back 9 (holes 10–18)</option></select></label>
+            <p class="auth-note hole-range-help">Standalone rounds can use 18 holes, the front nine, or the back nine. Assigned matches use their configured hole ranges.</p>
             <div class="mode-grid"><div><small>FORMAT</small><strong id="matchFormat">Individual</strong></div><div><small>SCORING</small><strong id="scoringMode">Gross</strong></div></div>
             <p class="auth-note" id="scoreModeHelp">No assigned match uses a standalone gross scorecard. Assigned matches follow the format and gross or net scoring set for each hole range.</p>
           </aside>
@@ -195,6 +197,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="src/portal.js?v=handicap-scoring-1"></script>
+  <script type="module" src="src/portal.js?v=round-holes-1"></script>
 </body>
 </html>
