@@ -11,7 +11,8 @@ export function calculateCourseHandicap(handicapIndex, slope, rating, par) {
 export function courseHandicapForTee(handicapIndex, tee, scoringMode = 'net') {
   if (scoringMode === 'gross') return 0;
   if (!tee || tee.rating === null || tee.rating === undefined || tee.slope === null || tee.slope === undefined) return null;
-  return calculateCourseHandicap(handicapIndex, tee.slope, tee.rating, tee.par);
+  const ratingPar = tee.rating_par ?? tee.ratingPar ?? tee.par;
+  return calculateCourseHandicap(handicapIndex, tee.slope, tee.rating, ratingPar);
 }
 
 export function handicapStrokesForHole(courseHandicap, strokeIndex) {

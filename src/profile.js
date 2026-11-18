@@ -16,6 +16,20 @@ export function avatarInitials(displayName) {
   return `${parts[0][0]}${parts.length > 1 ? parts.at(-1)[0] : ''}`.toUpperCase();
 }
 
+export function validateProfilePhoto(file) {
+  const extensions = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+  };
+  const extension = extensions[file?.type];
+  if (!extension) throw new Error('Choose a JPG, PNG, or WebP image.');
+  if (!Number.isFinite(file?.size) || file.size <= 0 || file.size > 5 * 1024 * 1024) {
+    throw new Error('Profile pictures must be 5 MB or smaller.');
+  }
+  return { type: file.type, extension };
+}
+
 export function profileAvatarUrl(metadata = {}) {
   const candidate = metadata.avatar_url || metadata.picture;
   if (!candidate) return null;

@@ -5,6 +5,7 @@ import { summarizeLeagueStats, summarizePlayerStats } from '../src/stats.js';
 import {
   assignedSegmentsForPlayer,
   nextUpcomingAssignment,
+  playerDirectoryEntries,
   segmentRelationships,
   selectActiveTournament,
 } from '../src/member.js';
@@ -54,6 +55,30 @@ test('member home is a summary-first dashboard with live action, player snapshot
   assert.match(portalScript, /function renderHomeSummary\(/);
   assert.match(portalScript, /function renderRecentResults\(/);
   assert.match(portalScript, /function renderLiveMatch\(/);
+});
+
+test('More includes a tournament player directory without private contact data', () => {
+  assert.match(html, /id="playersList"/);
+  assert.match(html, />Players</);
+  assert.match(supabaseScript, /from\('tournament_memberships'\)[\s\S]*profiles\(display_name, handicap_index, profile_photo_path\)/);
+  assert.match(portalScript, /function renderPlayers\(/);
+  assert.doesNotMatch(portalScript, /player\.email|profiles\(email/);
+});
+
+test('player directory shows active members with golf-relevant information', () => {
+  const rows = playerDirectoryEntries([
+    { status: 'active', user_id: 'b', team: 'silver', role: 'player', profiles: { display_name: 'Zoe', handicap_index: 12.4, profile_photo_path: 'b/avatar.webp' } },
+    { status: 'active', user_id: 'a', team: 'cardinal', role: 'captain', profiles: { display_name: 'Alex', handicap_index: 8.1 } },
+    { status: 'removed', user_id: 'c', team: 'cardinal', role: 'player', profiles: { display_name: 'Removed', handicap_index: 2 } },
+  ], [
+    { user_id: 'a' },
+    { user_id: 'a' },
+    { user_id: 'b' },
+  ]);
+  assert.deepEqual(rows, [
+    { userId: 'a', displayName: 'Alex', team: 'Blue', role: 'Captain', handicapIndex: 8.1, rounds: 2, photoPath: null },
+    { userId: 'b', displayName: 'Zoe', team: 'White', role: 'Player', handicapIndex: 12.4, rounds: 1, photoPath: 'b/avatar.webp' },
+  ]);
 });
 
 test('member data loader requests itinerary, segments, rules, official stats, and commentary', () => {

@@ -1,6 +1,6 @@
 import { applyHoleResult, calculateTeamTotals, formatMatchStatus, isMatchComplete } from './scoring.js';
-import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js';
-import { renderLegacyArchive } from './legacy.js';
+import { loadLegacyArchive } from './supabase.js';
+import { renderLegacyWinners } from './legacy.js';
 
 const STORAGE_KEY = 'hereford-cup-state-v1';
 const sessions = {
@@ -151,21 +151,16 @@ document.querySelector('#resetScores').addEventListener('click', () => {
 
 render();
 
-async function startLegacyArchive() {
-  const target = {
-    timeline: document.querySelector('#legacyTimeline'),
-    details: document.querySelector('#legacyDetails'),
-    gallery: document.querySelector('#legacyGallery'),
-    photoUrl: legacyPhotoUrl,
-  };
+async function startLegacyWinners() {
+  const container = document.querySelector('#legacyWinners');
   try {
-    renderLegacyArchive({ ...target, editions: await loadLegacyArchive() });
+    renderLegacyWinners({ container, editions: await loadLegacyArchive() });
   } catch {
-    renderLegacyArchive({ ...target, editions: [], emptyMessage: 'Legacy history is temporarily unavailable.' });
+    renderLegacyWinners({ container, editions: [], emptyMessage: 'Champion history is temporarily unavailable.' });
   }
 }
 
-startLegacyArchive();
+startLegacyWinners();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(registrations => {

@@ -4,6 +4,9 @@ import { readFile } from 'node:fs/promises';
 
 const root = new URL('../', import.meta.url);
 const indexHtml = await readFile(new URL('index.html', root), 'utf8');
+const portalHtml = await readFile(new URL('portal.html', root), 'utf8');
+const pastTripsHtml = await readFile(new URL('past-trips.html', root), 'utf8');
+const pastTripsScript = await readFile(new URL('src/past-trips.js', root), 'utf8');
 const adminHtml = await readFile(new URL('admin.html', root), 'utf8');
 const appScript = await readFile(new URL('src/app.js', root), 'utf8');
 const adminScript = await readFile(new URL('src/admin.js', root), 'utf8');
@@ -11,14 +14,24 @@ const supabaseScript = await readFile(new URL('src/supabase.js', root), 'utf8');
 const migrationUrl = new URL('supabase/migrations/009_legacy_archive.sql', root);
 const hardeningMigrationUrl = new URL('supabase/migrations/012_commentary_and_legacy_hardening.sql', root);
 
-test('public site establishes the Cup in 2023 and exposes a data-backed Legacy archive', () => {
+test('public home shows a champions-only Legacy summary', () => {
   assert.doesNotMatch(indexHtml, /EST\. 2026/);
   assert.match(indexHtml, /EST\. 2023/);
+  assert.match(indexHtml, /id="legacyWinners"/);
+  assert.doesNotMatch(indexHtml, /id="legacyTimeline"|id="legacyDetails"|id="legacyGallery"/);
+  assert.match(appScript, /renderLegacyWinners/);
+  assert.doesNotMatch(appScript, /renderLegacyArchive/);
+});
+
+test('More links to a full Past Trips page with stories, results, and moments', () => {
+  assert.match(portalHtml, /href="past-trips\.html"/);
+  assert.match(portalHtml, />Past Trips</);
   for (const id of ['legacyTimeline', 'legacyDetails', 'legacyGallery']) {
-    assert.match(indexHtml, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+    assert.match(pastTripsHtml, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   }
-  assert.match(appScript, /loadLegacyArchive/);
-  assert.match(appScript, /renderLegacyArchive/);
+  assert.match(pastTripsHtml, /MOMENTS CAPTURED/i);
+  assert.match(pastTripsScript, /loadLegacyArchive/);
+  assert.match(pastTripsScript, /renderLegacyArchive/);
 });
 
 test('legacy schema is publicly readable, admin-write-only, and seeds the known trips without fabricated winners', async () => {

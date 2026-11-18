@@ -1,0 +1,14 @@
+.past-trips-page{background:var(--cardinal)}
+.past-trips-page .site-header{background:#f7f5f1}
+.past-trips-archive{min-height:calc(100vh - 96px);padding-top:76px}
+.past-trips-archive h1{max-width:760px;margin:0;font:800 clamp(46px,6vw,72px)/.98 'Libre Franklin',Arial,sans-serif;letter-spacing:-.06em}
+.past-trips-moments{margin-top:70px;padding-top:54px;border-top:1px solid rgba(255,255,255,.2)}
+.past-trips-moments .eyebrow{margin-bottom:12px}
+.past-trips-moments h2{max-width:760px;margin:0;font-size:clamp(32px,4vw,52px)}
+.past-trips-moments .legacy-gallery:empty::after{content:'Published trip photos will appear here.';display:block;grid-column:1/-1;margin-top:24px;color:#e9cfd5}
+
+@media(max-width:760px){
+  .past-trips-page .site-header nav{display:flex;gap:14px}.past-trips-page .site-header nav a:first-child{display:none}
+  .past-trips-archive{padding-top:58px}
+  .past-trips-moments{margin-top:50px;padding-top:38px}
+}

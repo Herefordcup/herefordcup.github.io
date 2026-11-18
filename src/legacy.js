@@ -18,6 +18,26 @@ function normalizedEditions(editions) {
     .sort((left, right) => left.edition_year - right.edition_year);
 }
 
+export function renderLegacyWinners({ container, editions, emptyMessage = 'Champions will appear after results are published.' }) {
+  const champions = normalizedEditions(editions)
+    .filter(edition => edition.winner_name)
+    .sort((left, right) => right.edition_year - left.edition_year);
+  container.replaceChildren();
+  if (!champions.length) {
+    container.append(node('p', 'legacy-pending', emptyMessage));
+    return;
+  }
+  for (const edition of champions) {
+    const champion = node('article', 'legacy-champion');
+    champion.append(node('span', '', String(edition.edition_year)));
+    const identity = node('div');
+    identity.append(node('small', '', 'CHAMPION'));
+    identity.append(node('strong', '', edition.winner_name));
+    champion.append(identity);
+    container.append(champion);
+  }
+}
+
 export function renderLegacyArchive({ timeline, details, gallery, editions, photoUrl, emptyMessage = 'No published Legacy editions yet.' }) {
   const archive = normalizedEditions(editions);
   timeline.replaceChildren();

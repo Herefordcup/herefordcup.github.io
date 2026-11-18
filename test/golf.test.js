@@ -25,6 +25,13 @@ test('courseHandicapForTee permits gross play but blocks net play on an unrated 
   assert.equal(courseHandicapForTee(12.4, unrated, 'net'), null);
   assert.equal(courseHandicapForTee(12.4, { slope: 139, rating: 71.8, par: 72 }, 'net'), 15);
 });
+
+test('courseHandicapForTee uses the rating-category par when it differs from scorecard par', async () => {
+  const { courseHandicapForTee } = await import('../src/golf.js');
+  assert.equal(courseHandicapForTee(0, { slope: 149, rating: 77.9, par: 70, rating_par: 72 }, 'net'), 6);
+  assert.equal(courseHandicapForTee(0, { slope: 140, rating: 76.9, par: 72, rating_par: 73 }, 'net'), 4);
+});
+
 test('handicapStrokesForHole allocates full rotations and the remainder by stroke index', () => {
   assert.equal(handicapStrokesForHole(20, 1), 2);
   assert.equal(handicapStrokesForHole(20, 2), 2);

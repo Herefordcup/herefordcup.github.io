@@ -32,6 +32,28 @@ export function assignedSegmentsForPlayer(segments = [], userId) {
     .some(player => player.user_id === userId));
 }
 
+export function playerDirectoryEntries(memberships = [], statistics = []) {
+  const roundCounts = statistics.reduce((counts, round) => {
+    counts.set(round.user_id, (counts.get(round.user_id) ?? 0) + 1);
+    return counts;
+  }, new Map());
+  const teamNames = { cardinal: 'Blue', silver: 'White' };
+  const teamOrder = { Blue: 0, White: 1, Unassigned: 2 };
+  return memberships
+    .filter(membership => membership.status === 'active')
+    .map(membership => ({
+      userId: membership.user_id,
+      displayName: membership.profiles?.display_name || 'Player',
+      team: teamNames[membership.team] || 'Unassigned',
+      role: `${membership.role || 'player'}`.replace(/^./, character => character.toUpperCase()),
+      handicapIndex: membership.profiles?.handicap_index ?? null,
+      rounds: roundCounts.get(membership.user_id) ?? 0,
+      photoPath: membership.profiles?.profile_photo_path ?? null,
+    }))
+    .sort((a, b) => teamOrder[a.team] - teamOrder[b.team]
+      || a.displayName.localeCompare(b.displayName));
+}
+
 export function segmentRelationships(segment, userId) {
   const players = segment?.match_segment_players ?? [];
   const mine = players.find(player => player.user_id === userId);
