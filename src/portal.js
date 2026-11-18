@@ -2,7 +2,7 @@ import { courseHandicapForTee, scoreIndividualHoleForSegment } from './golf.js?v
 import { matchPoints } from './scoring.js';
 import { assignedRoundScoringMode, formatSegmentLabel, individualEntryBlockReason, segmentHoleCount } from './formats.js?v=handicap-scoring-1';
 import { summarizeLeagueStats, summarizePlayerStats } from './stats.js';
-import { assertRoundAssignment, mergePersistedScores, unsavedScoreRows } from './round-entry.js';
+import { assertRoundAssignment, holeNumbersForRound, mergePersistedScores, unsavedScoreRows } from './round-entry.js?v=round-holes-1';
 import { formatHomeDate, formatMatchupPlayers, orderHomeMatches } from './home.js';
 import { avatarInitials, normalizeProfileInput, profileAvatarUrl, validateProfilePhoto } from './profile.js';
 import {
@@ -38,6 +38,7 @@ const setupMessage = document.querySelector('#setupMessage');
 const courseSelect = document.querySelector('#courseSelect');
 const teeSelect = document.querySelector('#teeSelect');
 const matchSelect = document.querySelector('#matchSelect');
+const holeRangeSelect = document.querySelector('#holeRangeSelect');
 const handicapInput = document.querySelector('#handicapIndex');
 const scorecard = document.querySelector('#scorecard');
 const emptyScorecard = document.querySelector('#emptyScorecard');
@@ -460,6 +461,29 @@ function selectedMatchSegments() {
   return assignedSegmentsForPlayer(matchSegments, session.user.id);
 }
 
+function playableHoleNumbers() {
+  return holeNumbersForRound(holeRangeSelect.value, selectedMatchSegments());
+}
+
+function syncHoleRangeControl() {
+  holeRangeSelect.querySelector('option[data-assigned]')?.remove();
+  const match = selectedMatch();
+  holeRangeSelect.disabled = Boolean(match);
+  if (!match) return;
+
+  const holes = holeNumbersForRound('18', selectedMatchSegments());
+  const key = holes.join(',');
+  if (key === '1,2,3,4,5,6,7,8,9') holeRangeSelect.value = 'front9';
+  else if (key === '10,11,12,13,14,15,16,17,18') holeRangeSelect.value = 'back9';
+  else if (key === Array.from({ length: 18 }, (_, index) => index + 1).join(',')) holeRangeSelect.value = '18';
+  else {
+    const option = new Option(`${holes.length} assigned holes`, 'assigned');
+    option.dataset.assigned = 'true';
+    holeRangeSelect.add(option);
+    holeRangeSelect.value = 'assigned';
+  }
+}
+
 function scoreEntryBlockReason() {
   return individualEntryBlockReason(selectedMatchSegments());
 }
@@ -500,7 +524,8 @@ function updateCourseHandicap() {
 }
 
 function updateSummary() {
-  const completed = scores.filter(score => Number(score.gross_score) > 0);
+  const playableHoles = new Set(playableHoleNumbers());
+  const completed = scores.filter(score => playableHoles.has(score.hole_number) && Number(score.gross_score) > 0);
   const gross = completed.reduce((total, score) => total + Number(score.gross_score), 0);
   const holes = selectedTee?.holes ?? [];
   const par = completed.reduce((total, score) => {
@@ -573,7 +598,11 @@ function renderScorecard() {
     return;
   }
   emptyScorecard.querySelector('p').textContent = 'Select a course and tee to open your scorecard.';
-  const holes = [...(selectedTee?.holes ?? [])].sort((a, b) => a.hole_number - b.hole_number);
+  const playableHoles = new Set(playableHoleNumbers());
+  emptyScorecard.querySelector('span').textContent = playableHoles.size;
+  const holes = [...(selectedTee?.holes ?? [])]
+    .filter(hole => playableHoles.has(Number(hole.hole_number)))
+    .sort((a, b) => a.hole_number - b.hole_number);
   if (!holes.length) {
     scorecard.hidden = true;
     emptyScorecard.hidden = false;
@@ -668,6 +697,12 @@ teeSelect.addEventListener('change', () => {
 });
 
 handicapInput.addEventListener('input', updateCourseHandicap);
+holeRangeSelect.addEventListener('change', () => {
+  if (holeRangeSelect.disabled) return;
+  scores = blankScores();
+  renderScorecard();
+  updateCourseHandicap();
+});
 matchSelect.addEventListener('change', () => {
   const match = selectedMatch();
   const segments = selectedMatchSegments();
@@ -680,6 +715,7 @@ matchSelect.addEventListener('change', () => {
     ? (scoringNames.size > 1 ? 'Mixed by segment' : [...scoringNames][0] ?? formatName(match.scoring_mode))
     : 'Gross';
   updateScoreModeHelp();
+  syncHoleRangeControl();
   applyMatchAssignment();
   const blockReason = scoreEntryBlockReason();
   if (blockReason) showMessage(blockReason, true);
