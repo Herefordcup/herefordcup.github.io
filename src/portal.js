@@ -1,6 +1,6 @@
-import { courseHandicapForTee, scoreIndividualHoleForSegment } from './golf.js?v=course-ratings-1';
+import { courseHandicapForTee, scoreIndividualHoleForSegment } from './golf.js?v=handicap-scoring-1';
 import { matchPoints } from './scoring.js';
-import { formatSegmentLabel, individualEntryBlockReason, segmentHoleCount } from './formats.js';
+import { assignedRoundScoringMode, formatSegmentLabel, individualEntryBlockReason, segmentHoleCount } from './formats.js?v=handicap-scoring-1';
 import { summarizeLeagueStats, summarizePlayerStats } from './stats.js';
 import { assertRoundAssignment, mergePersistedScores, unsavedScoreRows } from './round-entry.js';
 import { formatHomeDate, formatMatchupPlayers, orderHomeMatches } from './home.js';
@@ -467,8 +467,21 @@ function scoreEntryBlockReason() {
 function selectedScoringMode() {
   const match = selectedMatch();
   if (!match) return 'gross';
-  const segments = selectedMatchSegments();
-  return segments.some(segment => segment.scoring_mode === 'net') || match.scoring_mode === 'net' ? 'net' : 'gross';
+  return assignedRoundScoringMode(match, selectedMatchSegments());
+}
+
+function baseCourseHandicap() {
+  if (!selectedTee || handicapInput.value === '') return null;
+  return courseHandicapForTee(handicapInput.value, selectedTee, 'net');
+}
+
+function updateScoreModeHelp() {
+  const help = document.querySelector('#scoreModeHelp');
+  const courseMath = 'Course handicap is calculated from your index, tee rating, slope, and rating par.';
+  const segmentMath = 'Gross holes ignore handicap strokes; net holes apply the segment allowance.';
+  help.textContent = selectedMatch()
+    ? `${courseMath} ${segmentMath}`
+    : `No assigned match uses a standalone gross scorecard. ${courseMath} ${segmentMath}`;
 }
 
 function updateCourseHandicap() {
@@ -476,11 +489,11 @@ function updateCourseHandicap() {
     document.querySelector('#courseHandicap').textContent = '—';
     return null;
   }
-  if (handicapInput.value === '' && selectedScoringMode() === 'net') {
+  if (handicapInput.value === '') {
     document.querySelector('#courseHandicap').textContent = '—';
     return null;
   }
-  const handicap = courseHandicapForTee(handicapInput.value || 0, selectedTee, selectedScoringMode());
+  const handicap = courseHandicapForTee(handicapInput.value, selectedTee, 'net');
   document.querySelector('#courseHandicap').textContent = handicap ?? 'Rating pending';
   updateSummary();
   return handicap;
@@ -495,9 +508,8 @@ function updateSummary() {
     return total + Number(hole?.par ?? 0);
   }, 0);
   const scoringMode = selectedScoringMode();
-  const courseHandicap = selectedTee && (handicapInput.value !== '' || scoringMode === 'gross')
-    ? courseHandicapForTee(handicapInput.value || 0, selectedTee, scoringMode)
-    : null;
+  const calculatedHandicap = baseCourseHandicap();
+  const courseHandicap = calculatedHandicap ?? (scoringMode === 'gross' ? 0 : null);
   const segments = selectedMatchSegments();
   const adjusted = courseHandicap === null ? null : completed.reduce((total, score) => {
     const hole = holes.find(item => item.hole_number === score.hole_number);
@@ -616,7 +628,7 @@ function blankScores() {
 
 function populateTees(course, teeId = '') {
   teeSelect.replaceChildren(new Option('Select tees', ''));
-  for (const tee of course?.tees ?? []) {
+  for (const tee of (course?.tees ?? []).filter(tee => tee.rating_category !== 'F')) {
     const category = tee.rating_category && tee.rating_category !== 'U' ? ` · ${tee.rating_category}` : '';
     const ratingState = tee.rating === null || tee.slope === null ? ' · Rating pending' : '';
     teeSelect.add(new Option(`${tee.name}${category} · ${tee.yardage || '—'} yards${ratingState}`, tee.id));
@@ -667,6 +679,7 @@ matchSelect.addEventListener('change', () => {
   document.querySelector('#scoringMode').textContent = match
     ? (scoringNames.size > 1 ? 'Mixed by segment' : [...scoringNames][0] ?? formatName(match.scoring_mode))
     : 'Gross';
+  updateScoreModeHelp();
   applyMatchAssignment();
   const blockReason = scoreEntryBlockReason();
   if (blockReason) showMessage(blockReason, true);
@@ -703,7 +716,7 @@ saveButton.addEventListener('click', async () => {
       matchId: matchSelect.value || null,
       courseId: courseSelect.value,
       teeId: teeSelect.value,
-      courseHandicap,
+      courseHandicap: courseHandicap ?? 0,
       scores: unsavedScoreRows(scores),
       existingRound,
     });

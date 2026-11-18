@@ -8,7 +8,7 @@
   <title>Player Portal · Hereford Cup</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css?v=profile-photos-1">
-  <link rel="stylesheet" href="portal.css?v=profile-photos-1">
+  <link rel="stylesheet" href="portal.css?v=handicap-scoring-1">
   <link rel="stylesheet" href="home.css?v=profile-photos-1">
 </head>
 <body class="portal-body">
@@ -134,8 +134,9 @@
             <div class="tee-facts" id="teeFacts"><span>Rating <b>—</b></span><span>Slope <b>—</b></span><span>Par <b>—</b></span></div>
             <label>Handicap index<input id="handicapIndex" type="number" inputmode="decimal" min="-10" max="54" step="0.1" placeholder="0.0"></label>
             <div class="calculated-handicap">Course handicap <strong id="courseHandicap">—</strong></div>
-            <label>Assigned match<select id="matchSelect"><option value="">Individual scorecard</option></select></label>
+            <label>Assigned match<select id="matchSelect"><option value="">Standalone gross scorecard</option></select></label>
             <div class="mode-grid"><div><small>FORMAT</small><strong id="matchFormat">Individual</strong></div><div><small>SCORING</small><strong id="scoringMode">Gross</strong></div></div>
+            <p class="auth-note" id="scoreModeHelp">No assigned match uses a standalone gross scorecard. Assigned matches follow the format and gross or net scoring set for each hole range.</p>
           </aside>
 
           <section class="score-entry">
@@ -194,6 +195,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="src/portal.js?v=member-directory-1"></script>
+  <script type="module" src="src/portal.js?v=handicap-scoring-1"></script>
 </body>
 </html>

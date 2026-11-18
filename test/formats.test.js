@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assignedRoundScoringMode,
   formatSegmentLabel,
   segmentHoleCount,
   validateSegments,
@@ -34,6 +35,12 @@ test('segment labels describe hole range, format, scoring, and points', () => {
     handicapAllowance: 90,
     pointValue: 0.5,
   }), 'Holes 10–18 · Four-Ball · Net · 90% allowance · 0.5 pts');
+});
+
+test('assigned segments determine whether a player round needs net scoring', () => {
+  assert.equal(assignedRoundScoringMode({ scoring_mode: 'net' }, [{ scoring_mode: 'gross' }]), 'gross');
+  assert.equal(assignedRoundScoringMode({ scoring_mode: 'gross' }, [{ scoring_mode: 'gross' }, { scoring_mode: 'net' }]), 'net');
+  assert.equal(assignedRoundScoringMode({ scoring_mode: 'net' }, []), 'net');
 });
 
 test('segments may change formats and lineups at a boundary', () => {

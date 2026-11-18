@@ -14,6 +14,7 @@ const html = await readFile(new URL('../portal.html', import.meta.url), 'utf8');
 const portalScript = await readFile(new URL('../src/portal.js', import.meta.url), 'utf8');
 const supabaseScript = await readFile(new URL('../src/supabase.js', import.meta.url), 'utf8');
 const formatsScript = await readFile(new URL('../src/formats.js', import.meta.url), 'utf8');
+const portalCss = await readFile(new URL('../portal.css', import.meta.url), 'utf8');
 
 test('member portal opens with home and provides primary navigation', () => {
   for (const id of [
@@ -121,6 +122,24 @@ test('scorecard computes mixed gross/net segments with allowances and blocks tea
   assert.match(html, /id="segmentSummaries"/);
   assert.match(portalScript, /segment-adjusted-subtotal/);
   assert.match(portalScript, /handicapAllowance/);
+});
+
+test('scorecard explains standalone gross play and assigned mixed segment scoring', () => {
+  assert.match(html, /No assigned match uses a standalone gross scorecard/i);
+  assert.match(html, /Assigned matches follow the format and gross or net scoring set for each hole range/i);
+  assert.match(portalScript, /Course handicap is calculated from your index, tee rating, slope, and rating par/i);
+  assert.match(portalScript, /Gross holes ignore handicap strokes; net holes apply the segment allowance/i);
+});
+
+test('mixed segment summaries stack at phone widths', () => {
+  assert.match(html, /href="portal\.css\?v=handicap-scoring-1"/);
+  assert.match(portalCss, /@media\(max-width:820px\)[\s\S]*#segmentSummaries\{grid-template-columns:1fr\}/);
+});
+
+test('course handicap display is calculated independently of gross or net segment mode', () => {
+  assert.match(portalScript, /from '\.\/formats\.js\?v=handicap-scoring-1'/);
+  assert.match(portalScript, /courseHandicapForTee\([^\n]+selectedTee, 'net'\)/);
+  assert.doesNotMatch(portalScript, /courseHandicapForTee\([^\n]+selectedTee, selectedScoringMode\(\)\)/);
 });
 
 test('scorecard blocking and segment display use only the signed-in players assigned segments', () => {

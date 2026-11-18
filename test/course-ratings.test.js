@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const catalogUrl = new URL('../supabase/migrations/004_course_catalog.sql', import.meta.url);
 const ratingsUrl = new URL('../supabase/migrations/015_current_course_ratings.sql', import.meta.url);
+const maleOnlyUrl = new URL('../supabase/migrations/016_male_only_tees.sql', import.meta.url);
 const portalScriptUrl = new URL('../src/portal.js', import.meta.url);
 
 function catalogs(sql) {
@@ -59,7 +60,7 @@ test('current USGA rows include the requested ratings and slopes for key tee map
 
 test('portal loads the corrected handicap calculation through a cache-busted dependency', async () => {
   const source = await readFile(portalScriptUrl, 'utf8');
-  assert.match(source, /from '\.\/golf\.js\?v=course-ratings-1'/);
+  assert.match(source, /from '\.\/golf\.js\?v=handicap-scoring-1'/);
 });
 
 test('rating migration preserves existing unrated tee ids and clones holes only for extra categories', async () => {
@@ -82,4 +83,17 @@ test('stroke-index permutations defer uniqueness until every hole is updated', a
   const sql = await readFile(ratingsUrl, 'utf8');
   assert.match(sql, /unique\s*\(tee_id, stroke_index\)\s*deferrable initially immediate/i);
   assert.match(sql, /set constraints holes_tee_stroke_index_unique deferred/i);
+});
+
+test('male-only tee migration removes female rating rows while protecting referenced history', async () => {
+  const sql = await readFile(maleOnlyUrl, 'utf8');
+  assert.match(sql, /rating_category\s*=\s*'F'/i);
+  assert.match(sql, /from public\.rounds/i);
+  assert.match(sql, /raise exception/i);
+  assert.match(sql, /delete from public\.tees/i);
+});
+
+test('player scorecard filters female rating rows as defense in depth', async () => {
+  const source = await readFile(portalScriptUrl, 'utf8');
+  assert.match(source, /filter\(tee => tee\.rating_category !== 'F'\)/);
 });
