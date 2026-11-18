@@ -222,7 +222,7 @@ export async function loadPlayerData(userId) {
     supabase.from('rounds').select('*, scores!scores_round_id_fkey(*)')
       .eq('user_id', userId),
     supabase.from('tournament_memberships')
-      .select('user_id, status, role, team, joined_at, profiles(display_name, handicap_index, profile_photo_path)')
+      .select('user_id, status, role, team, joined_at, profiles!tournament_memberships_user_id_fkey(display_name, handicap_index, profile_photo_path)')
       .eq('tournament_id', tournament.id)
       .eq('status', 'active'),
   ]);
