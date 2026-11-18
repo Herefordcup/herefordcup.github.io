@@ -2,6 +2,13 @@
 -- Existing scorecard hole geometry is retained. Each tee records the USGA tee name and
 -- registered length used for the rating so small scorecard/NCRDB differences stay explicit.
 
+drop index if exists public.holes_tee_stroke_index_idx;
+alter table public.holes drop constraint if exists holes_tee_id_stroke_index_key;
+alter table public.holes drop constraint if exists holes_tee_stroke_index_unique;
+alter table public.holes
+  add constraint holes_tee_stroke_index_unique
+  unique (tee_id, stroke_index) deferrable initially immediate;
+
 create or replace function public.apply_current_course_ratings(payload jsonb)
 returns void
 language plpgsql
@@ -40,7 +47,7 @@ begin
       from public.tees
       where course_id = course_id_value
         and lower(name) = lower(row_record ->> 'tee')
-      order by case when rating_category = 'U' then 0 else 1 end, created_at
+      order by case when rating_category = 'U' then 0 else 1 end, id
       limit 1;
 
       if template_tee_id is null then
@@ -97,6 +104,7 @@ begin
     end if;
 
     if row_record ? 'stroke_indexes' then
+      set constraints holes_tee_stroke_index_unique deferred;
       for stroke_record in
         select ordinality::integer as hole_number, value::integer as stroke_index
         from jsonb_array_elements_text(row_record -> 'stroke_indexes') with ordinality

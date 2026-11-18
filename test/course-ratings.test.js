@@ -68,3 +68,18 @@ test('rating migration preserves existing unrated tee ids and clones holes only 
   assert.match(sql, /insert into public\.holes[\s\S]*select new_tee_id/i);
   assert.match(sql, /drop function public\.apply_current_course_ratings\(jsonb\)/i);
 });
+
+test('rating migration only orders tee templates by columns present in the production schema', async () => {
+  const sql = await readFile(ratingsUrl, 'utf8');
+  assert.doesNotMatch(
+    sql,
+    /order by case when rating_category = 'U' then 0 else 1 end, created_at/i,
+    'public.tees has no created_at column',
+  );
+});
+
+test('stroke-index permutations defer uniqueness until every hole is updated', async () => {
+  const sql = await readFile(ratingsUrl, 'utf8');
+  assert.match(sql, /unique\s*\(tee_id, stroke_index\)\s*deferrable initially immediate/i);
+  assert.match(sql, /set constraints holes_tee_stroke_index_unique deferred/i);
+});
