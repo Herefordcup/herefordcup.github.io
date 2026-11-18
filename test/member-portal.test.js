@@ -60,7 +60,8 @@ test('member home is a summary-first dashboard with live action, player snapshot
 test('More includes a tournament player directory without private contact data', () => {
   assert.match(html, /id="playersList"/);
   assert.match(html, />Players</);
-  assert.match(supabaseScript, /from\('tournament_memberships'\)[\s\S]*profiles\(display_name, handicap_index, profile_photo_path\)/);
+  assert.match(supabaseScript, /profiles!tournament_memberships_user_id_fkey\(display_name, handicap_index, profile_photo_path\)/);
+  assert.match(portalScript, /from '\.\/supabase\.js\?v=member-directory-1'/);
   assert.match(portalScript, /function renderPlayers\(/);
   assert.doesNotMatch(portalScript, /player\.email|profiles\(email/);
 });
