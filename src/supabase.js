@@ -164,6 +164,17 @@ export async function requestTournamentMembership() {
   return data;
 }
 
+export async function denyTournamentMembership({ tournamentId, userId, reason }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('deny_tournament_membership', {
+    target_tournament_id: tournamentId,
+    target_user_id: userId,
+    change_reason: reason,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function deleteTournamentMembership({ tournamentId, userId, reason }) {
   const supabase = await getSupabase();
   const { data, error } = await supabase.rpc('delete_tournament_membership', {

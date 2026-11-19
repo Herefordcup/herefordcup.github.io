@@ -6,6 +6,7 @@ import { easternDateTimeToIso, optionalNumber } from '../src/admin-helpers.js';
 const html = await readFile(new URL('../admin.html', import.meta.url), 'utf8');
 const adminScript = await readFile(new URL('../src/admin.js', import.meta.url), 'utf8');
 const supabaseScript = await readFile(new URL('../src/supabase.js', import.meta.url), 'utf8');
+const gitignore = await readFile(new URL('../.gitignore', import.meta.url), 'utf8');
 
 test('admin portal exposes planning, rules, and commentary controls', () => {
   for (const id of [
@@ -95,15 +96,29 @@ test('admin controls fail closed and commentary auto-publication is explicit', (
   assert.match(supabaseScript, /require_approval: false/);
 });
 
-test('administrator score correction is usable and reads back the audited result', () => {
-  for (const id of ['scoreCorrectionForm', 'correctionRound', 'correctionHole', 'correctionScore', 'correctionDelete', 'correctionReason', 'correctionMessage']) {
+test('administrator score correction is contextual instead of a standalone page section', () => {
+  assert.doesNotMatch(html, /<h1>Correct a submitted hole<\/h1>/);
+  for (const id of ['openScoreCorrection', 'scoreCorrectionDialog', 'closeScoreCorrection', 'scoreCorrectionForm', 'correctionRound', 'correctionHole', 'correctionScore', 'correctionDelete', 'correctionReason', 'correctionMessage']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   }
+  assert.match(adminScript, /scoreCorrectionDialog\.showModal\(\)/);
+  assert.match(adminScript, /scoreCorrectionDialog\.close\(\)/);
+  assert.match(html, /id="scoreCorrectionDialog"[^>]*aria-labelledby="scoreCorrectionTitle"/);
+  assert.match(html, /id="scoreCorrectionTitle"/);
+  assert.match(html, /id="resultMessage" role="status"/);
+  assert.match(adminScript, /round\.match_id === matchId/);
+  assert.match(adminScript, /Select a match before editing a submitted score/);
+  assert.match(adminScript, /handleCorrectionDialogKeydown/);
+  assert.match(adminScript, /submitButton\.disabled = true/);
   assert.match(supabaseScript, /export async function correctHoleScore/);
   assert.match(supabaseScript, /target_reason:/);
   assert.match(supabaseScript, /from\('score_correction_audit'\)/);
   assert.match(adminScript, /await correctHoleScore/);
   assert.match(adminScript, /Correction saved and audited/);
+});
+
+test('generated Supabase CLI state stays out of commits', () => {
+  assert.match(gitignore, /^supabase\/\.temp\/$/m);
 });
 
 test('commentary settings hydrate on tournament change and approved copy stays manageable', () => {
