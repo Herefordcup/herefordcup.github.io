@@ -129,6 +129,18 @@ test('commentary tournament administrators can manage exact-tournament settings 
   assert.match(sql, /create or replace function public\.set_commentary_status[\s\S]*for update of commentary[\s\S]*is_tournament_admin\(commentary_tournament_id\)/i);
 });
 
+test('commentary administrator functions lock the row without a composite multi-target INTO', async () => {
+  const sql = await readFile(commentaryBanterMigrationUrl, 'utf8');
+  assert.doesNotMatch(
+    sql,
+    /select\s+commentary\s*,\s*match_record\.tournament_id\s+into\s+saved\s*,\s*commentary_tournament_id/gi,
+  );
+  const tournamentScopeLocks = sql.match(
+    /select\s+match_record\.tournament_id\s+into\s+commentary_tournament_id[\s\S]*?for update of commentary/gi,
+  ) ?? [];
+  assert.equal(tournamentScopeLocks.length, 2);
+});
+
 test('edge function CORS permits Supabase browser SDK headers', async () => {
   const source = await readFile(edgeFunctionUrl, 'utf8');
   const allowHeaders = source.match(/'Access-Control-Allow-Headers': '([^']+)'/)?.[1]
