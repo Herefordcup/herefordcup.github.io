@@ -199,7 +199,7 @@ test('scorecard setup includes an 18-hole, front-nine, and back-nine selector', 
   assert.match(html, /<option value="front9">Front 9 \(holes 1–9\)<\/option>/);
   assert.match(html, /<option value="back9">Back 9 \(holes 10–18\)<\/option>/);
   assert.match(portalScript, /holeNumbersForRound\(holeRangeSelect\.value, selectedMatchSegments\(\)\)/);
-  assert.match(html, /src="src\/portal\.js\?v=legacy-ledger-2"/);
+  assert.match(html, /src="src\/portal\.js\?v=commentary-label-1"/);
   assert.match(portalScript, /from '\.\/round-entry\.js\?v=round-holes-1'/);
 });
 
@@ -225,8 +225,9 @@ test('member commentary distinguishes untouched AI copy from administrator edits
   assert.match(portalScript, /result-commentary/);
   assert.match(homeCss, /\.result-commentary/);
   assert.match(portalScript, /commentary\.ai_generated\s*\?/);
-  assert.match(portalScript, /AI-generated · Administrator approved/);
-  assert.match(portalScript, /Administrator edited · Administrator approved/);
+  assert.match(portalScript, /['"]AI-generated['"]/);
+  assert.match(portalScript, /['"]Administrator edited['"]/);
+  assert.doesNotMatch(portalScript, /Administrator approved/);
   assert.doesNotMatch(supabaseScript, /from\('match_commentaries'\)[\s\S]*?\.limit\(5\)/);
 });
 
