@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { notificationPreferencesOrNull } from '../src/supabase.js';
 
 const migrationUrl = new URL('../supabase/migrations/017_member_email_notifications.sql', import.meta.url);
 const edgeFunctionUrl = new URL('../supabase/functions/process-notifications/index.ts', import.meta.url);
@@ -17,6 +18,18 @@ async function sources() {
     readFile(appsScriptUrl, 'utf8'),
   ]);
 }
+
+test('missing notification schema does not block the signed-in member portal', () => {
+  assert.equal(notificationPreferencesOrNull({ data: null, error: { code: 'PGRST205' } }), null);
+  assert.deepEqual(
+    notificationPreferencesOrNull({ data: { reminders_enabled: true }, error: null }),
+    { reminders_enabled: true },
+  );
+  assert.throws(
+    () => notificationPreferencesOrNull({ data: null, error: { code: '42501', message: 'denied' } }),
+    error => error.code === '42501' && error.message === 'denied',
+  );
+});
 
 test('notification storage separates preferences, jobs, and per-recipient delivery tracking', async () => {
   const [sql] = await sources();

@@ -157,6 +157,12 @@ export async function getCurrentSession() {
   return data.session;
 }
 
+export function notificationPreferencesOrNull(result) {
+  if (!result?.error) return result?.data ?? null;
+  if (result.error.code === 'PGRST205') return null;
+  throw result.error;
+}
+
 export async function loadPlayerData(userId) {
   const supabase = await getSupabase();
   const [profileResult, membershipsResult, coursesResult] = await Promise.all([
@@ -232,9 +238,10 @@ export async function loadPlayerData(userId) {
       .eq('user_id', userId)
       .maybeSingle(),
   ]);
-  for (const result of [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult, playersResult, notificationPreferencesResult]) {
+  for (const result of [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult, playersResult]) {
     if (result.error) throw result.error;
   }
+  const notificationPreferences = notificationPreferencesOrNull(notificationPreferencesResult);
   const photoPaths = [...new Set([
     profileResult.data?.profile_photo_path,
     ...(playersResult.data ?? []).map(player => player.profiles?.profile_photo_path),
@@ -264,7 +271,7 @@ export async function loadPlayerData(userId) {
     rounds: roundsResult.data ?? [],
     players: playersResult.data ?? [],
     profilePhotoUrls,
-    notificationPreferences: notificationPreferencesResult.data ?? {
+    notificationPreferences: notificationPreferences ?? {
       reminders_enabled: true,
       schedule_updates_enabled: true,
       new_member_admin_enabled: true,

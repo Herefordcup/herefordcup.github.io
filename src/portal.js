@@ -4,7 +4,7 @@ import { assignedRoundScoringMode, formatSegmentLabel, individualEntryBlockReaso
 import { summarizeLeagueStats, summarizePlayerStats } from './stats.js';
 import { assertRoundAssignment, holeNumbersForRound, mergePersistedScores, unsavedScoreRows } from './round-entry.js?v=round-holes-1';
 import { formatHomeDate, formatMatchupPlayers, orderHomeMatches } from './home.js';
-import { avatarInitials, normalizeProfileInput, profileAvatarUrl, validateProfilePhoto } from './profile.js';
+import { avatarInitials, normalizeProfileInput, playerDisplayName, profileAvatarUrl, validateProfilePhoto } from './profile.js?v=player-name-1';
 import {
   assignedSegmentsForPlayer,
   nextUpcomingAssignment,
@@ -30,7 +30,7 @@ import {
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=email-notifications-1';
+} from './supabase.js?v=login-recovery-1';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');
@@ -948,6 +948,7 @@ profileSetupForm.addEventListener('submit', async event => {
     playerData.profile.display_name = values.displayName;
     playerData.profile.handicap_index = values.handicapIndex;
     handicapInput.value = values.handicapIndex;
+    document.querySelector('#playerIdentity').textContent = values.displayName;
     document.querySelector('#playerName').textContent = values.displayName;
     renderHomeSummary();
     updateCourseHandicap();
@@ -991,8 +992,9 @@ async function start() {
     if (!session) return;
     authView.hidden = true;
     document.querySelector('#signOutButton').hidden = false;
-    document.querySelector('#playerIdentity').textContent = session.user.email;
+    document.querySelector('#playerIdentity').textContent = playerDisplayName(null, session.user);
     playerData = await loadPlayerData(session.user.id);
+    document.querySelector('#playerIdentity').textContent = playerDisplayName(playerData.profile, session.user);
     document.querySelector('#adminLink').hidden = playerData.profile.role !== 'admin';
     if (playerData.profile.role !== 'admin' && !hasActiveTournamentMembership(playerData.memberships)) {
       accessPendingView.hidden = false;
