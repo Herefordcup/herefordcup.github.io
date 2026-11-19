@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css?v=profile-photos-1">
   <link rel="stylesheet" href="portal.css?v=handicap-scoring-1">
-  <link rel="stylesheet" href="home.css?v=profile-photos-1">
+  <link rel="stylesheet" href="home.css?v=email-notifications-1">
 </head>
 <body class="portal-body">
   <div class="top-rule"></div>
@@ -168,6 +168,17 @@
         <div class="more-grid">
           <section class="member-card players-card"><div class="section-kicker">MEMBERS</div><h2>Players</h2><p class="member-card-intro">The active Hereford Cup roster, team assignments, handicaps, and finalized rounds.</p><div id="playersList" class="players-list"><p class="empty-panel">Players will appear when the roster is published.</p></div></section>
           <div class="more-side-stack">
+            <section class="member-card notification-preferences-card">
+              <div class="section-kicker">EMAIL ALERTS</div>
+              <h2>Notifications</h2>
+              <p class="member-card-intro">Choose which Hereford Cup emails you receive.</p>
+              <form id="notificationPreferencesForm" class="notification-preferences-form">
+                <label><input type="checkbox" name="remindersEnabled"> <span><strong>12-hour reminders</strong><small>Matches, golf, dinners, and other activities.</small></span></label>
+                <label><input type="checkbox" name="scheduleUpdatesEnabled"> <span><strong>Schedule changes</strong><small>Immediate changes and cancellations.</small></span></label>
+                <label data-admin-notification><input type="checkbox" name="newMemberAdminEnabled"> <span><strong>New member alerts</strong><small>For tournament administrators.</small></span></label>
+                <div class="notification-preferences-actions"><button class="button" type="submit">Save email settings</button><span id="notificationPreferencesMessage" role="status"></span></div>
+              </form>
+            </section>
             <a class="member-card more-link-card" href="past-trips.html"><div class="section-kicker">CUP HISTORY</div><h2>Past Trips</h2><p>Revisit every destination, champion, result, story, and moment captured.</p><span class="text-button">Open the full archive →</span></a>
             <section class="member-card"><div class="section-kicker">TOURNAMENT GUIDE</div><h2>Rules</h2><div id="rulesList" class="rules-list"><p class="empty-panel">Rules will appear after the administrator publishes them.</p></div></section>
           </div>
@@ -197,6 +208,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="src/portal.js?v=round-holes-1"></script>
+  <script type="module" src="src/portal.js?v=email-notifications-1"></script>
 </body>
 </html>

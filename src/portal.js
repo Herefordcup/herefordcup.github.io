@@ -19,6 +19,7 @@ import {
   loadPlayerData,
   requestPasswordReset,
   removeProfilePhoto,
+  saveNotificationPreferences,
   saveProfile,
   saveRound,
   setNewPassword,
@@ -29,7 +30,7 @@ import {
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=member-directory-1';
+} from './supabase.js?v=email-notifications-1';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');
@@ -67,6 +68,8 @@ const profileHandicap = document.querySelector('#profileHandicap');
 const profilePhotoInput = document.querySelector('#profilePhotoInput');
 const profilePhotoRemove = document.querySelector('#profilePhotoRemove');
 const profileSetupMessage = document.querySelector('#profileSetupMessage');
+const notificationPreferencesForm = document.querySelector('#notificationPreferencesForm');
+const notificationPreferencesMessage = document.querySelector('#notificationPreferencesMessage');
 
 let session;
 let playerData;
@@ -419,6 +422,20 @@ function renderRules() {
   }
 }
 
+function renderNotificationPreferences() {
+  const preferences = playerData.notificationPreferences ?? {
+    reminders_enabled: true,
+    schedule_updates_enabled: true,
+    new_member_admin_enabled: true,
+  };
+  notificationPreferencesForm.elements.remindersEnabled.checked = preferences.reminders_enabled;
+  notificationPreferencesForm.elements.scheduleUpdatesEnabled.checked = preferences.schedule_updates_enabled;
+  notificationPreferencesForm.elements.newMemberAdminEnabled.checked = preferences.new_member_admin_enabled;
+  const membership = playerData.memberships.find(item => item.tournaments?.id === playerData.tournament?.id);
+  notificationPreferencesForm.querySelector('[data-admin-notification]').hidden = membership?.role !== 'admin';
+  notificationPreferencesMessage.textContent = '';
+}
+
 function renderCommentary() {
   const card = document.querySelector('#commentaryCard');
   const container = document.querySelector('#matchCommentary');
@@ -442,6 +459,7 @@ function renderMemberHome() {
   renderStats();
   renderPlayers();
   renderRules();
+  renderNotificationPreferences();
   renderCommentary();
   showMemberView('home');
 }
@@ -729,6 +747,29 @@ document.querySelector('#memberNav').addEventListener('click', event => {
 });
 document.querySelectorAll('[data-open-view]').forEach(button => {
   button.addEventListener('click', () => showMemberView(button.dataset.openView));
+});
+
+notificationPreferencesForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const submitButton = notificationPreferencesForm.querySelector('[type="submit"]');
+  try {
+    submitButton.disabled = true;
+    notificationPreferencesMessage.textContent = 'Saving…';
+    const saved = await saveNotificationPreferences({
+      tournamentId: playerData.tournament.id,
+      userId: session.user.id,
+      remindersEnabled: notificationPreferencesForm.elements.remindersEnabled.checked,
+      scheduleUpdatesEnabled: notificationPreferencesForm.elements.scheduleUpdatesEnabled.checked,
+      newMemberAdminEnabled: notificationPreferencesForm.elements.newMemberAdminEnabled.checked,
+    });
+    playerData.notificationPreferences = saved;
+    notificationPreferencesMessage.textContent = 'Email settings saved.';
+    setSyncStatus('Synced');
+  } catch (error) {
+    notificationPreferencesMessage.textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
+  }
 });
 
 saveButton.addEventListener('click', async () => {
