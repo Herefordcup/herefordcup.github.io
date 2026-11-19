@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const root = new URL('../', import.meta.url);
 const migrationUrl = new URL('supabase/migrations/018_membership_approval.sql', root);
+const deletionMigrationUrl = new URL('supabase/migrations/019_delete_membership_reenroll.sql', root);
 const adminHtml = await readFile(new URL('admin.html', root), 'utf8');
 const adminCss = await readFile(new URL('admin.css', root), 'utf8');
 const adminScript = await readFile(new URL('src/admin.js', root), 'utf8');
@@ -49,20 +50,62 @@ test('pending signup emails ask every active tournament admin to review the memb
   assert.match(sql, /member-approval:%s:%s/i);
 });
 
-test('administrator portal exposes pending, active, and removed member controls', () => {
-  for (const id of ['membershipTournament', 'pendingMembers', 'activeMembers', 'removedMembers', 'membershipMessage']) {
+test('administrator portal exposes pending, active, and permanent membership deletion controls', () => {
+  for (const id of ['membershipTournament', 'pendingMembers', 'activeMembers', 'membershipMessage']) {
     assert.match(adminHtml, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   }
+  assert.doesNotMatch(adminHtml, /id=["']removedMembers["']/);
   assert.match(adminScript, /function renderMemberships\(/);
   assert.match(adminScript, /Approve/);
-  assert.match(adminScript, /Remove/);
-  assert.match(adminScript, /Restore/);
+  assert.match(adminScript, /Delete/);
+  assert.doesNotMatch(adminScript, /Restore/);
   assert.match(adminScript, /await setTournamentMembershipStatus\(/);
+  assert.match(adminScript, /await deleteTournamentMembership\(/);
+  assert.match(adminScript, /membership\.profiles\?\.role === 'admin'/);
   assert.match(adminScript, /membership\.status === 'active'/);
+  assert.match(supabaseScript, /profiles!tournament_memberships_user_id_fkey\(id, display_name, handicap_index, role\)/);
+  assert.match(adminCss, /\.membership-columns\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(adminCss, /\.membership-card \.button\{[^}]*min-height:44px/);
+  assert.match(adminHtml, /admin\.css\?v=membership-delete-1/);
+  assert.match(adminHtml, /admin\.js\?v=membership-delete-1/);
+  assert.match(adminScript, /supabase\.js\?v=membership-delete-1/);
+  assert.match(portalHtml, /portal\.js\?v=membership-delete-1/);
+  assert.match(portalScript, /supabase\.js\?v=membership-delete-1/);
   assert.match(supabaseScript, /export async function setTournamentMembershipStatus/);
   assert.match(supabaseScript, /rpc\('set_tournament_membership_status'/);
+  assert.match(supabaseScript, /export async function deleteTournamentMembership/);
+  assert.match(supabaseScript, /rpc\('delete_tournament_membership'/);
   assert.doesNotMatch(supabaseScript, /tournament_memberships'\)\.select\([^\n]+\)\.eq\('status', 'active'\)/);
+});
+
+test('deleting a tournament member removes only the membership and permits a fresh pending request', async () => {
+  const sql = await readFile(deletionMigrationUrl, 'utf8');
+
+  assert.match(sql, /delete from public\.tournament_memberships[\s\S]*where status = 'removed'/i,
+    'legacy removed rows should not remain visible after the migration');
+  assert.match(sql, /create or replace function public\.delete_tournament_membership/i);
+  assert.match(sql, /delete from public\.tournament_memberships/i);
+  assert.match(sql, /target_status <> 'active'/i,
+    'the old status RPC must no longer create removed membership records');
+  assert.match(sql, /pg_advisory_xact_lock[\s\S]*target_tournament_id/i,
+    'membership deletion must serialize per tournament before authorization and counting');
+  assert.match(sql, /cannot delete a global administrator tournament membership/i,
+    'global administrators must not be deletable into a pending state they can bypass');
+  assert.match(sql, /cannot delete your own administrator membership/i);
+  assert.match(sql, /cannot delete the last active tournament administrator/i);
+  assert.match(sql, /create or replace function public\.request_tournament_membership/i);
+  assert.match(sql, /auth\.uid\(\)/i);
+  assert.match(sql, /insert into public\.tournament_memberships/i);
+  assert.match(sql, /'pending'/i);
+  assert.match(sql, /on conflict \(tournament_id, user_id\) do nothing/i);
+  assert.match(sql, /grant execute on function public\.delete_tournament_membership\(uuid, uuid, text\) to authenticated/i);
+  assert.match(sql, /grant execute on function public\.request_tournament_membership\(\) to authenticated/i);
+});
+
+test('an authenticated user requests missing tournament membership before portal data loads', () => {
+  assert.match(supabaseScript, /export async function requestTournamentMembership/);
+  assert.match(supabaseScript, /rpc\('request_tournament_membership'/);
+  assert.match(portalScript, /await requestTournamentMembership\(\);[\s\S]*await loadPlayerData\(session\.user\.id\)/);
 });
 
 test('newly registered players see an approval-pending state instead of automatic access copy', () => {

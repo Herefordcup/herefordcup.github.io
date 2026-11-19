@@ -157,6 +157,24 @@ export async function getCurrentSession() {
   return data.session;
 }
 
+export async function requestTournamentMembership() {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('request_tournament_membership');
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteTournamentMembership({ tournamentId, userId, reason }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('delete_tournament_membership', {
+    target_tournament_id: tournamentId,
+    target_user_id: userId,
+    change_reason: reason,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export function notificationPreferencesOrNull(result) {
   if (!result?.error) return result?.data ?? null;
   if (result.error.code === 'PGRST205') return null;
@@ -600,7 +618,7 @@ export async function loadAdminData() {
   const supabase = await getSupabase();
   const [tournaments, memberships, courses, matches, settings, commentaries, rounds, legacyEditions] = await Promise.all([
     supabase.from('tournaments').select('*').order('edition_year', { ascending: false }),
-    supabase.from('tournament_memberships').select('*, profiles!tournament_memberships_user_id_fkey(id, display_name, handicap_index)').order('created_at'),
+    supabase.from('tournament_memberships').select('*, profiles!tournament_memberships_user_id_fkey(id, display_name, handicap_index, role)').order('created_at'),
     supabase.from('courses').select('id, name').eq('active', true).order('name'),
     supabase.from('matches').select('*, match_segments(*, match_segment_players(*))').order('starts_at'),
     supabase.from('commentary_settings').select('*'),

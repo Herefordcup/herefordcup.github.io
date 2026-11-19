@@ -2,6 +2,7 @@ import { validateSegments } from './formats.js';
 import { easternDateTimeToIso, optionalNumber } from './admin-helpers.js';
 import {
   correctHoleScore,
+  deleteTournamentMembership,
   deleteLegacyPhoto,
   deleteLegacyResult,
   getCurrentSession,
@@ -19,7 +20,7 @@ import {
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=member-approval-1';
+} from './supabase.js?v=membership-delete-1';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -256,7 +257,6 @@ function renderMemberships() {
   const groups = {
     pending: document.querySelector('#pendingMembers'),
     active: document.querySelector('#activeMembers'),
-    removed: document.querySelector('#removedMembers'),
   };
   for (const [status, container] of Object.entries(groups)) {
     container.replaceChildren();
@@ -266,7 +266,7 @@ function renderMemberships() {
     if (!memberships.length) {
       const empty = document.createElement('p');
       empty.className = 'empty-panel';
-      empty.textContent = status === 'pending' ? 'No approval requests.' : status === 'active' ? 'No active members.' : 'No removed members.';
+      empty.textContent = status === 'pending' ? 'No approval requests.' : 'No active members.';
       container.append(empty);
       continue;
     }
@@ -281,32 +281,47 @@ function renderMemberships() {
       const action = document.createElement('button');
       action.type = 'button';
       action.className = status === 'pending' ? 'button button-primary' : 'button';
-      action.textContent = status === 'pending' ? 'Approve' : status === 'active' ? 'Remove' : 'Restore';
+      action.textContent = status === 'pending' ? 'Approve' : 'Delete';
       if (status === 'active' && membership.user_id === session.user.id) {
         action.disabled = true;
-        action.title = 'You cannot remove your own administrator membership.';
+        action.title = 'You cannot delete your own administrator membership.';
+      } else if (status === 'active' && membership.profiles?.role === 'admin') {
+        action.disabled = true;
+        action.title = 'Global administrators cannot be deleted from tournament access.';
       }
       action.addEventListener('click', async () => {
-        const targetStatus = status === 'active' ? 'removed' : 'active';
-        const reason = targetStatus === 'removed'
-          ? window.prompt(`Why are you removing ${name.textContent}?`)
-          : status === 'pending' ? 'Approved by administrator' : 'Restored by administrator';
+        const deleting = status === 'active';
+        const reason = deleting
+          ? window.prompt(`Why are you deleting ${name.textContent}'s tournament membership? Their login and profile will remain, and a future request will require approval again.`)
+          : 'Approved by administrator';
         if (!reason?.trim()) return;
         try {
           action.disabled = true;
           setMessage(membershipMessage, `${action.textContent} in progress…`);
-          const saved = await setTournamentMembershipStatus({
-            tournamentId,
-            userId: membership.user_id,
-            status: targetStatus,
-            reason: reason.trim(),
-          });
-          adminData.memberships = adminData.memberships.map(item =>
-            item.tournament_id === tournamentId && item.user_id === membership.user_id
-              ? { ...item, ...saved }
-              : item);
+          if (deleting) {
+            await deleteTournamentMembership({
+              tournamentId,
+              userId: membership.user_id,
+              reason: reason.trim(),
+            });
+            adminData.memberships = adminData.memberships.filter(item =>
+              item.tournament_id !== tournamentId || item.user_id !== membership.user_id);
+          } else {
+            const saved = await setTournamentMembershipStatus({
+              tournamentId,
+              userId: membership.user_id,
+              status: 'active',
+              reason: reason.trim(),
+            });
+            adminData.memberships = adminData.memberships.map(item =>
+              item.tournament_id === tournamentId && item.user_id === membership.user_id
+                ? { ...item, ...saved }
+                : item);
+          }
           renderMemberships();
-          setMessage(membershipMessage, `${name.textContent} is now ${targetStatus}.`);
+          setMessage(membershipMessage, deleting
+            ? `${name.textContent}'s tournament membership was deleted.`
+            : `${name.textContent} is now active.`);
         } catch (error) {
           action.disabled = false;
           setMessage(membershipMessage, error.message, true);
