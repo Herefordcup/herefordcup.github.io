@@ -186,6 +186,17 @@ export async function deleteTournamentMembership({ tournamentId, userId, reason 
   return data;
 }
 
+export async function setTournamentMemberHandicap({ tournamentId, userId, handicapIndex }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('set_tournament_member_handicap', {
+    target_tournament_id: tournamentId,
+    target_user_id: userId,
+    target_handicap_index: handicapIndex,
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}
+
 export function notificationPreferencesOrNull(result) {
   if (!result?.error) return result?.data ?? null;
   if (result.error.code === 'PGRST205') return null;
