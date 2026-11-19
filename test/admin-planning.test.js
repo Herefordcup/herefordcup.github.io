@@ -47,7 +47,7 @@ test('course form supports unrated tees and match times are interpreted in Easte
 test('admin membership roster names the member profile relationship', () => {
   assert.match(
     supabaseScript,
-    /profiles!tournament_memberships_user_id_fkey\(id, display_name, handicap_index\)/,
+    /profiles!tournament_memberships_user_id_fkey\(id, display_name, handicap_index, role\)/,
   );
   assert.doesNotMatch(
     supabaseScript,

@@ -17,6 +17,7 @@ import {
   getCurrentSession,
   hasActiveTournamentMembership,
   loadPlayerData,
+  requestTournamentMembership,
   requestPasswordReset,
   removeProfilePhoto,
   saveNotificationPreferences,
@@ -30,7 +31,7 @@ import {
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=member-approval-1';
+} from './supabase.js?v=membership-delete-1';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');
@@ -993,6 +994,7 @@ async function start() {
     authView.hidden = true;
     document.querySelector('#signOutButton').hidden = false;
     document.querySelector('#playerIdentity').textContent = playerDisplayName(null, session.user);
+    await requestTournamentMembership();
     playerData = await loadPlayerData(session.user.id);
     document.querySelector('#playerIdentity').textContent = playerDisplayName(playerData.profile, session.user);
     const tournamentAdmin = playerData.memberships.some(membership => membership.status === 'active' && membership.role === 'admin');
