@@ -27,3 +27,12 @@ test('public and administrator interfaces label the teams Blue and White', () =>
     assert.doesNotMatch(source, /(?:Team |TEAM |Pair |Player |side|entry|lead|wins |belong to )(?:Cardinal|Silver)|(?:Cardinal|Silver)(?: Pair| Player| side| entry| lead| wins| won)/i);
   }
 });
+
+test('public Blue team shield uses MIT dark blue', () => {
+  const index = read('index.html');
+  const styles = read('styles.css');
+
+  assert.match(index, /styles\.css\?v=team-blue-1/i);
+  assert.match(styles, /--team-blue:#002896/i);
+  assert.match(styles, /\.team-cardinal \.team-code\{background:var\(--team-blue\)\}/i);
+});
