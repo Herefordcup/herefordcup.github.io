@@ -45,7 +45,7 @@ test('uploaded Past Trips photos open in an accessible full-view dialog', () => 
   assert.match(pastTripsScript, /showModal\(\)/);
   assert.match(pastTripsScript, /legacyPhotoDialog\.close\(\)/);
   assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-ledger-2"/);
-  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-tie-1"/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=public-preview-1"/);
   assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-tie-1'/);
 });
 
@@ -213,8 +213,8 @@ test('Legacy admin renders final-score reconciliation and blocks an invalid conf
 
 test('Legacy admin cache-busts each changed browser dependency', () => {
   assert.match(adminHtml, /href="admin\.css\?v=legacy-ledger-2"/);
-  assert.match(adminHtml, /src="src\/admin\.js\?v=ruthless-default-1"/);
-  assert.match(adminScript, /from '\.\/supabase\.js\?v=legacy-ledger-2'/);
+  assert.match(adminHtml, /src="src\/admin\.js\?v=public-preview-1"/);
+  assert.match(adminScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
   assert.match(adminScript, /from '\.\/legacy-ledger\.js\?v=legacy-ledger-2'/);
 });
 
@@ -232,14 +232,14 @@ test('Past Trips renders grouped native disclosures with reconciliation and conf
 
 test('Past Trips cache-busts every changed ledger dependency', async () => {
   assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-ledger-2"/);
-  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-tie-1"/);
-  assert.match(pastTripsScript, /from '\.\/supabase\.js\?v=legacy-ledger-2'/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=public-preview-1"/);
+  assert.match(pastTripsScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
   assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-tie-1'/);
   assert.match(legacyScript, /from '\.\/legacy-ledger\.js\?v=legacy-ledger-2'/);
-  assert.match(indexHtml, /src="src\/app\.js\?v=legacy-tie-1"/);
-  assert.match(appScript, /from '\.\/supabase\.js\?v=legacy-ledger-2'/);
+  assert.match(indexHtml, /src="src\/app\.js\?v=public-preview-1"/);
+  assert.match(appScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
   assert.match(appScript, /from '\.\/legacy\.js\?v=legacy-tie-1'/);
-  assert.match(portalHtml, /src="src\/portal\.js\?v=commentary-label-1"/);
+  assert.match(portalHtml, /src="src\/portal\.js\?v=public-preview-1"/);
   const portalScript = await readFile(new URL('src/portal.js', root), 'utf8');
-  assert.match(portalScript, /from '\.\/supabase\.js\?v=legacy-ledger-2'/);
+  assert.match(portalScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
 });
