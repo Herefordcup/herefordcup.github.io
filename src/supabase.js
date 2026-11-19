@@ -261,11 +261,11 @@ export async function loadPlayerData(userId) {
       .order('sort_order'),
     supabase.from('official_round_statistics').select('*')
       .eq('tournament_id', tournament.id),
-    supabase.from('match_commentaries').select('*, matches!inner(name, tournament_id)')
+    supabase.from('match_commentaries')
+      .select('id, match_id, status, commentary, ai_generated, created_at, matches!inner(tournament_id)')
       .eq('matches.tournament_id', tournament.id)
       .eq('status', 'approved')
-      .order('created_at', { ascending: false })
-      .limit(5),
+      .order('created_at', { ascending: false }),
     supabase.from('rounds').select('*, scores!scores_round_id_fkey(*)')
       .eq('user_id', userId),
     supabase.from('tournament_memberships')

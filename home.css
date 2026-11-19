@@ -41,6 +41,9 @@
 .result-details{min-width:0}
 .result-details>strong{display:block;font:800 16px 'Libre Franklin',Arial,sans-serif}
 .result-details span{display:block;margin-top:4px;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.result-commentary{margin-top:11px;padding:10px 12px;border-left:3px solid var(--cardinal);background:#f7f4ef}
+.result-commentary .result-commentary-label{display:block;color:var(--cardinal);font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+.result-commentary p{margin:5px 0 0;color:var(--black);font-size:12px;line-height:1.5}
 .home-cup-card{background:linear-gradient(145deg,#fff 60%,#f3e8eb)}
 .home-cup-card .text-button,.home-profile-card .text-button{margin-top:20px;padding:0}
 .home-profile-card .stat-list{grid-template-columns:1fr}
