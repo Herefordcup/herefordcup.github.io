@@ -1,6 +1,6 @@
 # Hereford Cup work handoff
 
-Last updated: 2026-11-17
+Last updated: 2026-11-18
 
 This document is the continuation point for a separate Hermes installation. It contains no credentials, tokens, private account identities, payment details, or secret values.
 
@@ -136,6 +136,14 @@ Required:
 - `SUPABASE_URL` (provided automatically in Supabase Edge Functions)
 - `SUPABASE_ANON_KEY` (provided automatically in Supabase Edge Functions)
 - `AI_API_KEY`
+
+Notification worker:
+
+- `SUPABASE_SERVICE_ROLE_KEY` (Edge Function secret only)
+- `NOTIFICATION_WORKER_SECRET` (same protected value in Supabase and Apps Script properties)
+- Apps Script property `SUPABASE_NOTIFICATION_FUNCTION_URL`
+
+Notification implementation lives in migration `017_member_email_notifications.sql`, Edge Function `process-notifications`, and `google-apps-script/notification-worker.gs`. Apply migration 017 before deploying the browser preference UI. Complete setup and controlled-test steps are in `docs/notification-setup.md`; never test by unexpectedly emailing the full roster.
 
 Optional:
 

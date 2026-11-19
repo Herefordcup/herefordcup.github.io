@@ -189,10 +189,11 @@ export async function loadPlayerData(userId) {
       rounds: [],
       players: [],
       profilePhotoUrls: {},
+      notificationPreferences: null,
     };
   }
 
-  const [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult, playersResult] = await Promise.all([
+  const [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult, playersResult, notificationPreferencesResult] = await Promise.all([
     supabase.from('match_players')
       .select('team, matches!inner(*, courses(name)), profiles(display_name)')
       .eq('user_id', userId)
@@ -225,8 +226,13 @@ export async function loadPlayerData(userId) {
       .select('user_id, status, role, team, joined_at, profiles!tournament_memberships_user_id_fkey(display_name, handicap_index, profile_photo_path)')
       .eq('tournament_id', tournament.id)
       .eq('status', 'active'),
+    supabase.from('notification_preferences')
+      .select('reminders_enabled, schedule_updates_enabled, new_member_admin_enabled')
+      .eq('tournament_id', tournament.id)
+      .eq('user_id', userId)
+      .maybeSingle(),
   ]);
-  for (const result of [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult, playersResult]) {
+  for (const result of [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult, playersResult, notificationPreferencesResult]) {
     if (result.error) throw result.error;
   }
   const photoPaths = [...new Set([
@@ -258,7 +264,26 @@ export async function loadPlayerData(userId) {
     rounds: roundsResult.data ?? [],
     players: playersResult.data ?? [],
     profilePhotoUrls,
+    notificationPreferences: notificationPreferencesResult.data ?? {
+      reminders_enabled: true,
+      schedule_updates_enabled: true,
+      new_member_admin_enabled: true,
+    },
   };
+}
+
+export async function saveNotificationPreferences({ tournamentId, userId, remindersEnabled, scheduleUpdatesEnabled, newMemberAdminEnabled }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.from('notification_preferences').upsert({
+    tournament_id: tournamentId,
+    user_id: userId,
+    reminders_enabled: Boolean(remindersEnabled),
+    schedule_updates_enabled: Boolean(scheduleUpdatesEnabled),
+    new_member_admin_enabled: Boolean(newMemberAdminEnabled),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'tournament_id,user_id' }).select('reminders_enabled, schedule_updates_enabled, new_member_admin_enabled').single();
+  if (error) throw error;
+  return data;
 }
 
 export async function uploadProfilePhoto(file) {

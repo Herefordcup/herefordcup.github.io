@@ -143,12 +143,6 @@ document.querySelectorAll('[role="tab"]').forEach(tab => {
   });
 });
 
-document.querySelector('#resetScores').addEventListener('click', () => {
-  if (!window.confirm('Reset every Hereford Cup match score on this device?')) return;
-  state = initialState();
-  saveAndRender();
-});
-
 render();
 
 async function startLegacyWinners() {
