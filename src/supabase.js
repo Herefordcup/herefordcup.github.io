@@ -427,16 +427,15 @@ export async function saveMatchPlan({ match, segments }) {
   return data;
 }
 
-export async function saveTournamentRule({ tournamentId, title, body, sortOrder = 0 }) {
+export async function saveTournamentRule({ ruleId = null, tournamentId, title, body, sortOrder = 1 }) {
   const supabase = await getSupabase();
-  const { data, error } = await supabase.from('tournament_rules').upsert({
-    tournament_id: tournamentId,
-    title: title.trim(),
-    body: body.trim(),
-    sort_order: Number(sortOrder),
-    active: true,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'tournament_id,title' }).select().single();
+  const { data, error } = await supabase.rpc('save_tournament_rule_ordered', {
+    target_rule_id: ruleId || null,
+    target_tournament_id: tournamentId,
+    target_title: title.trim(),
+    target_body: body.trim(),
+    target_position: Number(sortOrder),
+  });
   if (error) throw error;
   return data;
 }
@@ -627,17 +626,18 @@ export async function correctHoleScore({ roundId, holeNumber, grossScore = null,
 
 export async function loadAdminData() {
   const supabase = await getSupabase();
-  const [tournaments, memberships, courses, matches, settings, commentaries, rounds, legacyEditions] = await Promise.all([
+  const [tournaments, memberships, courses, matches, rules, settings, commentaries, rounds, legacyEditions] = await Promise.all([
     supabase.from('tournaments').select('*').order('edition_year', { ascending: false }),
     supabase.from('tournament_memberships').select('*, profiles!tournament_memberships_user_id_fkey(id, display_name, handicap_index, role)').order('created_at'),
     supabase.from('courses').select('id, name').eq('active', true).order('name'),
     supabase.from('matches').select('*, match_segments(*, match_segment_players(*))').order('starts_at'),
+    supabase.from('tournament_rules').select('*').eq('active', true).order('sort_order').order('created_at').order('id'),
     supabase.from('commentary_settings').select('*'),
     supabase.from('match_commentaries').select('*, matches(name)').order('created_at', { ascending: false }),
-    supabase.from('rounds').select('*, profiles(display_name), courses(name), tees(name), scores!scores_round_id_fkey(*)').order('created_at', { ascending: false }),
+    supabase.from('rounds').select('*, profiles(display_name), courses(name), tees(name, holes(hole_number, stroke_index)), scores!scores_round_id_fkey(*)').order('created_at', { ascending: false }),
     supabase.from('legacy_editions').select('*, legacy_results(*), legacy_photos(*)').order('edition_year', { ascending: true }),
   ]);
-  for (const result of [tournaments, memberships, courses, matches, settings, commentaries, rounds, legacyEditions]) {
+  for (const result of [tournaments, memberships, courses, matches, rules, settings, commentaries, rounds, legacyEditions]) {
     if (result.error) throw result.error;
   }
   return {
@@ -645,6 +645,7 @@ export async function loadAdminData() {
     memberships: memberships.data ?? [],
     courses: courses.data ?? [],
     matches: matches.data ?? [],
+    rules: rules.data ?? [],
     settings: settings.data ?? [],
     commentaries: commentaries.data ?? [],
     rounds: rounds.data ?? [],
