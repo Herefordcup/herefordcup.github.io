@@ -3,7 +3,7 @@ import { matchPoints } from './scoring.js';
 import { assignedRoundScoringMode, formatSegmentLabel, individualEntryBlockReason, segmentHoleCount } from './formats.js?v=handicap-scoring-1';
 import { summarizeLeagueStats, summarizePlayerStats } from './stats.js';
 import { assertRoundAssignment, holeNumbersForRound, mergePersistedScores, unsavedScoreRows } from './round-entry.js?v=round-holes-1';
-import { formatHomeDate, formatMatchupPlayers, orderHomeMatches } from './home.js';
+import { commentaryForMatch, formatHomeDate, formatMatchupPlayers, orderHomeMatches } from './home.js?v=match-commentary-inline-1';
 import { avatarInitials, normalizeProfileInput, playerDisplayName, profileAvatarUrl, validateProfilePhoto } from './profile.js?v=player-name-1';
 import {
   assignedSegmentsForPlayer,
@@ -31,7 +31,7 @@ import {
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=membership-delete-1';
+} from './supabase.js?v=match-commentary-inline-1';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');
@@ -297,6 +297,18 @@ function renderRecentResults() {
     const matchup = formatMatchupPlayers(match.match_players);
     const context = [matchup, match.courses?.name, formatName(match.format)].filter(Boolean).join(' · ');
     details.append(element('span', '', context || 'Pairing details pending'));
+    const commentary = commentaryForMatch(playerData.commentaries, match.id);
+    if (commentary) {
+      const commentaryBlock = element('div', 'result-commentary');
+      const provenance = commentary.ai_generated
+        ? 'AI-generated · Administrator approved'
+        : 'Administrator edited · Administrator approved';
+      commentaryBlock.append(
+        element('small', 'result-commentary-label', provenance),
+        element('p', '', commentary.commentary),
+      );
+      details.append(commentaryBlock);
+    }
     row.append(meta, details);
     container.append(row);
   }
@@ -437,20 +449,6 @@ function renderNotificationPreferences() {
   notificationPreferencesMessage.textContent = '';
 }
 
-function renderCommentary() {
-  const card = document.querySelector('#commentaryCard');
-  const container = document.querySelector('#matchCommentary');
-  const latest = playerData.commentaries[0];
-  card.hidden = !latest;
-  container.replaceChildren();
-  if (!latest) return;
-  container.append(element('p', 'commentary-quote', latest.commentary));
-  const provenance = latest.ai_generated
-    ? 'AI-generated · Administrator approved'
-    : 'Administrator edited · Administrator approved';
-  container.append(element('span', 'commentary-meta', `${latest.matches?.name ?? 'Hereford Cup'} · ${provenance}`));
-}
-
 function renderMemberHome() {
   renderHomeSummary();
   renderSchedule();
@@ -461,7 +459,6 @@ function renderMemberHome() {
   renderPlayers();
   renderRules();
   renderNotificationPreferences();
-  renderCommentary();
   showMemberView('home');
 }
 

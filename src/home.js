@@ -39,3 +39,8 @@ export function orderHomeMatches(matches = []) {
     return direction * (new Date(a.starts_at ?? 0) - new Date(b.starts_at ?? 0));
   });
 }
+
+export function commentaryForMatch(commentaries = [], matchId) {
+  return commentaries.find(commentary => commentary.match_id === matchId
+    && commentary.status === 'approved') ?? null;
+}

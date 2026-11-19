@@ -80,8 +80,8 @@ test('administrator portal exposes pending, active, and permanent membership del
   assert.match(adminHtml, /admin\.js\?v=commentary-banter-1/);
   assert.match(adminScript, /supabase\.js\?v=commentary-banter-1/);
   assert.match(adminScript, /match-results\.js\?v=automatic-results-2/);
-  assert.match(portalHtml, /portal\.js\?v=membership-delete-1/);
-  assert.match(portalScript, /supabase\.js\?v=membership-delete-1/);
+  assert.match(portalHtml, /portal\.js\?v=match-commentary-inline-1/);
+  assert.match(portalScript, /supabase\.js\?v=match-commentary-inline-1/);
   assert.match(supabaseScript, /export async function setTournamentMembershipStatus/);
   assert.match(supabaseScript, /rpc\('set_tournament_membership_status'/);
   assert.match(supabaseScript, /export async function deleteTournamentMembership/);

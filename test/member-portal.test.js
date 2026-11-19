@@ -15,6 +15,7 @@ const portalScript = await readFile(new URL('../src/portal.js', import.meta.url)
 const supabaseScript = await readFile(new URL('../src/supabase.js', import.meta.url), 'utf8');
 const formatsScript = await readFile(new URL('../src/formats.js', import.meta.url), 'utf8');
 const portalCss = await readFile(new URL('../portal.css', import.meta.url), 'utf8');
+const homeCss = await readFile(new URL('../home.css', import.meta.url), 'utf8');
 
 test('member portal opens with home and provides primary navigation', () => {
   for (const id of [
@@ -62,7 +63,7 @@ test('More includes a tournament player directory without private contact data',
   assert.match(html, /id="playersList"/);
   assert.match(html, />Players</);
   assert.match(supabaseScript, /profiles!tournament_memberships_user_id_fkey\(display_name, handicap_index, profile_photo_path\)/);
-  assert.match(portalScript, /from '\.\/supabase\.js\?v=membership-delete-1'/);
+  assert.match(portalScript, /from '\.\/supabase\.js\?v=match-commentary-inline-1'/);
   assert.match(portalScript, /function renderPlayers\(/);
   assert.doesNotMatch(portalScript, /player\.email|profiles\(email/);
 });
@@ -198,7 +199,7 @@ test('scorecard setup includes an 18-hole, front-nine, and back-nine selector', 
   assert.match(html, /<option value="front9">Front 9 \(holes 1–9\)<\/option>/);
   assert.match(html, /<option value="back9">Back 9 \(holes 10–18\)<\/option>/);
   assert.match(portalScript, /holeNumbersForRound\(holeRangeSelect\.value, selectedMatchSegments\(\)\)/);
-  assert.match(html, /src="src\/portal\.js\?v=membership-delete-1"/);
+  assert.match(html, /src="src\/portal\.js\?v=match-commentary-inline-1"/);
   assert.match(portalScript, /from '\.\/round-entry\.js\?v=round-holes-1'/);
 });
 
@@ -219,10 +220,14 @@ test('score entry loads owned rounds and scores, excludes final matches, and bin
 });
 
 test('member commentary distinguishes untouched AI copy from administrator edits', () => {
-  assert.doesNotMatch(html, /CUP COMMENTATOR · AI-GENERATED/);
-  assert.match(portalScript, /latest\.ai_generated\s*\?/);
+  assert.doesNotMatch(html, /id="commentaryCard"/);
+  assert.match(portalScript, /commentaryForMatch\(playerData\.commentaries, match\.id\)/);
+  assert.match(portalScript, /result-commentary/);
+  assert.match(homeCss, /\.result-commentary/);
+  assert.match(portalScript, /commentary\.ai_generated\s*\?/);
   assert.match(portalScript, /AI-generated · Administrator approved/);
   assert.match(portalScript, /Administrator edited · Administrator approved/);
+  assert.doesNotMatch(supabaseScript, /from\('match_commentaries'\)[\s\S]*?\.limit\(5\)/);
 });
 
 test('Cup loads tournament-wide matches while Home stays member-assignment scoped', () => {

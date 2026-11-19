@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatHomeDate, formatMatchupPlayers, orderHomeMatches } from '../src/home.js';
+import { commentaryForMatch, formatHomeDate, formatMatchupPlayers, orderHomeMatches } from '../src/home.js';
 
 test('team matchup labels group teammates on the same side', () => {
   const players = [
@@ -31,6 +31,16 @@ test('home match ordering shows live, then nearest scheduled, then latest finals
   assert.deepEqual(orderHomeMatches(matches).map(match => match.id), [
     'live', 'sooner', 'later', 'new-final', 'old-final',
   ]);
+});
+
+test('match results select only approved commentary for their exact match', () => {
+  const commentaries = [
+    { id: 'draft', match_id: 'match-1', status: 'draft', commentary: 'Not public' },
+    { id: 'other', match_id: 'match-2', status: 'approved', commentary: 'Wrong match' },
+    { id: 'approved', match_id: 'match-1', status: 'approved', commentary: 'The scorecard kept the receipts.' },
+  ];
+  assert.deepEqual(commentaryForMatch(commentaries, 'match-1'), commentaries[2]);
+  assert.equal(commentaryForMatch(commentaries, 'missing'), null);
 });
 
 test('date-only tournament values stay on their published Eastern calendar date', () => {
