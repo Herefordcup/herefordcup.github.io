@@ -3,15 +3,20 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { composeCommentary, phraseIdsForTone } from '../src/commentary.js';
 
+const commentaryModuleUrl = new URL('../src/commentary.js', import.meta.url);
 const edgeFunctionUrl = new URL('../supabase/functions/generate-match-commentary/index.ts', import.meta.url);
 const autoPublicationMigrationUrl = new URL('../supabase/migrations/007_auto_commentary_publication.sql', import.meta.url);
 const commentaryLifecycleMigrationUrl = new URL('../supabase/migrations/012_commentary_and_legacy_hardening.sql', import.meta.url);
+const commentaryBanterMigrationUrl = new URL('../supabase/migrations/024_commentary_banter.sql', import.meta.url);
+const supabaseClientUrl = new URL('../src/supabase.js', import.meta.url);
+const adminUrl = new URL('../src/admin.js', import.meta.url);
 
 test('commentary composition accepts only server-owned tone phrase identifiers', () => {
-  assert.deepEqual(phraseIdsForTone('playful'), ['playful_pressure', 'playful_scoreboard']);
+  assert.ok(phraseIdsForTone('playful').length >= 6);
+  assert.ok(phraseIdsForTone('ruthless').length >= 6);
   assert.equal(
-    composeCommentary('Blue wins 2 & 1', 'playful', 'playful_scoreboard'),
-    'Blue wins 2 & 1. The scoreboard gets the final word.',
+    composeCommentary('Blue wins 2 & 1', 'playful', 'playful_excuses'),
+    'Blue wins 2 & 1. The winners get bragging rights; the losers get first crack at the excuses.',
   );
   assert.throws(
     () => composeCommentary('Blue wins 2 & 1', 'playful', 'invented_claim'),
@@ -19,18 +24,69 @@ test('commentary composition accepts only server-owned tone phrase identifiers',
   );
 });
 
+test('server-owned banter avoids invented play and course details', async () => {
+  const source = await readFile(commentaryModuleUrl, 'utf8');
+  assert.doesNotMatch(source, /one putt|cart ride|eighteen holes produced/i);
+});
+
+test('authoritative recap names participants and replays the exact one-segment match-play result', async () => {
+  const [source, sql] = await Promise.all([
+    readFile(edgeFunctionUrl, 'utf8'),
+    readFile(commentaryBanterMigrationUrl, 'utf8'),
+  ]);
+  assert.match(source, /selectedSegments\.length !== 1/);
+  assert.match(sql, /segment_count <> 1[\s\S]*one-segment/i);
+  assert.match(sql, /segment_record\.format not in \('singles', 'fourball'\)/i);
+  assert.match(sql, /join public\.profiles[\s\S]*display_name/i);
+  assert.match(sql, /string_agg[\s\S]*order by assignment\.playing_order/i);
+  assert.match(sql, /update public\.commentary_settings[\s\S]*timing = 'post_match'/i);
+  assert.match(sql, /from public\.rounds round_record[\s\S]*for share/i);
+  assert.match(sql, /from public\.scores score_record[\s\S]*for share/i);
+  assert.match(sql, /for current_hole_number in segment_record\.start_hole\.\.segment_record\.end_hole loop/i);
+  assert.match(sql, /result_text := winner_label[\s\S]*' Up'[\s\S]*' & '/i);
+  assert.match(sql, /recap_text := participant_text \|\| result_text/i);
+  assert.doesNotMatch(sql, /\|\| cardinal_points \|\| '-' \|\| silver_points/);
+});
+
+test('authoritative recap chooses an objective turning point and a factual halve fallback', async () => {
+  const sql = await readFile(commentaryBanterMigrationUrl, 'utf8');
+  assert.match(sql, /longest_streak >= 2/i);
+  assert.match(sql, /streak_start_hole[\s\S]*streak_end_hole/i);
+  assert.match(sql, /lead_for_good_hole/i);
+  assert.match(sql, /took the lead for good on hole/i);
+  assert.match(sql, /reverse derived_holes_played\.\.2/i);
+  assert.match(sql, /squared the match on hole/i);
+  assert.match(sql, /Every counted hole was halved/i);
+  assert.match(sql, /order by[\s\S]*streak_length desc[\s\S]*start_hole asc/i);
+});
+
+test('manual recap regeneration replaces the active recap without duplicating its admin card', async () => {
+  const [edgeSource, clientSource, adminSource, sql] = await Promise.all([
+    readFile(edgeFunctionUrl, 'utf8'),
+    readFile(supabaseClientUrl, 'utf8'),
+    readFile(adminUrl, 'utf8'),
+    readFile(commentaryBanterMigrationUrl, 'utf8'),
+  ]);
+  assert.match(edgeSource, /const regenerate = body\.regenerate === true/);
+  assert.match(edgeSource, /if \(!regenerate\)[\s\S]*findActiveCommentary/);
+  assert.match(edgeSource, /target_regenerate: regenerate/);
+  assert.match(clientSource, /generateMatchCommentary\(matchId, \{ regenerate = false \} = \{\}\)/);
+  assert.match(clientSource, /body: \{ matchId, commentaryType: 'post_match', regenerate \}/);
+  assert.match(adminSource, /generateMatchCommentary\(matchId, \{ regenerate: true \}\)/);
+  assert.match(adminSource, /upsertCommentaryById\(adminData\.commentaries, commentary\)/);
+  assert.doesNotMatch(adminSource, /adminData\.commentaries\.unshift\(commentary\)/);
+  assert.match(sql, /if target_regenerate and saved\.id is not null then/i);
+  assert.match(sql, /update public\.match_commentaries[\s\S]*where id = saved\.id/i);
+});
+
 test('edge function constrains AI to deterministic anonymous facts and always saves a draft', async () => {
   const source = await readFile(edgeFunctionUrl, 'utf8');
   assert.doesNotMatch(source, /profiles\(display_name\)/);
-  assert.match(source, /settings\.timing !== 'segment_and_match'/);
+  assert.match(source, /commentaryType !== 'post_match'/);
   assert.match(source, /selectedSegments\.length === 0/);
   assert.match(source, /selectedSegments\.some\(.*status !== 'final'/s);
-  assert.match(source, /function deterministicResult/);
-  assert.match(source, /function deterministicMatchResult/);
-  assert.match(source, /differential > 0 \? 'Blue' : 'White'/);
-  assert.match(source, /totals\.cardinal > totals\.silver \? 'Blue' : 'White'/);
+  assert.match(source, /const outcomeClass = Number\(selectedSegments\[0\]\.differential\) === 0 \? 'halved' : 'decisive'/);
   assert.doesNotMatch(source, /'Cardinal'|'Silver'/);
-  assert.match(source, /result: commentaryType === 'segment'[\s\S]*deterministicMatchResult/);
   assert.match(source, /Do not name or quote people/i);
   assert.match(source, /injuries, weather, shots, emotions, or events/i);
   assert.match(source, /rpc\('create_commentary_draft'/);
@@ -65,6 +121,14 @@ test('automatic commentary retries ignore hidden recaps and recover concurrent g
   assert.match(source, /return json\(\{ commentary: existingCommentary, reused: true \}\)/);
 });
 
+test('commentary tournament administrators can manage exact-tournament settings and operational backstops', async () => {
+  const sql = await readFile(commentaryBanterMigrationUrl, 'utf8');
+  assert.match(sql, /drop policy if exists "admins manage commentary settings"/i);
+  assert.match(sql, /create policy "admins manage commentary settings"[\s\S]*is_tournament_admin\(tournament_id\)/i);
+  assert.match(sql, /create or replace function public\.edit_commentary_draft[\s\S]*for update of commentary[\s\S]*is_tournament_admin\(commentary_tournament_id\)/i);
+  assert.match(sql, /create or replace function public\.set_commentary_status[\s\S]*for update of commentary[\s\S]*is_tournament_admin\(commentary_tournament_id\)/i);
+});
+
 test('edge function CORS permits Supabase browser SDK headers', async () => {
   const source = await readFile(edgeFunctionUrl, 'utf8');
   const allowHeaders = source.match(/'Access-Control-Allow-Headers': '([^']+)'/)?.[1]
@@ -81,13 +145,15 @@ test('edge function authenticates an administrator and keeps AI credentials serv
   assert.doesNotMatch(source, /\*\*\*/);
   assert.match(source, /rpc\('is_admin'\)/);
   assert.match(source, /selectedSegments\.length !== 1/);
+  assert.match(source, /\['singles', 'fourball'\]\.includes/);
   assert.match(source, /AbortSignal\.timeout/);
   assert.match(source, /Deno\.env\.get\('AI_API_KEY'\)/);
   assert.match(source, /const PHRASE_ALLOWLIST/);
   assert.match(source, /allowedPhraseIds/);
   assert.match(source, /phraseId = String/);
   assert.match(source, /PHRASE_ALLOWLIST\[settings\.tone\]\?\.\[phraseId\]/);
-  assert.match(source, /const commentary = `\$\{facts\.result\}\. \$\{closingPhrase\}`/);
+  assert.doesNotMatch(source, /Verified result:/);
+  assert.doesNotMatch(source, /facts\.result/);
   assert.doesNotMatch(source, /commentaryNumbersAreGrounded\(commentary/);
   assert.match(source, /rpc\('create_commentary_draft'/);
   assert.match(source, /target_phrase_id: phraseId/);
@@ -95,4 +161,13 @@ test('edge function authenticates an administrator and keeps AI credentials serv
   assert.doesNotMatch(source, /target_facts:/);
   assert.doesNotMatch(source, /from\('match_commentaries'\)\.insert/);
   assert.doesNotMatch(source, /SUPABASE_SERVICE_ROLE_KEY/);
+});
+
+test('admin entrypoint cache-busts both changed modules', async () => {
+  const [html, adminSource] = await Promise.all([
+    readFile(new URL('../admin.html', import.meta.url), 'utf8'),
+    readFile(adminUrl, 'utf8'),
+  ]);
+  assert.match(html, /src\/admin\.js\?v=commentary-banter-1/);
+  assert.match(adminSource, /from '\.\/supabase\.js\?v=commentary-banter-1'/);
 });

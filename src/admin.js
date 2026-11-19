@@ -23,7 +23,7 @@ import {
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=automatic-results-2';
+} from './supabase.js?v=commentary-banter-1';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -608,6 +608,10 @@ function renderCommentaryApprovals() {
   }
 }
 
+function upsertCommentaryById(commentaries, commentary) {
+  return [commentary, ...commentaries.filter(item => item.id !== commentary.id)];
+}
+
 courseForm.addEventListener('submit', async event => {
   event.preventDefault();
   setMessage(courseMessage, 'Saving…');
@@ -674,7 +678,7 @@ resultFinalizationForm.addEventListener('submit', async event => {
       try {
         setMessage(message, 'Match finalized. Generating commentary…');
         const commentary = await generateMatchCommentary(matchId);
-        adminData.commentaries.unshift(commentary);
+        adminData.commentaries = upsertCommentaryById(adminData.commentaries, commentary);
         renderCommentaryApprovals();
         setMessage(message, commentary.status === 'approved'
           ? 'Match finalized. Commentary generated and published.'
@@ -929,8 +933,8 @@ document.querySelector('#generateCommentary').addEventListener('click', async ()
   }
   try {
     setMessage(message, 'Generating and validating recap…');
-    const commentary = await generateMatchCommentary(matchId);
-    adminData.commentaries.unshift(commentary);
+    const commentary = await generateMatchCommentary(matchId, { regenerate: true });
+    adminData.commentaries = upsertCommentaryById(adminData.commentaries, commentary);
     renderCommentaryApprovals();
     setMessage(message, commentary.status === 'approved' ? 'Commentary generated and published.' : 'Commentary generated and awaiting approval.');
   } catch (error) { setMessage(message, error.message, true); }

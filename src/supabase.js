@@ -571,10 +571,10 @@ export async function saveCommentarySettings(settings) {
   return data;
 }
 
-export async function generateMatchCommentary(matchId) {
+export async function generateMatchCommentary(matchId, { regenerate = false } = {}) {
   const supabase = await getSupabase();
   const { data, error } = await supabase.functions.invoke('generate-match-commentary', {
-    body: { matchId, commentaryType: 'post_match' },
+    body: { matchId, commentaryType: 'post_match', regenerate },
   });
   if (error) throw error;
   return data.commentary;
