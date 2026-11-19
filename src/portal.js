@@ -30,7 +30,7 @@ import {
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=login-recovery-1';
+} from './supabase.js?v=member-approval-1';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');
@@ -995,7 +995,8 @@ async function start() {
     document.querySelector('#playerIdentity').textContent = playerDisplayName(null, session.user);
     playerData = await loadPlayerData(session.user.id);
     document.querySelector('#playerIdentity').textContent = playerDisplayName(playerData.profile, session.user);
-    document.querySelector('#adminLink').hidden = playerData.profile.role !== 'admin';
+    const tournamentAdmin = playerData.memberships.some(membership => membership.status === 'active' && membership.role === 'admin');
+    document.querySelector('#adminLink').hidden = playerData.profile.role !== 'admin' && !tournamentAdmin;
     if (playerData.profile.role !== 'admin' && !hasActiveTournamentMembership(playerData.memberships)) {
       accessPendingView.hidden = false;
       dashboardView.hidden = true;

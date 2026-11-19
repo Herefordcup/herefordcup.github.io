@@ -23,11 +23,11 @@ test('player access offers account creation, email signin, and Google', () => {
   assert.doesNotMatch(html, />\s*Apple\s*</);
 });
 
-test('registered accounts automatically carry into every tournament', () => {
-  assert.match(html, /account automatically carries into every Hereford Cup tournament/i);
-  assert.doesNotMatch(html, /invitation or administrator approval/i);
-  assert.doesNotMatch(html, /administrator must approve your Hereford Cup membership/i);
-  assert.match(html, /automatically receive access when a tournament is available/i);
+test('registered accounts remain pending until an administrator approves them', () => {
+  assert.match(html, /new player accounts require administrator approval/i);
+  assert.match(html, /administrator must approve your membership/i);
+  assert.doesNotMatch(html, /automatically carries into every Hereford Cup tournament/i);
+  assert.doesNotMatch(html, /automatically receive access when a tournament is available/i);
 });
 
 test('portal remains a browser website without install metadata', () => {

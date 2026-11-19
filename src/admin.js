@@ -15,10 +15,11 @@ import {
   saveLegacyResult,
   saveMatchPlan,
   saveTournamentRule,
+  setTournamentMembershipStatus,
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js';
+} from './supabase.js?v=member-approval-1';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -36,6 +37,8 @@ const resultFinalizationForm = document.querySelector('#resultFinalizationForm')
 const resultMatch = document.querySelector('#resultMatch');
 const resultSegmentRows = document.querySelector('#resultSegmentRows');
 const adminContent = document.querySelector('#adminContent');
+const membershipTournament = document.querySelector('#membershipTournament');
+const membershipMessage = document.querySelector('#membershipMessage');
 const legacyEditionForm = document.querySelector('#legacyEditionForm');
 const legacyEditionSelect = document.querySelector('#legacyEditionSelect');
 const legacyResultForm = document.querySelector('#legacyResultForm');
@@ -62,7 +65,7 @@ function activeTournamentId() {
 }
 
 function membersForTournament(tournamentId) {
-  return adminData.memberships.filter(membership => membership.tournament_id === tournamentId);
+  return adminData.memberships.filter(membership => membership.tournament_id === tournamentId && membership.status === 'active');
 }
 
 function createPlayerSlot(slotNumber) {
@@ -248,8 +251,76 @@ function renderLegacyPhotoList() {
   }
 }
 
+function renderMemberships() {
+  const tournamentId = membershipTournament.value;
+  const groups = {
+    pending: document.querySelector('#pendingMembers'),
+    active: document.querySelector('#activeMembers'),
+    removed: document.querySelector('#removedMembers'),
+  };
+  for (const [status, container] of Object.entries(groups)) {
+    container.replaceChildren();
+    const memberships = adminData.memberships
+      .filter(membership => membership.tournament_id === tournamentId && membership.status === status)
+      .sort((left, right) => (left.profiles?.display_name || '').localeCompare(right.profiles?.display_name || ''));
+    if (!memberships.length) {
+      const empty = document.createElement('p');
+      empty.className = 'empty-panel';
+      empty.textContent = status === 'pending' ? 'No approval requests.' : status === 'active' ? 'No active members.' : 'No removed members.';
+      container.append(empty);
+      continue;
+    }
+    for (const membership of memberships) {
+      const card = document.createElement('article');
+      card.className = 'membership-card';
+      const name = document.createElement('strong');
+      name.textContent = membership.profiles?.display_name || 'Player';
+      const details = document.createElement('p');
+      details.textContent = `${membership.role} · ${membership.team || 'Team unassigned'}`;
+      const actions = document.createElement('div');
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = status === 'pending' ? 'button button-primary' : 'button';
+      action.textContent = status === 'pending' ? 'Approve' : status === 'active' ? 'Remove' : 'Restore';
+      if (status === 'active' && membership.user_id === session.user.id) {
+        action.disabled = true;
+        action.title = 'You cannot remove your own administrator membership.';
+      }
+      action.addEventListener('click', async () => {
+        const targetStatus = status === 'active' ? 'removed' : 'active';
+        const reason = targetStatus === 'removed'
+          ? window.prompt(`Why are you removing ${name.textContent}?`)
+          : status === 'pending' ? 'Approved by administrator' : 'Restored by administrator';
+        if (!reason?.trim()) return;
+        try {
+          action.disabled = true;
+          setMessage(membershipMessage, `${action.textContent} in progress…`);
+          const saved = await setTournamentMembershipStatus({
+            tournamentId,
+            userId: membership.user_id,
+            status: targetStatus,
+            reason: reason.trim(),
+          });
+          adminData.memberships = adminData.memberships.map(item =>
+            item.tournament_id === tournamentId && item.user_id === membership.user_id
+              ? { ...item, ...saved }
+              : item);
+          renderMemberships();
+          setMessage(membershipMessage, `${name.textContent} is now ${targetStatus}.`);
+        } catch (error) {
+          action.disabled = false;
+          setMessage(membershipMessage, error.message, true);
+        }
+      });
+      actions.append(action);
+      card.append(name, details, actions);
+      container.append(card);
+    }
+  }
+}
+
 function populateAdminChoices() {
-  const tournamentSelects = ['#matchTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
+  const tournamentSelects = ['#membershipTournament', '#matchTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
   for (const select of tournamentSelects) select.replaceChildren(...adminData.tournaments.map(tournament => new Option(`${tournament.name} · ${tournament.edition_year}`, tournament.id)));
   const courseSelect = document.querySelector('#matchCourse');
   courseSelect.replaceChildren(new Option('Course TBA', ''), ...adminData.courses.map(course => new Option(course.name, course.id)));
@@ -388,6 +459,7 @@ matchPlanForm.addEventListener('submit', async event => {
   } catch (error) { setMessage(matchPlanMessage, error.message, true); }
 });
 
+membershipTournament.addEventListener('change', renderMemberships);
 resultMatch.addEventListener('change', renderResultSegments);
 resultFinalizationForm.addEventListener('submit', async event => {
   event.preventDefault();
@@ -586,9 +658,11 @@ async function start() {
     session = await getCurrentSession();
     if (!session) throw new Error('Sign in through the player portal first.');
     const playerData = await loadPlayerData(session.user.id);
-    if (playerData.profile.role !== 'admin') throw new Error('This page is limited to the tournament administrator.');
+    const tournamentAdmin = playerData.memberships.some(membership => membership.status === 'active' && membership.role === 'admin');
+    if (playerData.profile.role !== 'admin' && !tournamentAdmin) throw new Error('This page is limited to the tournament administrator.');
     adminData = await loadAdminData();
     populateAdminChoices();
+    renderMemberships();
     hydrateLegacyEdition();
     hydrateCommentarySettings();
     addSegment({ startHole: 1, endHole: 9, format: 'scramble', pointValue: 0.5 });

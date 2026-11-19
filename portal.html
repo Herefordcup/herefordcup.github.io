@@ -45,16 +45,16 @@
       <div class="provider-grid" id="providerAccess">
         <button class="provider-button google-button" id="googleSignIn" type="button"><span aria-hidden="true">G</span> Google</button>
       </div>
-      <p class="auth-note" id="authAccessNote">Your account automatically carries into every Hereford Cup tournament.</p>
+      <p class="auth-note" id="authAccessNote">New player accounts require administrator approval before tournament access is enabled.</p>
       <div class="setup-message" id="setupMessage" hidden><strong>Backend setup pending</strong><p>The account experience is built. Connect the Hereford Cup Supabase project to activate sign-in and shared scoring.</p></div>
     </section>
 
     <section class="auth-card" id="accessPendingView" hidden>
       <div class="auth-shield"><span>H</span></div>
       <p class="eyebrow">HEREFORD CUP TOURNAMENT</p>
-      <h1>Account ready.<br><em>Tournament pending.</em></h1>
-      <p id="accessPendingMessage">Your account will automatically receive access when a tournament is available.</p>
-      <p class="auth-note">You can safely close this page and return after the tournament is published.</p>
+      <h1>Account ready.<br><em>Approval pending.</em></h1>
+      <p id="accessPendingMessage">A tournament administrator must approve your membership before you can view the member portal.</p>
+      <p class="auth-note">You can safely sign out and return after an administrator approves you.</p>
     </section>
 
     <section class="dashboard member-shell" id="dashboardView" hidden>
@@ -208,6 +208,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="src/portal.js?v=player-name-1"></script>
+  <script type="module" src="src/portal.js?v=member-approval-1"></script>
 </body>
 </html>
