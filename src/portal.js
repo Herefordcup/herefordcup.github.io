@@ -3,7 +3,7 @@ import { matchPoints } from './scoring.js';
 import { assignedRoundScoringMode, formatSegmentLabel, individualEntryBlockReason, segmentHoleCount } from './formats.js?v=handicap-scoring-1';
 import { summarizeLeagueStats, summarizePlayerStats } from './stats.js';
 import { assertRoundAssignment, holeNumbersForRound, mergePersistedScores, unsavedScoreRows } from './round-entry.js?v=round-holes-1';
-import { commentaryForMatch, formatHomeDate, formatMatchupPlayers, orderHomeMatches } from './home.js?v=match-commentary-inline-1';
+import { commentaryForMatch, formatHomeDate, formatMatchupPlayers, orderHomeMatches } from './home.js?v=public-preview-1';
 import { avatarInitials, normalizeProfileInput, playerDisplayName, profileAvatarUrl, validateProfilePhoto } from './profile.js?v=player-name-1';
 import {
   assignedSegmentsForPlayer,
@@ -31,7 +31,7 @@ import {
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=legacy-ledger-2';
+} from './supabase.js?v=public-preview-1';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');

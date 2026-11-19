@@ -1,3 +1,12 @@
+export function formatPublicPoints(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  const points = Number(value);
+  if (!Number.isFinite(points)) return '—';
+  if (Number.isInteger(points)) return String(points);
+  if (Number.isInteger(points * 2)) return `${Math.floor(points)}½`;
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(points);
+}
+
 export function formatHomeDate(value, options = {}) {
   if (!value) return '';
   const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value;
@@ -7,6 +16,44 @@ export function formatHomeDate(value, options = {}) {
     day: 'numeric',
     ...options,
   }).format(new Date(normalized));
+}
+
+function easternDateKey(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+export function groupPublicSchedule({ events = [], matches = [] } = {}) {
+  const items = [
+    ...events.map(event => ({ kind: 'event', title: event.title, startsAt: event.startsAt, data: event })),
+    ...matches
+      .filter(match => Array.isArray(match.segments) && match.segments.length > 0)
+      .map(match => ({ kind: 'match', title: match.name, startsAt: match.startsAt, data: match })),
+  ].filter(item => easternDateKey(item.startsAt));
+  items.sort((left, right) => new Date(left.startsAt) - new Date(right.startsAt)
+    || left.kind.localeCompare(right.kind)
+    || String(left.title).localeCompare(String(right.title)));
+
+  const groups = new Map();
+  for (const item of items) {
+    const date = easternDateKey(item.startsAt);
+    if (!groups.has(date)) groups.set(date, { date, items: [] });
+    groups.get(date).items.push(item);
+  }
+  return [...groups.values()].sort((left, right) => left.date.localeCompare(right.date));
+}
+
+export function hasPublishedPublicPairings(matches = []) {
+  return matches.some(match => (match.segments ?? [])
+    .some(segment => (segment.pairings ?? []).some(pairing => pairing.displayName)));
 }
 
 export function formatMatchupPlayers(matchPlayers = []) {

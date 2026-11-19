@@ -7,7 +7,7 @@
   <meta name="description" content="The official home of the Hereford Cup — an annual Ryder Cup-style golf tradition.">
   <title>Hereford Cup</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=team-blue-1">
+  <link rel="stylesheet" href="styles.css?v=public-preview-1">
 </head>
 <body>
   <div class="top-rule"></div>
@@ -45,38 +45,37 @@
 
     <section class="score-section" id="leaderboard" aria-labelledby="score-title">
       <div class="section-heading">
-        <div><p class="eyebrow">LIVE TOURNAMENT</p><h2 id="score-title">The race for the Cup</h2></div>
+        <div><p class="eyebrow">TOURNAMENT PREVIEW</p><h2 id="score-title">The race for the Cup</h2></div>
+        <p class="preview-status" id="previewStatus" role="status">Loading official tournament preview…</p>
       </div>
       <div class="scoreboard">
         <div class="team team-cardinal">
           <span class="team-code">B</span>
           <div><p>TEAM</p><h3>Blue</h3></div>
-          <strong id="cardinalTotal">0</strong>
+          <strong id="cardinalTotal">—</strong>
         </div>
         <div class="score-center">
-          <span>FIRST TO</span><b id="targetPoints">6½</b><span>POINTS</span>
+          <span>FIRST TO</span><b id="targetPoints">—</b><span>POINTS</span>
         </div>
         <div class="team team-silver">
-          <strong id="silverTotal">0</strong>
+          <strong id="silverTotal">—</strong>
           <div><p>TEAM</p><h3>White</h3></div>
           <span class="team-code">W</span>
         </div>
       </div>
       <div class="progress" aria-label="Team points progress"><i id="scoreProgress"></i></div>
+      <p class="tournament-meta" id="tournamentMeta"></p>
     </section>
 
     <section class="matches-section" id="matches" aria-labelledby="matches-title">
       <div class="section-heading">
         <div><p class="eyebrow">MATCH CENTER</p><h2 id="matches-title">Tournament schedule</h2></div>
       </div>
-      <div class="session-tabs" role="tablist" aria-label="Tournament sessions">
-        <button role="tab" aria-selected="true" data-session="fourball"><span>DAY 1</span>Four-Ball</button>
-        <button role="tab" aria-selected="false" data-session="foursomes"><span>DAY 2</span>Foursomes</button>
-        <button role="tab" aria-selected="false" data-session="singles"><span>DAY 3</span>Singles</button>
+      <div class="session-tabs" id="sessionTabs" role="tablist" aria-label="Tournament days"></div>
+      <div class="match-list" id="matchList" aria-live="polite">
+        <p class="preview-message">Loading official tournament preview…</p>
       </div>
-      <div class="format-note" id="formatNote"></div>
-      <div class="match-list" id="matchList" aria-live="polite"></div>
-      <p class="scoring-help">Select the winner of each completed hole. The match status and Cup totals update automatically.</p>
+      <p class="pairing-notice" id="pairingNotice" hidden>Pairings will appear after they are published.</p>
     </section>
 
     <section class="legacy legacy-summary" id="legacy" aria-labelledby="legacy-title">
@@ -89,6 +88,6 @@
   </main>
 
   <footer><span>HEREFORD CUP</span><p>Annual Ryder Cup-style golf tradition</p><span>EST. 2023</span></footer>
-  <script type="module" src="src/app.js?v=legacy-tie-1"></script>
+  <script type="module" src="src/app.js?v=public-preview-1"></script>
 </body>
 </html>

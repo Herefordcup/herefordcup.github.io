@@ -1,4 +1,4 @@
-import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js?v=legacy-ledger-2';
+import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js?v=public-preview-1';
 import { renderLegacyArchive } from './legacy.js?v=legacy-tie-1';
 
 const target = {

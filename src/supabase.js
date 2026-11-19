@@ -107,6 +107,14 @@ export async function getSupabase() {
   return client;
 }
 
+export async function loadPublicTournamentPreview(supabaseClient) {
+  const supabase = supabaseClient ?? await getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc('get_public_tournament_preview');
+  if (error) throw error;
+  return data;
+}
+
 async function configuredAuthActions() {
   const supabase = await getSupabase();
   if (!supabase) throw new Error('Supabase has not been configured yet.');

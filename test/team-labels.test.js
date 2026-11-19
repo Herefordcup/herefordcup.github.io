@@ -16,8 +16,7 @@ test('public and administrator interfaces label the teams Blue and White', () =>
   assert.match(portal, /<span>Blue<\/span>[\s\S]*<span>White<\/span>/);
   assert.match(app, /TEAM BLUE/);
   assert.match(app, /TEAM WHITE/);
-  assert.match(app, /Blue wins next hole/);
-  assert.match(app, /White wins next hole/);
+  assert.doesNotMatch(app, /wins next hole/);
   assert.match(adminScript, /new Option\('Blue side', 'cardinal'\)/);
   assert.match(adminScript, /new Option\('White side', 'silver'\)/);
   assert.match(admin, /Blue entry/);
@@ -32,7 +31,7 @@ test('public Blue team shield uses MIT dark blue', () => {
   const index = read('index.html');
   const styles = read('styles.css');
 
-  assert.match(index, /styles\.css\?v=team-blue-1/i);
+  assert.match(index, /styles\.css\?v=public-preview-1/i);
   assert.match(styles, /--team-blue:#002896/i);
   assert.match(styles, /\.team-cardinal \.team-code\{background:var\(--team-blue\)\}/i);
 });
