@@ -2,6 +2,7 @@ import { validateSegments } from './formats.js';
 import { easternDateTimeToIso, optionalNumber } from './admin-helpers.js';
 import {
   correctHoleScore,
+  denyTournamentMembership,
   deleteTournamentMembership,
   deleteLegacyPhoto,
   deleteLegacyResult,
@@ -20,7 +21,7 @@ import {
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=membership-delete-1';
+} from './supabase.js?v=admin-compact-2';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -34,11 +35,11 @@ const commentarySettingsForm = document.querySelector('#commentarySettingsForm')
 const commentaryTournament = document.querySelector('#commentaryTournament');
 const scoreCorrectionForm = document.querySelector('#scoreCorrectionForm');
 const correctionRound = document.querySelector('#correctionRound');
+const scoreCorrectionDialog = document.querySelector('#scoreCorrectionDialog');
 const resultFinalizationForm = document.querySelector('#resultFinalizationForm');
 const resultMatch = document.querySelector('#resultMatch');
 const resultSegmentRows = document.querySelector('#resultSegmentRows');
 const adminContent = document.querySelector('#adminContent');
-const membershipTournament = document.querySelector('#membershipTournament');
 const membershipMessage = document.querySelector('#membershipMessage');
 const legacyEditionForm = document.querySelector('#legacyEditionForm');
 const legacyEditionSelect = document.querySelector('#legacyEditionSelect');
@@ -48,6 +49,7 @@ const defaultPars = [4, 4, 3, 5, 4, 4, 3, 5, 4, 4, 4, 3, 5, 4, 4, 3, 5, 4];
 
 let session;
 let adminData;
+let correctionDialogTrigger;
 
 function setMessage(target, text, isError = false) {
   target.textContent = text;
@@ -252,12 +254,25 @@ function renderLegacyPhotoList() {
   }
 }
 
+function membershipTournamentId() {
+  for (const status of ['live', 'open', 'setup']) {
+    const tournament = adminData.tournaments.find(item => item.status === status);
+    if (tournament) return tournament.id;
+  }
+  return '';
+}
+
 function renderMemberships() {
-  const tournamentId = membershipTournament.value;
+  const tournamentId = membershipTournamentId();
   const groups = {
     pending: document.querySelector('#pendingMembers'),
     active: document.querySelector('#activeMembers'),
   };
+  if (!tournamentId) {
+    for (const container of Object.values(groups)) container.replaceChildren();
+    setMessage(membershipMessage, 'No current tournament is available for membership management.', true);
+    return;
+  }
   for (const [status, container] of Object.entries(groups)) {
     container.replaceChildren();
     const memberships = adminData.memberships
@@ -296,7 +311,7 @@ function renderMemberships() {
           : 'Approved by administrator';
         if (!reason?.trim()) return;
         try {
-          action.disabled = true;
+          for (const button of actions.querySelectorAll('button')) button.disabled = true;
           setMessage(membershipMessage, `${action.textContent} in progress…`);
           if (deleting) {
             await deleteTournamentMembership({
@@ -323,11 +338,37 @@ function renderMemberships() {
             ? `${name.textContent}'s tournament membership was deleted.`
             : `${name.textContent} is now active.`);
         } catch (error) {
-          action.disabled = false;
+          for (const button of actions.querySelectorAll('button')) button.disabled = false;
           setMessage(membershipMessage, error.message, true);
         }
       });
       actions.append(action);
+      if (status === 'pending') {
+        const deny = document.createElement('button');
+        deny.type = 'button';
+        deny.className = 'button';
+        deny.textContent = 'Deny';
+        deny.addEventListener('click', async () => {
+          if (!window.confirm(`Deny this membership request from ${name.textContent}? Their login and profile will remain.`)) return;
+          try {
+            for (const button of actions.querySelectorAll('button')) button.disabled = true;
+            setMessage(membershipMessage, 'Deny in progress…');
+            await denyTournamentMembership({
+              tournamentId,
+              userId: membership.user_id,
+              reason: 'Denied by administrator',
+            });
+            adminData.memberships = adminData.memberships.filter(item =>
+              item.tournament_id !== tournamentId || item.user_id !== membership.user_id);
+            renderMemberships();
+            setMessage(membershipMessage, `${name.textContent}'s request was denied. Their login and profile remain, and a future request can be reviewed again.`);
+          } catch (error) {
+            for (const button of actions.querySelectorAll('button')) button.disabled = false;
+            setMessage(membershipMessage, error.message, true);
+          }
+        });
+        actions.append(deny);
+      }
       card.append(name, details, actions);
       container.append(card);
     }
@@ -335,7 +376,7 @@ function renderMemberships() {
 }
 
 function populateAdminChoices() {
-  const tournamentSelects = ['#membershipTournament', '#matchTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
+  const tournamentSelects = ['#matchTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
   for (const select of tournamentSelects) select.replaceChildren(...adminData.tournaments.map(tournament => new Option(`${tournament.name} · ${tournament.edition_year}`, tournament.id)));
   const courseSelect = document.querySelector('#matchCourse');
   courseSelect.replaceChildren(new Option('Course TBA', ''), ...adminData.courses.map(course => new Option(course.name, course.id)));
@@ -348,14 +389,18 @@ function populateAdminChoices() {
     new Option('Select a match', ''),
     ...adminData.matches.filter(match => match.status !== 'final').map(match => new Option(match.name, match.id)),
   );
+  populateCorrectionRounds('');
+  populateLegacyChoices();
+}
+
+function populateCorrectionRounds(matchId) {
   correctionRound.replaceChildren(
     new Option('Select a player round', ''),
-    ...adminData.rounds.map(round => new Option(
+    ...adminData.rounds.filter(round => round.match_id === matchId).map(round => new Option(
       `${round.profiles?.display_name || 'Player'} · ${round.courses?.name || 'Course'} · ${round.tees?.name || 'Tee'}`,
       round.id,
     )),
   );
-  populateLegacyChoices();
 }
 
 function hydrateCommentarySettings() {
@@ -474,8 +519,10 @@ matchPlanForm.addEventListener('submit', async event => {
   } catch (error) { setMessage(matchPlanMessage, error.message, true); }
 });
 
-membershipTournament.addEventListener('change', renderMemberships);
-resultMatch.addEventListener('change', renderResultSegments);
+resultMatch.addEventListener('change', () => {
+  renderResultSegments();
+  populateCorrectionRounds(resultMatch.value);
+});
 resultFinalizationForm.addEventListener('submit', async event => {
   event.preventDefault();
   const message = document.querySelector('#resultMessage');
@@ -607,6 +654,67 @@ legacyPhotoForm.addEventListener('submit', async event => {
   } catch (error) { setMessage(message, error.message, true); }
 });
 
+function restoreCorrectionDialogFocus() {
+  document.removeEventListener('keydown', handleCorrectionDialogKeydown);
+  correctionDialogTrigger?.focus();
+  correctionDialogTrigger = null;
+}
+
+function closeScoreCorrectionDialog() {
+  if (typeof scoreCorrectionDialog.close === 'function' && scoreCorrectionDialog.open) {
+    scoreCorrectionDialog.close();
+    return;
+  }
+  scoreCorrectionDialog.removeAttribute('open');
+  scoreCorrectionDialog.removeAttribute('role');
+  scoreCorrectionDialog.removeAttribute('aria-modal');
+  restoreCorrectionDialogFocus();
+}
+
+function handleCorrectionDialogKeydown(event) {
+  if (!scoreCorrectionDialog.hasAttribute('open')) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeScoreCorrectionDialog();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const focusable = [...scoreCorrectionDialog.querySelectorAll('button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+document.querySelector('#openScoreCorrection').addEventListener('click', event => {
+  const matchId = resultMatch.value;
+  if (!matchId) {
+    setMessage(document.querySelector('#resultMessage'), 'Select a match before editing a submitted score.', true);
+    resultMatch.focus();
+    return;
+  }
+  populateCorrectionRounds(matchId);
+  correctionDialogTrigger = event.currentTarget;
+  if (typeof scoreCorrectionDialog.showModal === 'function') scoreCorrectionDialog.showModal();
+  else {
+    scoreCorrectionDialog.setAttribute('open', '');
+    scoreCorrectionDialog.setAttribute('role', 'dialog');
+    scoreCorrectionDialog.setAttribute('aria-modal', 'true');
+    document.addEventListener('keydown', handleCorrectionDialogKeydown);
+  }
+  correctionRound.focus();
+});
+
+scoreCorrectionDialog.addEventListener('close', restoreCorrectionDialogFocus);
+
+document.querySelector('#closeScoreCorrection').addEventListener('click', closeScoreCorrectionDialog);
+
 document.querySelector('#correctionDelete').addEventListener('change', event => {
   const scoreInput = document.querySelector('#correctionScore');
   scoreInput.disabled = event.target.checked;
@@ -619,6 +727,13 @@ scoreCorrectionForm.addEventListener('submit', async event => {
   const deleteScore = document.querySelector('#correctionDelete').checked;
   const roundId = correctionRound.value;
   const holeNumber = Number(document.querySelector('#correctionHole').value);
+  const round = adminData.rounds.find(item => item.id === roundId && item.match_id === resultMatch.value);
+  if (!round) {
+    setMessage(message, 'Select a player round from the chosen match.', true);
+    return;
+  }
+  const submitButton = scoreCorrectionForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
   try {
     setMessage(message, 'Saving audited correction…');
     const result = await correctHoleScore({
@@ -628,16 +743,19 @@ scoreCorrectionForm.addEventListener('submit', async event => {
       deleteScore,
       reason: document.querySelector('#correctionReason').value,
     });
-    const round = adminData.rounds.find(item => item.id === roundId);
-    if (round) {
-      round.scores = deleteScore
-        ? round.scores.filter(score => score.hole_number !== holeNumber)
-        : [...round.scores.filter(score => score.hole_number !== holeNumber), result.score];
-    }
+    round.scores = deleteScore
+      ? round.scores.filter(score => score.hole_number !== holeNumber)
+      : [...round.scores.filter(score => score.hole_number !== holeNumber), result.score];
     setMessage(message, `Correction saved and audited (${result.audit?.action || (deleteScore ? 'delete' : 'update')}).`);
     scoreCorrectionForm.reset();
     document.querySelector('#correctionScore').disabled = false;
-  } catch (error) { setMessage(message, error.message, true); }
+    setMessage(document.querySelector('#resultMessage'), 'Submitted score corrected and audited.');
+    closeScoreCorrectionDialog();
+  } catch (error) {
+    setMessage(message, error.message, true);
+  } finally {
+    submitButton.disabled = false;
+  }
 });
 
 commentaryTournament.addEventListener('change', hydrateCommentarySettings);

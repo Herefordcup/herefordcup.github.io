@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 const root = new URL('../', import.meta.url);
 const migrationUrl = new URL('supabase/migrations/018_membership_approval.sql', root);
 const deletionMigrationUrl = new URL('supabase/migrations/019_delete_membership_reenroll.sql', root);
+const denialMigrationUrl = new URL('supabase/migrations/020_deny_pending_membership.sql', root);
 const adminHtml = await readFile(new URL('admin.html', root), 'utf8');
 const adminCss = await readFile(new URL('admin.css', root), 'utf8');
 const adminScript = await readFile(new URL('src/admin.js', root), 'utf8');
@@ -51,12 +52,21 @@ test('pending signup emails ask every active tournament admin to review the memb
 });
 
 test('administrator portal exposes pending, active, and permanent membership deletion controls', () => {
-  for (const id of ['membershipTournament', 'pendingMembers', 'activeMembers', 'membershipMessage']) {
+  for (const id of ['pendingMembers', 'activeMembers', 'membershipMessage']) {
     assert.match(adminHtml, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   }
+  assert.doesNotMatch(adminHtml, /id=["']membershipTournament["']/);
+  assert.match(adminScript, /function membershipTournamentId\(/);
+  assert.match(adminScript, /for \(const status of \['live', 'open', 'setup'\]\)/);
+  assert.doesNotMatch(adminScript, /adminData\.tournaments\[0\]/);
   assert.doesNotMatch(adminHtml, /id=["']removedMembers["']/);
+  assert.doesNotMatch(adminHtml, />\s*Removed\s*</);
   assert.match(adminScript, /function renderMemberships\(/);
   assert.match(adminScript, /Approve/);
+  assert.match(adminScript, /Deny/);
+  assert.match(adminScript, /Deny this membership request/);
+  assert.match(adminScript, /Denied by administrator/);
+  assert.match(adminScript, /await denyTournamentMembership\(/);
   assert.match(adminScript, /Delete/);
   assert.doesNotMatch(adminScript, /Restore/);
   assert.match(adminScript, /await setTournamentMembershipStatus\(/);
@@ -66,9 +76,9 @@ test('administrator portal exposes pending, active, and permanent membership del
   assert.match(supabaseScript, /profiles!tournament_memberships_user_id_fkey\(id, display_name, handicap_index, role\)/);
   assert.match(adminCss, /\.membership-columns\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(adminCss, /\.membership-card \.button\{[^}]*min-height:44px/);
-  assert.match(adminHtml, /admin\.css\?v=membership-delete-1/);
-  assert.match(adminHtml, /admin\.js\?v=membership-delete-1/);
-  assert.match(adminScript, /supabase\.js\?v=membership-delete-1/);
+  assert.match(adminHtml, /admin\.css\?v=admin-compact-2/);
+  assert.match(adminHtml, /admin\.js\?v=admin-compact-2/);
+  assert.match(adminScript, /supabase\.js\?v=admin-compact-2/);
   assert.match(portalHtml, /portal\.js\?v=membership-delete-1/);
   assert.match(portalScript, /supabase\.js\?v=membership-delete-1/);
   assert.match(supabaseScript, /export async function setTournamentMembershipStatus/);
@@ -76,6 +86,19 @@ test('administrator portal exposes pending, active, and permanent membership del
   assert.match(supabaseScript, /export async function deleteTournamentMembership/);
   assert.match(supabaseScript, /rpc\('delete_tournament_membership'/);
   assert.doesNotMatch(supabaseScript, /tournament_memberships'\)\.select\([^\n]+\)\.eq\('status', 'active'\)/);
+});
+
+test('denial is a pending-only server-side operation that cannot delete a concurrently approved member', async () => {
+  const sql = await readFile(denialMigrationUrl, 'utf8');
+
+  assert.match(sql, /create or replace function public\.deny_tournament_membership/i);
+  assert.match(sql, /for update/i);
+  assert.match(sql, /current_membership\.status <> 'pending'/i);
+  assert.match(sql, /Membership request is no longer pending/i);
+  assert.match(sql, /delete from public\.tournament_memberships/i);
+  assert.match(sql, /grant execute on function public\.deny_tournament_membership\(uuid, uuid, text\) to authenticated/i);
+  assert.match(supabaseScript, /export async function denyTournamentMembership/);
+  assert.match(supabaseScript, /rpc\('deny_tournament_membership'/);
 });
 
 test('deleting a tournament member removes only the membership and permits a fresh pending request', async () => {
