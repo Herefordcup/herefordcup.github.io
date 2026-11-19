@@ -58,11 +58,21 @@ test('member home is a summary-first dashboard with live action, player snapshot
   assert.match(portalScript, /function renderLiveMatch\(/);
 });
 
+test('itinerary shows the full trip range and separates events by day', () => {
+  assert.match(html, /id="homeTripDates"/);
+  assert.match(html, /<h2 id="homeScheduleTitle">Trip itinerary<\/h2>/);
+  assert.match(portalScript, /from '\.\/home\.js\?v=grouped-itinerary-1'/);
+  assert.match(portalScript, /formatTripDateRange\(tournament\?\.starts_on, tournament\?\.ends_on\)/);
+  assert.match(portalScript, /groupScheduleEventsByDay\(playerData\.events\)/);
+  assert.match(portalScript, /schedule-day-heading/);
+  assert.match(portalCss, /\.schedule-day-heading/);
+});
+
 test('More includes a tournament player directory without private contact data', () => {
   assert.match(html, /id="playersList"/);
   assert.match(html, />Players</);
   assert.match(supabaseScript, /profiles!tournament_memberships_user_id_fkey\(display_name, handicap_index, profile_photo_path\)/);
-  assert.match(portalScript, /from '\.\/supabase\.js\?v=login-recovery-1'/);
+  assert.match(portalScript, /from '\.\/supabase\.js\?v=grouped-itinerary-1'/);
   assert.match(portalScript, /function renderPlayers\(/);
   assert.doesNotMatch(portalScript, /player\.email|profiles\(email/);
 });
@@ -132,7 +142,7 @@ test('scorecard explains standalone gross play and assigned mixed segment scorin
 });
 
 test('mixed segment summaries stack at phone widths', () => {
-  assert.match(html, /href="portal\.css\?v=handicap-scoring-1"/);
+  assert.match(html, /href="portal\.css\?v=grouped-itinerary-1"/);
   assert.match(portalCss, /@media\(max-width:820px\)[\s\S]*#segmentSummaries\{grid-template-columns:1fr\}/);
 });
 
@@ -198,7 +208,7 @@ test('scorecard setup includes an 18-hole, front-nine, and back-nine selector', 
   assert.match(html, /<option value="front9">Front 9 \(holes 1–9\)<\/option>/);
   assert.match(html, /<option value="back9">Back 9 \(holes 10–18\)<\/option>/);
   assert.match(portalScript, /holeNumbersForRound\(holeRangeSelect\.value, selectedMatchSegments\(\)\)/);
-  assert.match(html, /src="src\/portal\.js\?v=player-name-1"/);
+  assert.match(html, /src="src\/portal\.js\?v=grouped-itinerary-1"/);
   assert.match(portalScript, /from '\.\/round-entry\.js\?v=round-holes-1'/);
 });
 

@@ -169,7 +169,7 @@ export async function loadPlayerData(userId) {
     supabase.from('profiles').select('*').eq('id', userId).single(),
     supabase
       .from('tournament_memberships')
-      .select('status, role, team, tournaments(id, name, slug, edition_year, status, starts_on)')
+      .select('status, role, team, tournaments(id, name, slug, edition_year, status, starts_on, ends_on)')
       .eq('user_id', userId),
     supabase.from('courses').select('*, tees(*, holes(*))').eq('active', true).order('name'),
   ]);

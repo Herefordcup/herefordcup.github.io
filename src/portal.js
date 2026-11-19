@@ -3,7 +3,7 @@ import { matchPoints } from './scoring.js';
 import { assignedRoundScoringMode, formatSegmentLabel, individualEntryBlockReason, segmentHoleCount } from './formats.js?v=handicap-scoring-1';
 import { summarizeLeagueStats, summarizePlayerStats } from './stats.js';
 import { assertRoundAssignment, holeNumbersForRound, mergePersistedScores, unsavedScoreRows } from './round-entry.js?v=round-holes-1';
-import { formatHomeDate, formatMatchupPlayers, orderHomeMatches } from './home.js';
+import { formatHomeDate, formatMatchupPlayers, formatTripDateRange, groupScheduleEventsByDay, orderHomeMatches } from './home.js?v=grouped-itinerary-1';
 import { avatarInitials, normalizeProfileInput, playerDisplayName, profileAvatarUrl, validateProfilePhoto } from './profile.js?v=player-name-1';
 import {
   assignedSegmentsForPlayer,
@@ -30,7 +30,7 @@ import {
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=login-recovery-1';
+} from './supabase.js?v=grouped-itinerary-1';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');
@@ -208,7 +208,7 @@ function renderHomeSummary() {
   document.querySelector('#homeTournamentMeta').textContent = start
     ? `${start} · Your schedule, matches, and Cup standing.`
     : 'Your schedule, matches, and Cup standing in one place.';
-  document.querySelector('#homeScheduleTitle').textContent = start ? `${start} itinerary` : 'Tournament itinerary';
+  document.querySelector('#homeTripDates').textContent = formatTripDateRange(tournament?.starts_on, tournament?.ends_on);
 }
 
 function renderSchedule() {
@@ -220,21 +220,29 @@ function renderSchedule() {
   }
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
-    weekday: 'short',
     hour: 'numeric',
     minute: '2-digit',
   });
-  for (const event of playerData.events) {
-    const row = element('article', 'schedule-item');
-    const time = element('time', '', formatter.format(new Date(event.starts_at)));
-    time.dateTime = event.starts_at;
-    row.append(time);
-    const details = element('div');
-    details.append(element('strong', '', event.title));
-    if (event.notes) details.append(element('span', '', event.notes));
-    row.append(details);
-    row.append(element('em', '', event.is_competitive ? 'CUP' : event.event_type.toUpperCase()));
-    container.append(row);
+  for (const group of groupScheduleEventsByDay(playerData.events)) {
+    const day = element('section', 'schedule-day');
+    const heading = element('h3', 'schedule-day-heading');
+    const dayTime = element('time', '', group.label);
+    dayTime.dateTime = group.key;
+    heading.append(dayTime);
+    day.append(heading);
+    for (const event of group.events) {
+      const row = element('article', 'schedule-item');
+      const time = element('time', '', formatter.format(new Date(event.starts_at)));
+      time.dateTime = event.starts_at;
+      row.append(time);
+      const details = element('div');
+      details.append(element('strong', '', event.title));
+      if (event.notes) details.append(element('span', '', event.notes));
+      row.append(details);
+      row.append(element('em', '', event.is_competitive ? 'CUP' : event.event_type.toUpperCase()));
+      day.append(row);
+    }
+    container.append(day);
   }
 }
 
