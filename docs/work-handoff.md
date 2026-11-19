@@ -20,7 +20,7 @@ This document is the continuation point for a separate Hermes installation. It c
 - This is a conventional responsive browser website, not an installable app or PWA.
 - Do not add a web manifest, installation prompts, service-worker caching, or offline/app-store positioning.
 - Authentication supports verified email/password and Google OAuth. Apple remains disabled.
-- Every registered account automatically receives active access to existing and future tournaments. Team, captain, and tournament-administrator assignments remain tournament-specific.
+- New ordinary accounts receive pending tournament memberships and require administrator approval before member access. Approval, removal, and restoration change only tournament membership; authentication identities, profiles, scores, and audit history are preserved.
 - Static assets deploy through GitHub Pages. Supabase provides Auth, PostgreSQL, RLS, and Edge Functions.
 - Browser code may contain only the Supabase project URL and publishable key. Never commit a service-role key, OAuth client secret, database password, or AI-provider key.
 
@@ -29,8 +29,8 @@ This document is the continuation point for a separate Hermes installation. It c
 ### Static browser layer
 
 - `index.html`, `styles.css`, `src/app.js`: public landing page.
-- `portal.html`, `portal.css`, `src/portal.js`: account flows, automatic tournament access, member Home, scoring, Cup/matches, statistics, rules, and approved commentary.
-- `admin.html`, `admin.css`, `src/admin.js`: course entry, match/segment planning, independent segment lineups, audited score corrections, rules, commentary settings, generation, editing, approval, and hiding.
+- `portal.html`, `portal.css`, `src/portal.js`: account flows, pending-approval state, member Home, scoring, Cup/matches, statistics, rules, and approved commentary.
+- `admin.html`, `admin.css`, `src/admin.js`: pending-member approval, safe membership removal/restoration, course entry, match/segment planning, audited score corrections, rules, and commentary controls.
 - `src/supabase.js`: browser-safe Supabase client and data operations.
 - `src/golf.js`: course handicaps, stroke allocation, net scores, and format-aware hole scoring helpers.
 - `src/scoring.js`: match state, completion, status, and points, including segment-specific hole totals.
@@ -42,7 +42,7 @@ This document is the continuation point for a separate Hermes installation. It c
 
 ### Supabase layer
 
-For a fresh project, apply `001` and `002`, authenticate and promote the first administrator with an exact email/ID join and readback, then apply `003` through `006`. The 2027 seed intentionally skips when no administrator exists. Production already has `002`; keep it byte-for-byte at HEAD and use forward-only migrations for authorization changes.
+For a fresh project, apply migrations in numeric order. Authenticate and promote the first administrator with an exact email/ID join and readback before applying seeded tournament migrations. Keep previously released migrations byte-for-byte at HEAD and use forward-only migrations for authorization changes.
 
 1. `supabase/migrations/001_hereford_cup.sql`
    - Profiles, courses, tees, holes, matches, match players, rounds, scores, base RLS.
@@ -55,7 +55,11 @@ For a fresh project, apply `001` and `002`, authenticate and promote the first a
 5. `supabase/migrations/005_integrity_hardening.sql`
    - Course/tee-aware round authorization; score-to-round ownership constraint; monitored honor-system, insert-only player scores; audited administrator-only score correction RPC; finalized metadata guards; and server-derived commentary drafts/edit audit.
 6. `supabase/migrations/006_automatic_tournament_access.sql`
-   - Backfills active memberships for all registered accounts, enrolls new accounts in every tournament, and enrolls all accounts when a new tournament is created. Explicitly removed memberships remain removed.
+   - Historical automatic-access behavior retained for migration history; migration `018` replaces its enrollment functions for future accounts without demoting existing active members.
+7. `supabase/migrations/017_member_email_notifications.sql`
+   - Durable notification jobs/deliveries, preferences, 12-hour reminders, schedule-change/cancellation detection, dynamic recipient expansion, and protected worker RPCs.
+8. `supabase/migrations/018_membership_approval.sql`
+   - New accounts enroll as pending, approval emails queue for all active tournament administrators, and an audited administrator-only RPC approves, removes, or restores memberships. Direct membership mutations are revoked; administrator self-removal and last-admin removal are blocked.
 
 Edge Function:
 
@@ -92,6 +96,8 @@ Edge Function:
 - Added score ownership integrity (`scores(round_id,user_id)` to `rounds(id,user_id)`) with an upgrade-time mismatch check, and changed the browser save path from upsert to insert-only with a locked-score conflict message.
 - Added partial-round resume: owned rounds and scores load with member data, submitted holes are read-only, assigned non-final matches force their course, persisted rounds force their tee, and saves insert only new holes before reading the round back.
 - Added a mobile-ready administrator correction form with required reason, score/delete actions, and score/audit readback confirmation.
+- Added pending-member approval plus safe administrator Remove/Restore controls. Removed memberships lose tournament access without deleting authentication, profile, score, or audit history; pending/removed members are excluded from match planning.
+- Changed new-account enrollment to pending for future accounts while preserving all existing active memberships, and changed the new-member notification to an approval request dynamically delivered to every active tournament administrator.
 - Commentary settings hydrate per tournament; drafts expose Approve/Edit/Hide, approved copy stays listed with Edit/Hide, and member provenance labels distinguish untouched AI text from administrator edits.
 - Hardened commentary draft creation so direct RPC callers cannot supply prose or facts, while retaining enabled administrator controls, mandatory approval, result finalization, and commentary publication.
 

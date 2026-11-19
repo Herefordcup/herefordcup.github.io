@@ -4,8 +4,8 @@ This release sends through a dedicated free Gmail account by Google Apps Script.
 
 ## Architecture
 
-1. Migration `017_member_email_notifications.sql` creates member preferences, logical notification jobs, per-recipient delivery tracking, and database triggers.
-2. New-member jobs resolve every current active tournament administrator when the worker claims the job. No administrator address is hard-coded.
+1. Migration `017_member_email_notifications.sql` creates member preferences, logical notification jobs, per-recipient delivery tracking, and database triggers. Migration `018_membership_approval.sql` changes the new-member trigger to queue an approval request when an ordinary account receives a pending membership.
+2. Approval-request jobs resolve every current active tournament administrator when the worker claims the job. No administrator address is hard-coded.
 3. Existing and future matches and itinerary activities receive reminder jobs scheduled 12 hours before `starts_at`.
 4. Material schedule changes and cancellations enqueue immediate jobs.
 5. The `process-notifications` Edge Function claims due deliveries with the service role and resolves each recipient address from Supabase Auth. Addresses are never stored in public notification tables or returned to the browser.
@@ -13,7 +13,7 @@ This release sends through a dedicated free Gmail account by Google Apps Script.
 
 ## Required server configuration
 
-Apply migration `017_member_email_notifications.sql` before deploying browser assets that query notification preferences.
+Apply migrations `017_member_email_notifications.sql` and `018_membership_approval.sql`, in that order, before deploying browser assets that query notification preferences or use member approval controls.
 
 Deploy `supabase/functions/process-notifications/index.ts` with JWT verification disabled. The function performs its own shared-secret authentication; `supabase/config.toml` records this setting.
 

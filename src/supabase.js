@@ -600,7 +600,7 @@ export async function loadAdminData() {
   const supabase = await getSupabase();
   const [tournaments, memberships, courses, matches, settings, commentaries, rounds, legacyEditions] = await Promise.all([
     supabase.from('tournaments').select('*').order('edition_year', { ascending: false }),
-    supabase.from('tournament_memberships').select('*, profiles!tournament_memberships_user_id_fkey(id, display_name, handicap_index)').eq('status', 'active'),
+    supabase.from('tournament_memberships').select('*, profiles!tournament_memberships_user_id_fkey(id, display_name, handicap_index)').order('created_at'),
     supabase.from('courses').select('id, name').eq('active', true).order('name'),
     supabase.from('matches').select('*, match_segments(*, match_segment_players(*))').order('starts_at'),
     supabase.from('commentary_settings').select('*'),
@@ -621,6 +621,18 @@ export async function loadAdminData() {
     rounds: rounds.data ?? [],
     legacyEditions: legacyEditions.data ?? [],
   };
+}
+
+export async function setTournamentMembershipStatus({ tournamentId, userId, status, reason }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('set_tournament_membership_status', {
+    target_tournament_id: tournamentId,
+    target_user_id: userId,
+    target_status: status,
+    change_reason: reason,
+  });
+  if (error) throw error;
+  return data;
 }
 
 export async function saveRound({ userId, matchId, courseId, teeId, courseHandicap, scores, existingRound = null }) {
