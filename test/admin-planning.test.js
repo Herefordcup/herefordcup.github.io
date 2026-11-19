@@ -9,6 +9,7 @@ const supabaseScript = await readFile(new URL('../src/supabase.js', import.meta.
 const gitignore = await readFile(new URL('../.gitignore', import.meta.url), 'utf8');
 const orderedRulesMigrationUrl = new URL('../supabase/migrations/021_ordered_rule_editor.sql', import.meta.url);
 const automaticFinalizationMigrationUrl = new URL('../supabase/migrations/022_atomic_automatic_match_finalization.sql', import.meta.url);
+const adminHandicapMigrationUrl = new URL('../supabase/migrations/023_admin_member_handicap.sql', import.meta.url);
 
 test('admin portal exposes planning, rules, and commentary controls', () => {
   for (const id of [
@@ -66,6 +67,25 @@ test('admin membership roster names the member profile relationship', () => {
     supabaseScript,
     /tournament_memberships'\)\.select\('\*, profiles\(id, display_name, handicap_index\)'/,
   );
+});
+
+test('tournament administrators can edit an active member handicap through a scoped RPC', async () => {
+  assert.match(adminScript, /membership\.profiles\?\.handicap_index/);
+  assert.match(adminScript, /Save handicap/);
+  assert.match(adminScript, /await setTournamentMemberHandicap\(/);
+  assert.match(supabaseScript, /export async function setTournamentMemberHandicap/);
+  assert.match(supabaseScript, /rpc\('set_tournament_member_handicap'/);
+
+  const sql = await readFile(adminHandicapMigrationUrl, 'utf8');
+  assert.match(sql, /create or replace function public\.set_tournament_member_handicap/i);
+  assert.match(sql, /pg_advisory_xact_lock[\s\S]*target_tournament_id/i);
+  assert.match(sql, /from public\.tournaments[\s\S]*for update[\s\S]*status not in \('live', 'open', 'setup'\)/i);
+  assert.match(sql, /from public\.tournament_memberships[\s\S]*status = 'active'[\s\S]*for update/i);
+  assert.match(sql, /public\.is_admin\(\) or public\.is_tournament_admin\(target_tournament_id\)/i);
+  assert.match(sql, /target_handicap_index not between -10 and 54/i);
+  assert.match(sql, /target_handicap_index <> round\(target_handicap_index, 1\)/i);
+  assert.match(sql, /update public\.profiles[\s\S]*handicap_index = target_handicap_index/i);
+  assert.match(sql, /grant execute on function public\.set_tournament_member_handicap\(uuid, uuid, numeric\) to authenticated/i);
 });
 
 test('Supabase layer saves match plans atomically through a database RPC', () => {

@@ -1,6 +1,6 @@
 import { validateSegments } from './formats.js';
 import { easternDateTimeToIso, optionalNumber } from './admin-helpers.js';
-import { deriveSegmentResult } from './match-results.js?v=rules-order-1';
+import { deriveSegmentResult } from './match-results.js?v=automatic-results-2';
 import {
   correctHoleScore,
   denyTournamentMembership,
@@ -18,11 +18,12 @@ import {
   saveLegacyResult,
   saveMatchPlan,
   saveTournamentRule,
+  setTournamentMemberHandicap,
   setTournamentMembershipStatus,
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=rules-order-1';
+} from './supabase.js?v=automatic-results-2';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -297,6 +298,53 @@ function renderMemberships() {
       const details = document.createElement('p');
       details.textContent = `${membership.role} · ${membership.team || 'Team unassigned'}`;
       const actions = document.createElement('div');
+      if (status === 'active') {
+        const handicapLabel = document.createElement('label');
+        handicapLabel.className = 'membership-handicap';
+        handicapLabel.textContent = 'Handicap index';
+        const handicapInput = document.createElement('input');
+        handicapInput.type = 'number';
+        handicapInput.min = '-10';
+        handicapInput.max = '54';
+        handicapInput.step = '0.1';
+        handicapInput.required = true;
+        handicapInput.value = membership.profiles?.handicap_index ?? '';
+        handicapLabel.append(handicapInput);
+        const saveHandicap = document.createElement('button');
+        saveHandicap.type = 'button';
+        saveHandicap.className = 'button';
+        saveHandicap.textContent = 'Save handicap';
+        saveHandicap.addEventListener('click', async () => {
+          if (!handicapInput.reportValidity()) return;
+          const handicapIndex = Number(handicapInput.value);
+          if (!Number.isFinite(handicapIndex) || Math.round(handicapIndex * 10) !== handicapIndex * 10) {
+            setMessage(membershipMessage, 'Enter a handicap index with one decimal place between -10.0 and 54.0.', true);
+            return;
+          }
+          try {
+            saveHandicap.disabled = true;
+            handicapInput.disabled = true;
+            setMessage(membershipMessage, `Saving ${name.textContent}'s handicap…`);
+            const saved = await setTournamentMemberHandicap({
+              tournamentId,
+              userId: membership.user_id,
+              handicapIndex,
+            });
+            membership.profiles = {
+              ...membership.profiles,
+              handicap_index: Number(saved.handicap_index),
+            };
+            handicapInput.value = membership.profiles.handicap_index.toFixed(1);
+            setMessage(membershipMessage, `${name.textContent}'s handicap is now ${handicapInput.value}.`);
+          } catch (error) {
+            setMessage(membershipMessage, error.message, true);
+          } finally {
+            saveHandicap.disabled = false;
+            handicapInput.disabled = false;
+          }
+        });
+        actions.append(handicapLabel, saveHandicap);
+      }
       const action = document.createElement('button');
       action.type = 'button';
       action.className = status === 'pending' ? 'button button-primary' : 'button';
