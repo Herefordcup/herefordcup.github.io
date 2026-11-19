@@ -457,13 +457,13 @@ begin
     raise exception 'Commentary must be 1 through 2,000 characters';
   end if;
 
-  select commentary, match_record.tournament_id
-    into saved, commentary_tournament_id
+  select match_record.tournament_id
+    into commentary_tournament_id
   from public.match_commentaries commentary
   join public.matches match_record on match_record.id = commentary.match_id
   where commentary.id = target_commentary_id
   for update of commentary;
-  if saved.id is null then raise exception 'Commentary not found'; end if;
+  if not found then raise exception 'Commentary not found'; end if;
   if not (public.is_admin() or public.is_tournament_admin(commentary_tournament_id)) then
     raise exception 'Administrator access required';
   end if;
@@ -501,13 +501,13 @@ begin
     raise exception 'Invalid commentary status';
   end if;
 
-  select commentary, match_record.tournament_id
-    into saved, commentary_tournament_id
+  select match_record.tournament_id
+    into commentary_tournament_id
   from public.match_commentaries commentary
   join public.matches match_record on match_record.id = commentary.match_id
   where commentary.id = target_commentary_id
   for update of commentary;
-  if saved.id is null then raise exception 'Commentary not found'; end if;
+  if not found then raise exception 'Commentary not found'; end if;
   if not (public.is_admin() or public.is_tournament_admin(commentary_tournament_id)) then
     raise exception 'Administrator access required';
   end if;
