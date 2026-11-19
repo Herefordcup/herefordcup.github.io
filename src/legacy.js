@@ -24,6 +24,20 @@ function recordedNumber(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+export function legacyOutcome(edition = {}) {
+  if (edition.winner_name) {
+    return { label: 'CHAMPION', title: edition.winner_name, score: edition.final_score || null };
+  }
+  const confirmedTie = edition.score_confidence === 'confirmed'
+    && recordedNumber(edition.cardinal_total)
+    && recordedNumber(edition.silver_total)
+    && Math.abs(edition.cardinal_total - edition.silver_total) < 0.000001;
+  if (confirmedTie && edition.final_score) {
+    return { label: 'FINAL RESULT', title: 'Tie', score: edition.final_score };
+  }
+  return null;
+}
+
 function resultIsUnresolved(result) {
   if (!recordedNumber(result.points_available)) return false;
   const blue = recordedNumber(result.cardinal_points) ? result.cardinal_points : null;
@@ -112,11 +126,12 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
     heading.append(title);
     details.append(heading);
 
-    if (selected.winner_name) {
+    const outcome = legacyOutcome(selected);
+    if (outcome) {
       const winner = node('div', 'legacy-winner');
-      winner.append(node('small', '', 'CHAMPION'));
-      winner.append(node('strong', '', selected.winner_name));
-      if (selected.final_score) winner.append(node('span', '', selected.final_score));
+      winner.append(node('small', '', outcome.label));
+      winner.append(node('strong', '', outcome.title));
+      if (outcome.score) winner.append(node('span', '', outcome.score));
       details.append(winner);
     } else {
       details.append(node('p', 'legacy-pending', selected.status === 'planned'
@@ -141,7 +156,7 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
         ['White', pointsText(ledger.whiteTotal)],
         ['Expected', pointsText(ledger.expectedPoints)],
         ['Point gap', pointsText(ledger.unresolvedPoints)],
-        ['Source rows', `${ledger.unresolvedRows} unresolved`],
+        ['Scoring rows', `${ledger.unresolvedRows} unresolved`],
       ]) {
         const metric = node('div');
         metric.append(node('dt', '', label), node('dd', '', value));

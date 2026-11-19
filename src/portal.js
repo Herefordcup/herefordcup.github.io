@@ -301,8 +301,8 @@ function renderRecentResults() {
     if (commentary) {
       const commentaryBlock = element('div', 'result-commentary');
       const provenance = commentary.ai_generated
-        ? 'AI-generated · Administrator approved'
-        : 'Administrator edited · Administrator approved';
+        ? 'AI-generated'
+        : 'Administrator edited';
       commentaryBlock.append(
         element('small', 'result-commentary-label', provenance),
         element('p', '', commentary.commentary),

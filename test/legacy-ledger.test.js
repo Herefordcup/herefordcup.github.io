@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 const ledgerModule = await import('../src/legacy-ledger.js').catch(() => ({}));
 const { summarizeLegacyLedger } = ledgerModule;
 const legacyModule = await import('../src/legacy.js').catch(() => ({}));
-const { groupLegacyResults } = legacyModule;
+const { groupLegacyResults, legacyOutcome } = legacyModule;
 const root = new URL('../', import.meta.url);
 const migrationUrl = new URL('supabase/migrations/025_legacy_scoring_ledger.sql', root);
 const migrationSql = await readFile(migrationUrl, 'utf8').catch(() => '');
@@ -186,6 +186,21 @@ test('summarizeLegacyLedger flags over-allocation and reports row sums separatel
   assert.equal(summary.rowAwardedPoints, 3);
   assert.equal(summary.rowTotalsMatchEdition, false);
   assert.equal(summary.reconciled, false);
+});
+
+test('legacyOutcome presents a tied edition without fabricating a champion', () => {
+  assert.equal(typeof legacyOutcome, 'function');
+  assert.deepEqual(legacyOutcome({
+    winner_name: null,
+    final_score: 'Blue 26 – White 26',
+    cardinal_total: 26,
+    silver_total: 26,
+    score_confidence: 'confirmed',
+  }), {
+    label: 'FINAL RESULT',
+    title: 'Tie',
+    score: 'Blue 26 – White 26',
+  });
 });
 
 test('groupLegacyResults keeps stable source order and falls back to Other results', () => {
