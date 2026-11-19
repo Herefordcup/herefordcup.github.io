@@ -16,6 +16,16 @@ export function avatarInitials(displayName) {
   return `${parts[0][0]}${parts.length > 1 ? parts.at(-1)[0] : ''}`.toUpperCase();
 }
 
+export function playerDisplayName(profile, user) {
+  const candidates = [
+    profile?.display_name,
+    user?.user_metadata?.full_name,
+    user?.user_metadata?.name,
+    user?.user_metadata?.display_name,
+  ];
+  return candidates.map(value => String(value ?? '').trim()).find(Boolean) || 'Player';
+}
+
 export function validateProfilePhoto(file) {
   const extensions = {
     'image/jpeg': 'jpg',
