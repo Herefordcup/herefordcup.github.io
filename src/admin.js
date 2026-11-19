@@ -1,5 +1,6 @@
 import { validateSegments } from './formats.js';
 import { easternDateTimeToIso, optionalNumber } from './admin-helpers.js';
+import { deriveSegmentResult } from './match-results.js?v=rules-order-1';
 import {
   correctHoleScore,
   denyTournamentMembership,
@@ -21,7 +22,7 @@ import {
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=admin-compact-2';
+} from './supabase.js?v=rules-order-1';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -31,6 +32,9 @@ const matchPlanMessage = document.querySelector('#matchPlanMessage');
 const segmentRows = document.querySelector('#segmentRows');
 const segmentTemplate = document.querySelector('#segmentTemplate');
 const ruleForm = document.querySelector('#ruleForm');
+const ruleExisting = document.querySelector('#ruleExisting');
+const ruleSortOrder = document.querySelector('#ruleSortOrder');
+const rulePublishedList = document.querySelector('#rulePublishedList');
 const commentarySettingsForm = document.querySelector('#commentarySettingsForm');
 const commentaryTournament = document.querySelector('#commentaryTournament');
 const scoreCorrectionForm = document.querySelector('#scoreCorrectionForm');
@@ -375,9 +379,62 @@ function renderMemberships() {
   }
 }
 
+function renderRuleEditor(selectedRuleId = '') {
+  const tournamentId = document.querySelector('#ruleTournament').value;
+  const rules = adminData.rules
+    .filter(rule => rule.tournament_id === tournamentId && rule.active)
+    .sort((a, b) => Number(a.sort_order) - Number(b.sort_order)
+      || a.created_at.localeCompare(b.created_at)
+      || a.id.localeCompare(b.id));
+  const selectedRule = rules.find(rule => rule.id === selectedRuleId) ?? null;
+
+  rulePublishedList.replaceChildren();
+  if (!rules.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-panel';
+    empty.textContent = 'No rules are currently published.';
+    rulePublishedList.append(empty);
+  } else {
+    rules.forEach((rule, index) => {
+      const card = document.createElement('article');
+      card.className = 'approval-card';
+      const title = document.createElement('strong');
+      title.textContent = `${index + 1}. ${rule.title}`;
+      const body = document.createElement('span');
+      body.textContent = rule.body;
+      card.append(title, body);
+      rulePublishedList.append(card);
+    });
+  }
+
+  ruleExisting.replaceChildren(
+    new Option('Add a new rule', ''),
+    ...rules.map((rule, index) => new Option(`${index + 1}. ${rule.title}`, rule.id)),
+  );
+  ruleExisting.value = selectedRule?.id ?? '';
+
+  const remainingRules = rules.filter(rule => rule.id !== selectedRule?.id);
+  const positions = Array.from({ length: remainingRules.length + 1 }, (_, index) => {
+    const position = index + 1;
+    const label = position === 1
+      ? '1 — First'
+      : `${position} — After “${remainingRules[position - 2].title}”`;
+    return new Option(label, String(position));
+  });
+  ruleSortOrder.replaceChildren(...positions);
+
+  ruleForm.elements.ruleId.value = selectedRule?.id ?? '';
+  ruleForm.elements.title.value = selectedRule?.title ?? '';
+  ruleForm.elements.body.value = selectedRule?.body ?? '';
+  const currentPosition = selectedRule ? rules.findIndex(rule => rule.id === selectedRule.id) + 1 : positions.length;
+  ruleSortOrder.value = String(currentPosition);
+  ruleForm.querySelector('button[type="submit"]').textContent = selectedRule ? 'Update rule' : 'Publish rule';
+}
+
 function populateAdminChoices() {
   const tournamentSelects = ['#matchTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
   for (const select of tournamentSelects) select.replaceChildren(...adminData.tournaments.map(tournament => new Option(`${tournament.name} · ${tournament.edition_year}`, tournament.id)));
+  renderRuleEditor();
   const courseSelect = document.querySelector('#matchCourse');
   courseSelect.replaceChildren(new Option('Course TBA', ''), ...adminData.courses.map(course => new Option(course.name, course.id)));
   const commentaryMatch = document.querySelector('#commentaryMatch');
@@ -387,7 +444,7 @@ function populateAdminChoices() {
   );
   resultMatch.replaceChildren(
     new Option('Select a match', ''),
-    ...adminData.matches.filter(match => match.status !== 'final').map(match => new Option(match.name, match.id)),
+    ...adminData.matches.filter(match => ['scheduled', 'live'].includes(match.status)).map(match => new Option(match.name, match.id)),
   );
   populateCorrectionRounds('');
   populateLegacyChoices();
@@ -414,18 +471,36 @@ function hydrateCommentarySettings() {
 function renderResultSegments() {
   resultSegmentRows.replaceChildren();
   const match = adminData.matches.find(item => item.id === resultMatch.value);
+  let canFinalize = Boolean(match?.match_segments?.length);
   for (const segment of match?.match_segments ?? []) {
     const card = document.createElement('fieldset');
     card.className = 'segment-card';
     card.dataset.segmentId = segment.id;
-    card.innerHTML = `<legend>Holes ${segment.start_hole}–${segment.end_hole} · ${segment.format} · ${segment.scoring_mode} · ${segment.point_value} pts</legend>
-      <div class="segment-fields">
-        <label>Official differential<input name="differential" type="number" min="-${segment.end_hole - segment.start_hole + 1}" max="${segment.end_hole - segment.start_hole + 1}" value="${segment.differential ?? 0}" required></label>
-        <label>Holes played<input name="holesPlayed" type="number" min="1" max="${segment.end_hole - segment.start_hole + 1}" value="${segment.holes_played || segment.end_hole - segment.start_hole + 1}" required></label>
-        <label>Result status<input value="Final" disabled></label>
-      </div><p>Positive differential = Blue lead; negative = White; zero = halved.</p>`;
+    const derived = deriveSegmentResult({ segment, rounds: adminData.rounds });
+    const legend = `<legend>Holes ${segment.start_hole}–${segment.end_hole} · ${segment.format} · ${segment.scoring_mode} · ${segment.point_value} pts</legend>`;
+    if (derived.mode === 'automatic') {
+      card.dataset.resultReady = 'true';
+      card.innerHTML = `${legend}
+        <p><strong>${derived.label}</strong></p>
+        <p>Calculated automatically from submitted hole-by-hole scores.</p>
+        <input name="differential" type="hidden" value="${derived.differential}">
+        <input name="holesPlayed" type="hidden" value="${derived.holes_played}">`;
+    } else if (derived.mode === 'waiting') {
+      card.dataset.resultReady = 'false';
+      canFinalize = false;
+      card.innerHTML = `${legend}<p><strong>Waiting for completed scorecards</strong></p><p>${derived.reason}</p>`;
+    } else {
+      card.dataset.resultReady = 'true';
+      card.innerHTML = `${legend}
+        <div class="segment-fields">
+          <label>Match-play differential (Blue + / White −)<input name="differential" type="number" min="-${segment.end_hole - segment.start_hole + 1}" max="${segment.end_hole - segment.start_hole + 1}" value="${segment.differential ?? 0}" required></label>
+          <label>Holes played<input name="holesPlayed" type="number" min="1" max="${segment.end_hole - segment.start_hole + 1}" value="${segment.holes_played || segment.end_hole - segment.start_hole + 1}" required></label>
+          <label>Result status<input value="Final" disabled></label>
+        </div><p>${derived.reason} Positive means Blue is up; negative means White; zero means halved.</p>`;
+    }
     resultSegmentRows.append(card);
   }
+  resultFinalizationForm.querySelector('button[type="submit"]').disabled = !canFinalize;
 }
 
 function renderCommentaryApprovals() {
@@ -501,8 +576,8 @@ courseForm.addEventListener('submit', async event => {
 document.querySelector('#addSegment').addEventListener('click', () => addSegment());
 document.querySelector('#matchTournament').addEventListener('change', () => {
   segmentRows.replaceChildren();
-  addSegment({ startHole: 1, endHole: 9, format: 'scramble', pointValue: 0.5 });
-  addSegment({ startHole: 10, endHole: 18, format: 'fourball', pointValue: 0.5 });
+  addSegment({ startHole: 1, endHole: 9, format: 'fourball', pointValue: 0.5 });
+  addSegment({ startHole: 10, endHole: 18, format: 'foursomes', pointValue: 0.5 });
 });
 
 matchPlanForm.addEventListener('submit', async event => {
@@ -527,7 +602,11 @@ resultFinalizationForm.addEventListener('submit', async event => {
   event.preventDefault();
   const message = document.querySelector('#resultMessage');
   try {
-    const segmentResults = [...resultSegmentRows.querySelectorAll('[data-segment-id]')].map(card => ({
+    const resultCards = [...resultSegmentRows.querySelectorAll('[data-segment-id]')];
+    if (resultCards.some(card => card.dataset.resultReady !== 'true')) {
+      throw new Error('All assigned players must submit every score before this match can be finalized.');
+    }
+    const segmentResults = resultCards.map(card => ({
       segment_id: card.dataset.segmentId,
       differential: Number(card.querySelector('[name="differential"]').value),
       holes_played: Number(card.querySelector('[name="holesPlayed"]').value),
@@ -562,13 +641,36 @@ resultFinalizationForm.addEventListener('submit', async event => {
   } catch (error) { setMessage(message, error.message, true); }
 });
 
+document.querySelector('#ruleTournament').addEventListener('change', () => renderRuleEditor());
+ruleExisting.addEventListener('change', () => renderRuleEditor(ruleExisting.value));
+
 ruleForm.addEventListener('submit', async event => {
   event.preventDefault();
   const data = new FormData(ruleForm);
+  const message = document.querySelector('#ruleMessage');
+  const submitButton = ruleForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
   try {
-    await saveTournamentRule({ tournamentId: data.get('tournamentId'), title: data.get('title'), body: data.get('body'), sortOrder: data.get('sortOrder') });
-    setMessage(document.querySelector('#ruleMessage'), 'Rule published.');
-  } catch (error) { setMessage(document.querySelector('#ruleMessage'), error.message, true); }
+    const tournamentId = data.get('tournamentId');
+    const ruleId = data.get('ruleId');
+    const savedRules = await saveTournamentRule({
+      ruleId,
+      tournamentId,
+      title: data.get('title'),
+      body: data.get('body'),
+      sortOrder: data.get('sortOrder'),
+    });
+    adminData.rules = [
+      ...adminData.rules.filter(rule => rule.tournament_id !== tournamentId),
+      ...savedRules,
+    ];
+    renderRuleEditor(ruleId);
+    setMessage(message, 'Rule saved in the selected display position.');
+  } catch (error) {
+    setMessage(message, error.message, true);
+  } finally {
+    submitButton.disabled = false;
+  }
 });
 
 legacyEditionSelect.addEventListener('change', hydrateLegacyEdition);
@@ -798,8 +900,8 @@ async function start() {
     renderMemberships();
     hydrateLegacyEdition();
     hydrateCommentarySettings();
-    addSegment({ startHole: 1, endHole: 9, format: 'scramble', pointValue: 0.5 });
-    addSegment({ startHole: 10, endHole: 18, format: 'fourball', pointValue: 0.5 });
+    addSegment({ startHole: 1, endHole: 9, format: 'fourball', pointValue: 0.5 });
+    addSegment({ startHole: 10, endHole: 18, format: 'foursomes', pointValue: 0.5 });
     renderCommentaryApprovals();
     adminContent.hidden = false;
   } catch (error) {
