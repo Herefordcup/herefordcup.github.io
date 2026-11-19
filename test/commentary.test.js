@@ -180,6 +180,6 @@ test('admin entrypoint cache-busts both changed modules', async () => {
     readFile(new URL('../admin.html', import.meta.url), 'utf8'),
     readFile(adminUrl, 'utf8'),
   ]);
-  assert.match(html, /src\/admin\.js\?v=commentary-banter-1/);
-  assert.match(adminSource, /from '\.\/supabase\.js\?v=commentary-banter-1'/);
+  assert.match(html, /src\/admin\.js\?v=legacy-ledger-2/);
+  assert.match(adminSource, /from '\.\/supabase\.js\?v=legacy-ledger-2'/);
 });

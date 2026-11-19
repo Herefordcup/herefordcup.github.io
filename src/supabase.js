@@ -476,8 +476,30 @@ export function legacyPhotoUrl(photo) {
   return photo?.signed_url ?? '';
 }
 
-export async function saveLegacyEdition({ id = null, year, venue, destination, status, winnerName, runnerUpName, finalScore, story, published }) {
-  const supabase = await getSupabase();
+function assignOptionalNumber(payload, column, value) {
+  if (value !== undefined) payload[column] = value === null ? null : Number(value);
+}
+
+function assignOptionalText(payload, column, value) {
+  if (value !== undefined) payload[column] = value?.trim() || null;
+}
+
+export function buildLegacyEditionPayload({
+  year,
+  venue,
+  destination,
+  status,
+  winnerName,
+  runnerUpName,
+  finalScore,
+  story,
+  published,
+  expectedPoints,
+  cardinalTotal,
+  silverTotal,
+  scoreConfidence,
+  sourceNotes,
+}) {
   const payload = {
     edition_year: Number(year),
     venue: venue.trim(),
@@ -489,6 +511,18 @@ export async function saveLegacyEdition({ id = null, year, venue, destination, s
     story: story?.trim() || null,
     published: Boolean(published),
   };
+  assignOptionalNumber(payload, 'expected_points', expectedPoints);
+  assignOptionalNumber(payload, 'cardinal_total', cardinalTotal);
+  assignOptionalNumber(payload, 'silver_total', silverTotal);
+  if (scoreConfidence !== undefined) payload.score_confidence = scoreConfidence;
+  assignOptionalText(payload, 'source_notes', sourceNotes);
+  return payload;
+}
+
+export async function saveLegacyEdition(input) {
+  const { id = null } = input;
+  const supabase = await getSupabase();
+  const payload = buildLegacyEditionPayload(input);
   const query = id
     ? supabase.from('legacy_editions').update(payload).eq('id', id)
     : supabase.from('legacy_editions').insert(payload);
@@ -497,8 +531,22 @@ export async function saveLegacyEdition({ id = null, year, venue, destination, s
   return data;
 }
 
-export async function saveLegacyResult({ id = null, editionId, label, cardinalEntry, silverEntry, result, sortOrder }) {
-  const supabase = await getSupabase();
+export function buildLegacyResultPayload({
+  editionId,
+  label,
+  cardinalEntry,
+  silverEntry,
+  result,
+  sortOrder,
+  eventGroup,
+  formatLabel,
+  handicapAllowance,
+  pointsAvailable,
+  cardinalPoints,
+  silverPoints,
+  confidence,
+  sourceNote,
+}) {
   const payload = {
     edition_id: editionId,
     label: label.trim(),
@@ -507,6 +555,21 @@ export async function saveLegacyResult({ id = null, editionId, label, cardinalEn
     result: result.trim(),
     sort_order: Number(sortOrder || 0),
   };
+  assignOptionalText(payload, 'event_group', eventGroup);
+  assignOptionalText(payload, 'format_label', formatLabel);
+  assignOptionalText(payload, 'handicap_allowance', handicapAllowance);
+  assignOptionalNumber(payload, 'points_available', pointsAvailable);
+  assignOptionalNumber(payload, 'cardinal_points', cardinalPoints);
+  assignOptionalNumber(payload, 'silver_points', silverPoints);
+  if (confidence !== undefined) payload.confidence = confidence;
+  assignOptionalText(payload, 'source_note', sourceNote);
+  return payload;
+}
+
+export async function saveLegacyResult(input) {
+  const { id = null } = input;
+  const supabase = await getSupabase();
+  const payload = buildLegacyResultPayload(input);
   const query = id
     ? supabase.from('legacy_results').update(payload).eq('id', id)
     : supabase.from('legacy_results').insert(payload);

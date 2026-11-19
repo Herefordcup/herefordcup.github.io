@@ -1,5 +1,6 @@
 import { validateSegments } from './formats.js';
 import { easternDateTimeToIso, optionalNumber } from './admin-helpers.js';
+import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
 import { deriveSegmentResult } from './match-results.js?v=automatic-results-2';
 import {
   correctHoleScore,
@@ -23,7 +24,7 @@ import {
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=commentary-banter-1';
+} from './supabase.js?v=legacy-ledger-2';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -172,6 +173,56 @@ function populateLegacyChoices() {
   renderLegacyPhotoList();
 }
 
+function pointText(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : '—';
+}
+
+function renderLegacyReconciliation(edition = adminData.legacyEditions.find(item => item.id === legacyEditionSelect.value)) {
+  const container = document.querySelector('#legacyReconciliation');
+  container.replaceChildren();
+  if (!edition) {
+    container.textContent = 'Enter edition totals to preview reconciliation.';
+    return;
+  }
+  const summary = summarizeLegacyLedger(edition);
+  container.className = `legacy-reconciliation ${summary.reconciled ? 'is-reconciled' : 'is-unresolved'}`;
+  const heading = document.createElement('strong');
+  heading.textContent = summary.reconciled ? 'Final score reconciled' : 'Needs reconciliation';
+  const metrics = document.createElement('dl');
+  for (const [label, value] of [
+    ['Expected', pointText(summary.expectedPoints)],
+    ['Blue', pointText(summary.blueTotal)],
+    ['White', pointText(summary.whiteTotal)],
+    ['Recorded row awards', pointText(summary.rowAwardedPoints)],
+    ['Unresolved', `${pointText(summary.unresolvedPoints)} points · ${summary.unresolvedRows} rows`],
+    ['Overallocated', `${summary.overAllocatedRows.length} rows`],
+  ]) {
+    const term = document.createElement('dt');
+    term.textContent = label;
+    const description = document.createElement('dd');
+    description.textContent = value;
+    metrics.append(term, description);
+  }
+  container.append(heading, metrics);
+  if (!summary.rowTotalsMatchEdition && summary.rowAwardedPoints !== null) {
+    const note = document.createElement('p');
+    note.textContent = `Row sums: Blue ${pointText(summary.rowBlueTotal)}, White ${pointText(summary.rowWhiteTotal)}. Edition totals are reported separately.`;
+    container.append(note);
+  }
+}
+
+function legacyEditionDraft() {
+  const existing = adminData.legacyEditions.find(item => item.id === legacyEditionForm.elements.editionId.value);
+  return {
+    ...existing,
+    expected_points: optionalNumber(legacyEditionForm.elements.expectedPoints.value),
+    cardinal_total: optionalNumber(legacyEditionForm.elements.cardinalTotal.value),
+    silver_total: optionalNumber(legacyEditionForm.elements.silverTotal.value),
+    score_confidence: legacyEditionForm.elements.scoreConfidence.value,
+    legacy_results: existing?.legacy_results ?? [],
+  };
+}
+
 function renderLegacyResultList() {
   const container = document.querySelector('#legacyResultList');
   container.replaceChildren();
@@ -194,6 +245,14 @@ function renderLegacyResultList() {
       legacyResultForm.elements.silverEntry.value = result.silver_entry ?? '';
       legacyResultForm.elements.result.value = result.result;
       legacyResultForm.elements.sortOrder.value = result.sort_order;
+      legacyResultForm.elements.eventGroup.value = result.event_group ?? '';
+      legacyResultForm.elements.formatLabel.value = result.format_label ?? '';
+      legacyResultForm.elements.handicapAllowance.value = result.handicap_allowance ?? '';
+      legacyResultForm.elements.pointsAvailable.value = result.points_available ?? '';
+      legacyResultForm.elements.cardinalPoints.value = result.cardinal_points ?? '';
+      legacyResultForm.elements.silverPoints.value = result.silver_points ?? '';
+      legacyResultForm.elements.confidence.value = result.confidence ?? 'unresolved';
+      legacyResultForm.elements.sourceNote.value = result.source_note ?? '';
       legacyResultForm.querySelector('button[type="submit"]').textContent = 'Update result';
     });
     const remove = document.createElement('button');
@@ -206,6 +265,7 @@ function renderLegacyResultList() {
         await deleteLegacyResult(result.id);
         edition.legacy_results = edition.legacy_results.filter(item => item.id !== result.id);
         renderLegacyResultList();
+        renderLegacyReconciliation();
       } catch (error) {
         setMessage(document.querySelector('#legacyResultMessage'), error.message, true);
       }
@@ -227,7 +287,13 @@ function hydrateLegacyEdition() {
   legacyEditionForm.elements.runnerUpName.value = edition?.runner_up_name ?? '';
   legacyEditionForm.elements.finalScore.value = edition?.final_score ?? '';
   legacyEditionForm.elements.story.value = edition?.story ?? '';
+  legacyEditionForm.elements.expectedPoints.value = edition?.expected_points ?? '';
+  legacyEditionForm.elements.cardinalTotal.value = edition?.cardinal_total ?? '';
+  legacyEditionForm.elements.silverTotal.value = edition?.silver_total ?? '';
+  legacyEditionForm.elements.scoreConfidence.value = edition?.score_confidence ?? 'unresolved';
+  legacyEditionForm.elements.sourceNotes.value = edition?.source_notes ?? '';
   legacyEditionForm.elements.published.checked = edition?.published ?? false;
+  renderLegacyReconciliation(edition);
 }
 
 function renderLegacyPhotoList() {
@@ -726,6 +792,7 @@ ruleForm.addEventListener('submit', async event => {
 });
 
 legacyEditionSelect.addEventListener('change', hydrateLegacyEdition);
+legacyEditionForm.addEventListener('input', () => renderLegacyReconciliation(legacyEditionDraft()));
 document.querySelector('#legacyResultEdition').addEventListener('change', renderLegacyResultList);
 document.querySelector('#legacyPhotoEdition').addEventListener('change', renderLegacyPhotoList);
 
@@ -736,6 +803,21 @@ legacyEditionForm.addEventListener('submit', async event => {
   try {
     setMessage(message, 'Saving…');
     const existing = adminData.legacyEditions.find(item => item.id === data.get('editionId'));
+    const scoreConfidence = data.get('scoreConfidence');
+    const published = data.get('published') === 'on';
+    const expectedPoints = optionalNumber(data.get('expectedPoints'));
+    const cardinalTotal = optionalNumber(data.get('cardinalTotal'));
+    const silverTotal = optionalNumber(data.get('silverTotal'));
+    const summary = summarizeLegacyLedger({
+      expected_points: expectedPoints,
+      cardinal_total: cardinalTotal,
+      silver_total: silverTotal,
+      score_confidence: scoreConfidence,
+      legacy_results: existing?.legacy_results ?? [],
+    });
+    if (scoreConfidence === 'confirmed' && published && !summary.reconciled) {
+      throw new Error('A confirmed edition cannot be published until expected, Blue, and White totals reconcile without overallocated rows.');
+    }
     const saved = await saveLegacyEdition({
       id: data.get('editionId') || null,
       year: data.get('year'),
@@ -746,7 +828,12 @@ legacyEditionForm.addEventListener('submit', async event => {
       runnerUpName: data.get('runnerUpName'),
       finalScore: data.get('finalScore'),
       story: data.get('story'),
-      published: data.get('published') === 'on',
+      published,
+      expectedPoints,
+      cardinalTotal,
+      silverTotal,
+      scoreConfidence,
+      sourceNotes: data.get('sourceNotes'),
     });
     const edition = {
       ...saved,
@@ -775,6 +862,14 @@ legacyResultForm.addEventListener('submit', async event => {
       silverEntry: data.get('silverEntry'),
       result: data.get('result'),
       sortOrder: data.get('sortOrder'),
+      eventGroup: data.get('eventGroup'),
+      formatLabel: data.get('formatLabel'),
+      handicapAllowance: data.get('handicapAllowance'),
+      pointsAvailable: optionalNumber(data.get('pointsAvailable')),
+      cardinalPoints: optionalNumber(data.get('cardinalPoints')),
+      silverPoints: optionalNumber(data.get('silverPoints')),
+      confidence: data.get('confidence'),
+      sourceNote: data.get('sourceNote'),
     });
     const edition = adminData.legacyEditions.find(item => item.id === saved.edition_id);
     edition.legacy_results = [...edition.legacy_results.filter(item => item.id !== saved.id), saved];
@@ -783,6 +878,7 @@ legacyResultForm.addEventListener('submit', async event => {
     document.querySelector('#legacyResultEdition').value = saved.edition_id;
     legacyResultForm.querySelector('button[type="submit"]').textContent = 'Save result';
     renderLegacyResultList();
+    renderLegacyReconciliation();
     setMessage(message, data.get('resultId') ? 'Legacy result updated.' : 'Legacy result added.');
   } catch (error) { setMessage(message, error.message, true); }
 });

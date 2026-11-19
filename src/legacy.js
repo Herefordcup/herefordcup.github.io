@@ -1,3 +1,5 @@
+import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
+
 export const knownLegacyTrips = [
   { edition_year: 2023, venue: 'Barefoot', destination: 'Myrtle Beach', status: 'completed', legacy_results: [], legacy_photos: [] },
   { edition_year: 2024, venue: 'Innisbrook', destination: 'Tampa', status: 'completed', legacy_results: [], legacy_photos: [] },
@@ -16,6 +18,47 @@ function node(tag, className, text) {
 function normalizedEditions(editions) {
   return [...(editions ?? [])]
     .sort((left, right) => left.edition_year - right.edition_year);
+}
+
+function recordedNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function resultIsUnresolved(result) {
+  if (!recordedNumber(result.points_available)) return false;
+  const blue = recordedNumber(result.cardinal_points) ? result.cardinal_points : null;
+  const white = recordedNumber(result.silver_points) ? result.silver_points : null;
+  return result.confidence === 'unresolved'
+    || blue === null
+    || white === null
+    || blue + white < result.points_available;
+}
+
+export function groupLegacyResults(results = []) {
+  const groups = new Map();
+  const ordered = [...results].sort((left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0));
+  for (const result of ordered) {
+    const name = result.event_group?.trim() || 'Other results';
+    if (!groups.has(name)) groups.set(name, { name, results: [], pointsAvailable: 0, unresolvedRows: 0, hasPoints: false });
+    const group = groups.get(name);
+    group.results.push(result);
+    if (recordedNumber(result.points_available)) {
+      group.pointsAvailable += result.points_available;
+      group.hasPoints = true;
+    }
+    if (resultIsUnresolved(result)) group.unresolvedRows += 1;
+  }
+  return [...groups.values()];
+}
+
+function confidenceLabel(confidence) {
+  if (confidence === 'confirmed') return 'Confirmed';
+  if (confidence === 'probable') return 'Probable';
+  return 'Source incomplete';
+}
+
+function pointsText(value) {
+  return recordedNumber(value) ? String(value) : '—';
 }
 
 export function renderLegacyWinners({ container, editions, emptyMessage = 'Champions will appear after results are published.' }) {
@@ -83,18 +126,69 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
 
     if (selected.story) details.append(node('p', 'legacy-story', selected.story));
 
-    const results = [...(selected.legacy_results ?? [])].sort((a, b) => a.sort_order - b.sort_order);
-    if (results.length) {
+    const ledger = summarizeLegacyLedger(selected);
+    const hasLedger = [selected.expected_points, selected.cardinal_total, selected.silver_total]
+      .some(recordedNumber);
+    if (hasLedger) {
+      const summary = node('section', 'legacy-ledger-summary');
+      const summaryHead = node('div', 'legacy-ledger-summary-head');
+      summaryHead.append(node('strong', '', ledger.reconciled ? 'Final score reconciled' : 'Scoring needs reconciliation'));
+      summaryHead.append(node('span', `legacy-confidence is-${selected.score_confidence ?? 'unresolved'}`, confidenceLabel(selected.score_confidence)));
+      summary.append(summaryHead);
+      const totals = node('dl', 'legacy-ledger-totals');
+      for (const [label, value] of [
+        ['Blue', pointsText(ledger.blueTotal)],
+        ['White', pointsText(ledger.whiteTotal)],
+        ['Expected', pointsText(ledger.expectedPoints)],
+        ['Point gap', pointsText(ledger.unresolvedPoints)],
+        ['Source rows', `${ledger.unresolvedRows} unresolved`],
+      ]) {
+        const metric = node('div');
+        metric.append(node('dt', '', label), node('dd', '', value));
+        totals.append(metric);
+      }
+      summary.append(totals);
+      if (selected.source_notes) summary.append(node('p', 'legacy-source-note', selected.source_notes));
+      details.append(summary);
+    }
+
+    const resultGroups = groupLegacyResults(selected.legacy_results ?? []);
+    for (const group of resultGroups) {
+      const disclosure = node('details', 'legacy-result-group');
+      disclosure.open = true;
+      const groupSummary = node('summary');
+      groupSummary.append(node('span', '', group.name));
+      const groupMeta = group.hasPoints
+        ? `${pointsText(group.pointsAvailable)} points · ${group.unresolvedRows} unresolved`
+        : `${group.results.length} results`;
+      groupSummary.append(node('small', '', groupMeta));
+      disclosure.append(groupSummary);
       const list = node('div', 'legacy-results');
-      for (const result of results) {
+      for (const result of group.results) {
         const row = node('article');
-        row.append(node('small', '', result.label));
+        const rowHead = node('div', 'legacy-result-head');
+        rowHead.append(node('small', '', result.label));
+        if (result.confidence) {
+          rowHead.append(node('span', `legacy-confidence is-${result.confidence}`, confidenceLabel(result.confidence)));
+        }
+        row.append(rowHead);
         row.append(node('strong', '', result.result));
         const sides = [result.cardinal_entry, result.silver_entry].filter(Boolean).join(' · ');
         if (sides) row.append(node('span', '', sides));
+        const scoring = [result.format_label, result.handicap_allowance].filter(Boolean).join(' · ');
+        if (scoring) row.append(node('span', 'legacy-result-format', scoring));
+        if (recordedNumber(result.points_available)) {
+          row.append(node(
+            'span',
+            'legacy-result-points',
+            `Blue ${pointsText(result.cardinal_points)} · White ${pointsText(result.silver_points)} / ${pointsText(result.points_available)} points`,
+          ));
+        }
+        if (result.source_note) row.append(node('p', 'legacy-source-note', result.source_note));
         list.append(row);
       }
-      details.append(list);
+      disclosure.append(list);
+      details.append(disclosure);
     }
 
     for (const photo of [...(selected.legacy_photos ?? [])].sort((a, b) => a.sort_order - b.sort_order)) {

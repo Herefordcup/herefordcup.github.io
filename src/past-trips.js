@@ -1,5 +1,5 @@
-import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js';
-import { renderLegacyArchive } from './legacy.js?v=photo-lightbox-1';
+import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js?v=legacy-ledger-2';
+import { renderLegacyArchive } from './legacy.js?v=legacy-ledger-2';
 
 const target = {
   timeline: document.querySelector('#legacyTimeline'),
