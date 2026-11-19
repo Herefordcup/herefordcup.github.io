@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { buildLegacyEditionPayload, buildLegacyResultPayload } from '../src/supabase.js';
 
 const root = new URL('../', import.meta.url);
 const indexHtml = await readFile(new URL('index.html', root), 'utf8');
@@ -43,9 +44,9 @@ test('uploaded Past Trips photos open in an accessible full-view dialog', () => 
   assert.match(legacyScript, /View .* full size/);
   assert.match(pastTripsScript, /showModal\(\)/);
   assert.match(pastTripsScript, /legacyPhotoDialog\.close\(\)/);
-  assert.match(pastTripsHtml, /href="past-trips\.css\?v=photo-lightbox-1"/);
-  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=photo-lightbox-1"/);
-  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=photo-lightbox-1'/);
+  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-ledger-2"/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-ledger-2"/);
+  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-ledger-2'/);
 });
 
 test('legacy schema is publicly readable, admin-write-only, and seeds the known trips without fabricated winners', async () => {
@@ -130,4 +131,115 @@ test('administrators can update and remove Legacy result rows', () => {
   }
   assert.match(adminHtml, /id="legacyResultList"/);
   assert.match(adminScript, /renderLegacyResultList/);
+});
+
+test('Legacy admin exposes structured edition and result ledger controls', () => {
+  for (const name of ['expectedPoints', 'cardinalTotal', 'silverTotal', 'scoreConfidence', 'sourceNotes']) {
+    assert.match(adminHtml, new RegExp(`name=["']${name}["']`), `missing edition field ${name}`);
+  }
+  for (const name of ['eventGroup', 'formatLabel', 'handicapAllowance', 'pointsAvailable', 'cardinalPoints', 'silverPoints', 'confidence', 'sourceNote']) {
+    assert.match(adminHtml, new RegExp(`name=["']${name}["']`), `missing result field ${name}`);
+  }
+  assert.match(adminHtml, /<div id="legacyReconciliation" aria-live="polite"><\/div>/);
+  for (const confidence of ['confirmed', 'probable', 'unresolved']) {
+    assert.match(adminHtml, new RegExp(`value=["']${confidence}["']`, 'i'));
+  }
+});
+
+test('Legacy saves every structured field explicitly without coercing blanks to zero', () => {
+  for (const column of ['expected_points', 'cardinal_total', 'silver_total', 'source_notes']) {
+    assert.match(supabaseScript, new RegExp(`["']${column}["']`), `missing edition payload ${column}`);
+  }
+  assert.match(supabaseScript, /payload\.score_confidence/);
+  for (const column of ['event_group', 'format_label', 'handicap_allowance', 'points_available', 'cardinal_points', 'silver_points', 'source_note']) {
+    assert.match(supabaseScript, new RegExp(`["']${column}["']`), `missing result payload ${column}`);
+  }
+  assert.match(supabaseScript, /payload\.confidence/);
+  assert.match(adminScript, /optionalNumber\(data\.get\('expectedPoints'\)\)/);
+  assert.match(adminScript, /optionalNumber\(data\.get\('cardinalPoints'\)\)/);
+  assert.doesNotMatch(supabaseScript, /(?:expected_points|cardinal_total|silver_total|points_available|cardinal_points|silver_points): Number\([^)]*\|\| 0\)/);
+});
+
+test('Legacy save payloads preserve structured columns for callers using the previous signatures', () => {
+  const editionPayload = buildLegacyEditionPayload({
+    year: 2024,
+    venue: 'Innisbrook',
+    destination: 'Tampa',
+    status: 'completed',
+    winnerName: 'Blue',
+    runnerUpName: 'White',
+    finalScore: '23.5–19.5',
+    story: 'Original story',
+    published: true,
+  });
+  for (const column of ['expected_points', 'cardinal_total', 'silver_total', 'score_confidence', 'source_notes']) {
+    assert.equal(Object.hasOwn(editionPayload, column), false, `${column} must remain untouched when omitted`);
+  }
+
+  const resultPayload = buildLegacyResultPayload({
+    editionId: 'edition-id',
+    label: 'Match 1',
+    cardinalEntry: 'Blue entry',
+    silverEntry: 'White entry',
+    result: 'Original result',
+    sortOrder: 10,
+  });
+  for (const column of ['event_group', 'format_label', 'handicap_allowance', 'points_available', 'cardinal_points', 'silver_points', 'confidence', 'source_note']) {
+    assert.equal(Object.hasOwn(resultPayload, column), false, `${column} must remain untouched when omitted`);
+  }
+
+  assert.equal(buildLegacyEditionPayload({
+    year: 2025,
+    venue: 'PGA Frisco',
+    destination: 'Frisco',
+    status: 'completed',
+    published: false,
+    expectedPoints: null,
+    cardinalTotal: null,
+    silverTotal: null,
+    scoreConfidence: 'unresolved',
+    sourceNotes: '',
+  }).expected_points, null);
+});
+
+test('Legacy admin renders final-score reconciliation and blocks an invalid confirmed publication', () => {
+  assert.match(adminScript, /summarizeLegacyLedger/);
+  assert.match(adminScript, /function renderLegacyReconciliation/);
+  for (const label of ['Expected', 'Blue', 'White', 'Recorded row awards', 'Unresolved', 'Overallocated', 'Final score reconciled']) {
+    assert.match(adminScript, new RegExp(label, 'i'));
+  }
+  assert.match(adminScript, /scoreConfidence === 'confirmed'[\s\S]*published[\s\S]*!summary\.reconciled/);
+});
+
+test('Legacy admin cache-busts each changed browser dependency', () => {
+  assert.match(adminHtml, /href="admin\.css\?v=legacy-ledger-2"/);
+  assert.match(adminHtml, /src="src\/admin\.js\?v=legacy-ledger-2"/);
+  assert.match(adminScript, /from '\.\/supabase\.js\?v=legacy-ledger-2'/);
+  assert.match(adminScript, /from '\.\/legacy-ledger\.js\?v=legacy-ledger-2'/);
+});
+
+test('Past Trips renders grouped native disclosures with reconciliation and confidence labels', () => {
+  assert.match(legacyScript, /groupLegacyResults/);
+  assert.match(legacyScript, /node\('details', 'legacy-result-group'\)/);
+  assert.match(legacyScript, /node\('summary'/);
+  assert.match(legacyScript, /\.open = true/);
+  assert.match(legacyScript, /summarizeLegacyLedger/);
+  for (const label of ['Blue', 'White', 'Expected', 'Point gap', 'Source rows', 'Final score reconciled', 'Confirmed', 'Probable', 'Source incomplete', 'Other results']) {
+    assert.match(legacyScript, new RegExp(label, 'i'));
+  }
+  assert.doesNotMatch(legacyScript, /innerHTML/);
+});
+
+test('Past Trips cache-busts every changed ledger dependency', async () => {
+  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-ledger-2"/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-ledger-2"/);
+  assert.match(pastTripsScript, /from '\.\/supabase\.js\?v=legacy-ledger-2'/);
+  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-ledger-2'/);
+  assert.match(legacyScript, /from '\.\/legacy-ledger\.js\?v=legacy-ledger-2'/);
+  assert.match(indexHtml, /src="src\/app\.js\?v=legacy-ledger-2"/);
+  assert.match(appScript, /from '\.\/supabase\.js\?v=legacy-ledger-2'/);
+  assert.match(appScript, /from '\.\/legacy\.js\?v=legacy-ledger-2'/);
+  assert.match(portalHtml, /src="src\/portal\.js\?v=legacy-ledger-2"/);
+  const portalScript = await readFile(new URL('src/portal.js', root), 'utf8');
+  assert.match(portalScript, /from '\.\/supabase\.js\?v=legacy-ledger-2'/);
 });

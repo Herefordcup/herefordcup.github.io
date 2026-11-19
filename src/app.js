@@ -1,6 +1,6 @@
 import { applyHoleResult, calculateTeamTotals, formatMatchStatus, isMatchComplete } from './scoring.js';
-import { loadLegacyArchive } from './supabase.js';
-import { renderLegacyWinners } from './legacy.js';
+import { loadLegacyArchive } from './supabase.js?v=legacy-ledger-2';
+import { renderLegacyWinners } from './legacy.js?v=legacy-ledger-2';
 
 const STORAGE_KEY = 'hereford-cup-state-v1';
 const sessions = {
