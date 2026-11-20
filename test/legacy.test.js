@@ -44,9 +44,9 @@ test('uploaded Past Trips photos open in an accessible full-view dialog', () => 
   assert.match(legacyScript, /View .* full size/);
   assert.match(pastTripsScript, /showModal\(\)/);
   assert.match(pastTripsScript, /legacyPhotoDialog\.close\(\)/);
-  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-ledger-2"/);
-  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=public-preview-1"/);
-  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-tie-1'/);
+  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-scorecards-1"/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-scorecards-1"/);
+  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-scorecards-1'/);
 });
 
 test('legacy schema is publicly readable, admin-write-only, and seeds the known trips without fabricated winners', async () => {
@@ -218,24 +218,29 @@ test('Legacy admin cache-busts each changed browser dependency', () => {
   assert.match(adminScript, /from '\.\/legacy-ledger\.js\?v=legacy-ledger-2'/);
 });
 
-test('Past Trips renders grouped native disclosures with reconciliation and confidence labels', () => {
+test('Past Trips renders every trip with the same simple matchup and points format', () => {
   assert.match(legacyScript, /groupLegacyResults/);
+  assert.match(legacyScript, /public_visible !== false/);
+  assert.match(legacyScript, /event_group\?\.trim\(\) !== 'Reconciliation'/);
   assert.match(legacyScript, /node\('details', 'legacy-result-group'\)/);
   assert.match(legacyScript, /node\('summary'/);
   assert.match(legacyScript, /\.open = true/);
-  assert.match(legacyScript, /summarizeLegacyLedger/);
-  for (const label of ['Blue', 'White', 'Expected', 'Point gap', 'Scoring rows', 'Final score reconciled', 'Confirmed', 'Probable', 'Source incomplete', 'Other results']) {
-    assert.match(legacyScript, new RegExp(label, 'i'));
+  assert.match(legacyScript, /format_label/);
+  assert.match(legacyScript, /cardinal_entry/);
+  assert.match(legacyScript, /silver_entry/);
+  assert.match(legacyScript, /Blue .* White/);
+  for (const hiddenLabel of ['Confirmed', 'Probable', 'Source incomplete', 'Expected', 'Point gap', 'Scoring rows', 'Final score reconciled']) {
+    assert.doesNotMatch(legacyScript, new RegExp(`['"\\x60]${hiddenLabel}`));
   }
+  assert.doesNotMatch(legacyScript, /confidenceLabel|source_notes|source_note|summarizeLegacyLedger/);
   assert.doesNotMatch(legacyScript, /innerHTML/);
 });
 
-test('Past Trips cache-busts every changed ledger dependency', async () => {
-  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-ledger-2"/);
-  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=public-preview-1"/);
+test('Past Trips cache-busts every changed scorecard dependency', async () => {
+  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-scorecards-1"/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-scorecards-1"/);
   assert.match(pastTripsScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
-  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-tie-1'/);
-  assert.match(legacyScript, /from '\.\/legacy-ledger\.js\?v=legacy-ledger-2'/);
+  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-scorecards-1'/);
   assert.match(indexHtml, /src="src\/app\.js\?v=public-preview-1"/);
   assert.match(appScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
   assert.match(appScript, /from '\.\/legacy\.js\?v=legacy-tie-1'/);
