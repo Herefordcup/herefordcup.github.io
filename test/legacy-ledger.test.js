@@ -13,6 +13,8 @@ const scorecardMigrationUrl = new URL('supabase/migrations/028_legacy_scorecards
 const scorecardMigrationSql = await readFile(scorecardMigrationUrl, 'utf8').catch(() => '');
 const textCleanupMigrationUrl = new URL('supabase/migrations/029_legacy_text_cleanup.sql', root);
 const textCleanupMigrationSql = await readFile(textCleanupMigrationUrl, 'utf8').catch(() => '');
+const friscoCleanupMigrationUrl = new URL('supabase/migrations/031_frisco_public_name_cleanup.sql', root);
+const friscoCleanupMigrationSql = await readFile(friscoCleanupMigrationUrl, 'utf8').catch(() => '');
 
 function requiresColumn(table, column, definition) {
   assert.match(
@@ -264,15 +266,25 @@ test('legacyResultText reports only the recorded winner or split without source 
   assert.equal(legacyResultText({ cardinal_points: null, silver_points: null }), 'Result not recorded');
 });
 
-test('Legacy display text removes mojibake punctuation and normalizes missing Innisbrook names', () => {
+test('Legacy display text gives Innisbrook and Frisco the same clean participant format as Kiawah', () => {
   assert.equal(normalizeLegacyText('Round 2 ΓÇö 2v2 Scramble'), 'Round 2 - 2v2 Scramble');
   assert.equal(normalizeLegacyText('2v2 Scramble ┬╖ Front 9'), '2v2 Scramble - Front 9');
   assert.equal(normalizeLegacyText('Blue 18 – White 23'), 'Blue 18 - White 23');
-  assert.equal(normalizeLegacyEntry('Blue: Carl / Troy?', 2024), 'Blue: Carl / Troy');
-  assert.equal(normalizeLegacyEntry('White: Radway / ?', 2024), 'White: Radway / TBD');
-  assert.equal(normalizeLegacyEntry('White: Team White (names not listed)', 2024), 'White: Team White (TBD)');
-  assert.equal(normalizeLegacyEntry('White: not listed', 2024), 'White: TBD');
-  assert.equal(normalizeLegacyEntry('Long Drive - Lukas?', 2025), 'Long Drive - Lukas?');
+  assert.equal(normalizeLegacyEntry('Blue: Carl / Troy?', 2024), 'Carl & Troy');
+  assert.equal(normalizeLegacyEntry('White: Radway / ?', 2024), 'Radway & TBD');
+  assert.equal(normalizeLegacyEntry('White: Team White (names not listed)', 2024), 'Team White (TBD)');
+  assert.equal(normalizeLegacyEntry('White: not listed', 2024), 'TBD');
+  assert.equal(normalizeLegacyEntry('Blue: Lukas?', 2025), 'Lukas');
+  assert.equal(normalizeLegacyEntry('Blue: PH?', 2025), 'PH');
+  assert.equal(normalizeLegacyEntry('Blue: ? Blue Team. Carl?', 2025), 'TBD Blue Team. Carl');
+  assert.equal(normalizeLegacyEntry('Blue: (?)', 2025), '(TBD)');
+  assert.equal(normalizeLegacyEntry('Blue: John Jr.?', 2025), 'John Jr.');
+  assert.equal(normalizeLegacyEntry('Blue: Gilbert / Abel', 2025), 'Gilbert & Abel');
+  assert.equal(normalizeLegacyEntry('Blue: Question?able', 2025), 'Question?able',
+    'embedded punctuation that is not an uncertainty suffix must be preserved');
+  assert.equal(normalizeLegacyEntry('Blue: Keep?', 2023), 'Blue: Keep?',
+    'question marks outside the approved 2024/2025 cleanup must remain untouched');
+  assert.equal(normalizeLegacyEntry('Gilbert & Abel', 2026), 'Gilbert & Abel');
 });
 
 test('migration 029 repairs persisted punctuation and Innisbrook placeholders without deleting source metadata', () => {
@@ -282,4 +294,14 @@ test('migration 029 repairs persisted punctuation and Innisbrook placeholders wi
   assert.match(textCleanupMigrationSql, /Innisbrook:[\s\S]*Troy\?[\s\S]*TBD/i);
   assert.match(textCleanupMigrationSql, /where edition_year = 2024/i);
   assert.doesNotMatch(textCleanupMigrationSql, /delete from|source_note\s*=|source_notes\s*=/i);
+});
+
+test('migration 031 removes Frisco public question marks without altering scores or historical metadata', () => {
+  assert.match(friscoCleanupMigrationSql, /edition_id[\s\S]*legacy_editions[\s\S]*edition_year = 2025/i);
+  for (const column of ['cardinal_entry', 'silver_entry']) {
+    assert.match(friscoCleanupMigrationSql, new RegExp(`${column}\\s*=`, 'i'));
+  }
+  assert.match(friscoCleanupMigrationSql, /public_visible is true[\s\S]*coalesce\(result\.cardinal_entry[\s\S]*~[\s\S]*\\\?/i);
+  assert.match(friscoCleanupMigrationSql, /raise exception 'PGA Frisco public participant names still contain question marks'/i);
+  assert.doesNotMatch(friscoCleanupMigrationSql, /label\s*=|delete from|source_note\s*=|source_notes\s*=|confidence\s*=|cardinal_points\s*=|silver_points\s*=/i);
 });
