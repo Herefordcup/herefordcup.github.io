@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { easternDateTimeToIso, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions, tournamentTeamLabel } from '../src/admin-helpers.js';
+import { createMutationGate, easternDateTimeToIso, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions, tournamentTeamLabel } from '../src/admin-helpers.js';
 
 const html = await readFile(new URL('../admin.html', import.meta.url), 'utf8');
 const adminScript = await readFile(new URL('../src/admin.js', import.meta.url), 'utf8');
@@ -30,6 +30,24 @@ test('admin portal exposes planning, rules, and commentary controls', () => {
   for (const unsupported of ['scramble', 'shamble', 'chapman']) {
     assert.doesNotMatch(html, new RegExp(`value=["']${unsupported}["']`), `unexpected ${unsupported}`);
   }
+});
+
+test('membership mutation gate keeps the roster inert until every overlapping save settles', () => {
+  const roster = { inert: false };
+  const gate = createMutationGate(roster);
+
+  gate.begin();
+  gate.begin();
+  assert.equal(gate.active, true);
+  assert.equal(roster.inert, true);
+
+  gate.end();
+  assert.equal(gate.active, true);
+  assert.equal(roster.inert, true);
+
+  gate.end();
+  assert.equal(gate.active, false);
+  assert.equal(roster.inert, false);
 });
 
 test('only supported active matches can enter the finalization workflow', async () => {
@@ -64,8 +82,8 @@ test('segment player selection shows tournament teams and derives the scoring si
   assert.equal(segmentPlayerFromMembership(inactive, 4), null);
   assert.doesNotMatch(adminScript, /Match side|data-side-select|Blue side|White side/);
   assert.match(adminScript, /option\.disabled = disabled/);
-  assert.match(html, /src="src\/admin\.js\?v=automatic-team-save-1"/);
-  assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=automatic-segment-sides-1'/);
+  assert.match(html, /src="src\/admin\.js\?v=member-role-1"/);
+  assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=member-role-1'/);
 });
 
 test('planner options refresh team labels and preserve only valid selections after roster changes', () => {

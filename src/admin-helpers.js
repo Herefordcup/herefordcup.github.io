@@ -1,3 +1,20 @@
+export function createMutationGate(target) {
+  let count = 0;
+  return {
+    begin() {
+      count += 1;
+      target.inert = true;
+    },
+    end() {
+      count = Math.max(0, count - 1);
+      target.inert = count > 0;
+    },
+    get active() {
+      return count > 0;
+    },
+  };
+}
+
 export function tournamentTeamLabel(team) {
   if (team === 'cardinal') return 'Blue';
   if (team === 'silver') return 'White';

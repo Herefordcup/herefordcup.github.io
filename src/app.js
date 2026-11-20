@@ -1,6 +1,6 @@
 import { formatMatchStatus } from './scoring.js';
 import { formatHomeDate, formatPublicPoints, groupPublicSchedule, hasPublishedPublicPairings } from './home.js?v=home-standings-1';
-import { loadLegacyArchive, loadPublicTournamentPreview } from './supabase.js?v=membership-team-1';
+import { loadLegacyArchive, loadPublicTournamentPreview } from './supabase.js?v=member-role-1';
 import { renderLegacyWinners } from './legacy.js?v=pimentel-correction-1';
 
 const previewStatus = document.querySelector('#previewStatus');

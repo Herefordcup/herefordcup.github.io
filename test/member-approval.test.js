@@ -9,6 +9,7 @@ const denialMigrationUrl = new URL('supabase/migrations/020_deny_pending_members
 const reRequestCleanupMigrationUrl = new URL('supabase/migrations/030_membership_rerequest_cleanup.sql', root);
 const targetedReRequestMigrationUrl = new URL('supabase/migrations/033_targeted_membership_rerequest.sql', root);
 const memberTeamMigrationUrl = new URL('supabase/migrations/034_tournament_member_team_assignment.sql', root);
+const memberRoleMigrationUrl = new URL('supabase/migrations/035_tournament_member_role_assignment.sql', root);
 const adminHtml = await readFile(new URL('admin.html', root), 'utf8');
 const adminCss = await readFile(new URL('admin.css', root), 'utf8');
 const adminScript = await readFile(new URL('src/admin.js', root), 'utf8');
@@ -80,12 +81,12 @@ test('administrator portal exposes pending, active, and permanent membership del
   assert.match(adminCss, /\.membership-columns\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(adminCss, /\.membership-card \.button\{[^}]*min-height:44px/);
   assert.match(adminHtml, /admin\.css\?v=active-members-team-1/);
-  assert.match(adminHtml, /admin\.js\?v=automatic-team-save-1/);
-  assert.match(adminScript, /supabase\.js\?v=membership-team-1/);
+  assert.match(adminHtml, /admin\.js\?v=member-role-1/);
+  assert.match(adminScript, /supabase\.js\?v=member-role-1/);
   assert.match(adminScript, /match-results\.js\?v=automatic-results-2/);
-  assert.match(portalHtml, /portal\.js\?v=membership-team-1/);
-  assert.match(portalScript, /supabase\.js\?v=membership-team-1/);
-  assert.match(portalScript, /member\.js\?v=membership-team-1/);
+  assert.match(portalHtml, /portal\.js\?v=member-role-1/);
+  assert.match(portalScript, /supabase\.js\?v=member-role-1/);
+  assert.match(portalScript, /member\.js\?v=member-role-1/);
   assert.match(supabaseScript, /export async function setTournamentMembershipStatus/);
   assert.match(supabaseScript, /rpc\('set_tournament_membership_status'/);
   assert.match(supabaseScript, /export async function deleteTournamentMembership/);
@@ -168,7 +169,7 @@ test('returning members and administrators refresh access without reopening stal
   assert.match(adminScript, /async function refreshMembershipRoster/);
   assert.match(supabaseScript, /export async function loadMembershipRosterData/);
   assert.match(adminScript, /freshData = await loadMembershipRosterData\(\)[\s\S]*adminData\.memberships = freshData\.memberships[\s\S]*renderMemberships\(\)/);
-  assert.match(adminScript, /membershipMutationCount > 0/);
+  assert.match(adminScript, /membershipMutationGate\.active/);
   assert.doesNotMatch(adminScript, /button:disabled:not\(#refreshMemberships\)/);
   assert.match(adminScript, /membershipManagement\.inert = true[\s\S]*membershipManagement\.inert = false/);
   assert.match(adminScript, /document\.activeElement\?\.closest\('#membershipManagement'\)[\s\S]*refreshMembershipRoster/);
@@ -201,6 +202,28 @@ test('administrators assign annual teams in a compact active-member roster', asy
   assert.match(adminScript, /new Option\('Unassigned', ''\)[\s\S]*new Option\('Blue', 'cardinal'\)[\s\S]*new Option\('White', 'silver'\)/);
   assert.match(adminHtml, /<div[^>]*class="[^"]*compact-member-list[^"]*"[^>]*id="activeMembers"/);
   assert.match(adminCss, /\.compact-member-list\{[^}]*max-height:[^;}]+;[^}]*overflow-y:auto/i);
+});
+
+test('administrators manage tournament-specific Player and Admin roles from Active Members', async () => {
+  const sql = await readFile(memberRoleMigrationUrl, 'utf8').catch(() => '');
+  assert.match(sql, /create or replace function public\.set_tournament_member_role\(\s*target_tournament_id uuid,\s*target_user_id uuid,\s*target_role text\s*\)/i);
+  assert.match(sql, /target_role not in \('player', 'admin'\)/i);
+  assert.match(sql, /pg_advisory_xact_lock\(hashtextextended\(target_tournament_id::text, 0\)\)[\s\S]*from public\.tournaments[\s\S]*for update/i);
+  assert.match(sql, /from public\.tournament_memberships[\s\S]*status = 'active'[\s\S]*for update[\s\S]*public\.is_admin\(\)[\s\S]*public\.is_tournament_admin\(target_tournament_id\)/i);
+  assert.match(sql, /target_user_id = auth\.uid\(\)[\s\S]*current_membership\.role = 'admin'[\s\S]*target_role = 'player'/i);
+  assert.match(sql, /global_profile_role = 'admin'[\s\S]*target_role = 'player'/i);
+  assert.match(sql, /count\(\*\)[\s\S]*role = 'admin'[\s\S]*status = 'active'[\s\S]*active_admin_count <= 1/i);
+  assert.match(sql, /set role = target_role,[\s\S]*updated_at = now\(\)/i);
+  assert.match(sql, /grant execute on function public\.set_tournament_member_role\(uuid, uuid, text\) to authenticated/i);
+
+  assert.match(supabaseScript, /export async function setTournamentMemberRole/);
+  assert.match(supabaseScript, /rpc\('set_tournament_member_role'/);
+  assert.match(adminScript, /new Option\('Player', 'player'\)[\s\S]*new Option\('Admin', 'admin'\)/);
+  assert.match(adminScript, /roleSelect\.addEventListener\('change', async \(\) =>[\s\S]*membershipMutationGate\.begin\(\)[\s\S]*await setTournamentMemberRole\([\s\S]*membershipMutationGate\.end\(\)/);
+  assert.match(adminScript, /membership\.user_id === session\.user\.id[\s\S]*membership\.role === 'admin'/);
+  assert.match(adminScript, /membership\.profiles\?\.role === 'admin'/);
+  assert.match(adminScript, /membership\.role = saved\.role[\s\S]*renderMemberships\(\)/);
+  assert.match(adminHtml, /admin\.js\?v=member-role-1/);
 });
 
 test('an authenticated user requests missing tournament membership before portal data loads', () => {

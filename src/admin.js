@@ -1,5 +1,5 @@
 import { validateSegments } from './formats.js';
-import { easternDateTimeToIso, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions } from './admin-helpers.js?v=automatic-segment-sides-1';
+import { createMutationGate, easternDateTimeToIso, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions } from './admin-helpers.js?v=member-role-1';
 import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
 import { deriveSegmentResult } from './match-results.js?v=automatic-results-2';
 import {
@@ -21,12 +21,13 @@ import {
   saveMatchPlan,
   saveTournamentRule,
   setTournamentMemberHandicap,
+  setTournamentMemberRole,
   setTournamentMemberTeam,
   setTournamentMembershipStatus,
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=membership-team-1';
+} from './supabase.js?v=member-role-1';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -55,12 +56,12 @@ const legacyEditionForm = document.querySelector('#legacyEditionForm');
 const legacyEditionSelect = document.querySelector('#legacyEditionSelect');
 const legacyResultForm = document.querySelector('#legacyResultForm');
 const legacyPhotoForm = document.querySelector('#legacyPhotoForm');
+const membershipMutationGate = createMutationGate(membershipManagement);
 const defaultPars = [4, 4, 3, 5, 4, 4, 3, 5, 4, 4, 4, 3, 5, 4, 4, 3, 5, 4];
 
 let session;
 let adminData;
 let membershipRosterRefreshPromise;
-let membershipMutationCount = 0;
 let correctionDialogTrigger;
 
 function setMessage(target, text, isError = false) {
@@ -380,6 +381,57 @@ function renderMemberships() {
       details.textContent = `${membership.role} · ${teamLabel}`;
       const actions = document.createElement('div');
       if (status === 'active') {
+        const roleControls = document.createElement('div');
+        roleControls.className = 'membership-team';
+        const roleSelectLabel = document.createElement('label');
+        roleSelectLabel.textContent = 'Tournament role';
+        const roleSelect = document.createElement('select');
+        if (membership.role === 'captain') roleSelect.append(new Option('Captain', 'captain'));
+        roleSelect.append(
+          new Option('Player', 'player'),
+          new Option('Admin', 'admin'),
+        );
+        roleSelect.value = membership.role;
+        const roleDemotionProtected = membership.role === 'admin'
+          && (membership.user_id === session.user.id || membership.profiles?.role === 'admin');
+        if (roleDemotionProtected) {
+          roleSelect.disabled = true;
+          roleSelect.title = membership.user_id === session.user.id
+            ? 'You cannot demote your own administrator membership.'
+            : 'Global administrators cannot be demoted from tournament administration.';
+        } else {
+          roleSelect.addEventListener('change', async () => {
+            const previousRole = membership.role;
+            const requestedRole = roleSelect.value;
+            if (requestedRole === previousRole) return;
+            roleSelect.dataset.dirty = 'true';
+            membershipMutationGate.begin();
+            try {
+              roleSelect.disabled = true;
+              setMessage(membershipMessage, `Saving ${name.textContent}'s role…`);
+              const saved = await setTournamentMemberRole({
+                tournamentId,
+                userId: membership.user_id,
+                role: requestedRole,
+              });
+              membership.role = saved.role;
+              roleSelect.value = saved.role;
+              renderMemberships();
+              setMessage(membershipMessage, `${name.textContent}'s tournament role is now ${saved.role === 'admin' ? 'Admin' : 'Player'}.`);
+            } catch (error) {
+              roleSelect.value = previousRole;
+              setMessage(membershipMessage, error.message, true);
+            } finally {
+              roleSelect.dataset.dirty = 'false';
+              membershipMutationGate.end();
+              roleSelect.disabled = false;
+            }
+          });
+        }
+        roleSelectLabel.append(roleSelect);
+        roleControls.append(roleSelectLabel);
+        actions.append(roleControls);
+
         const teamControls = document.createElement('div');
         teamControls.className = 'membership-team';
         const teamSelectLabel = document.createElement('label');
@@ -396,7 +448,7 @@ function renderMemberships() {
           const requestedTeam = teamSelect.value;
           if (requestedTeam === previousTeam) return;
           teamSelect.dataset.dirty = 'true';
-          membershipMutationCount += 1;
+          membershipMutationGate.begin();
           try {
             teamSelect.disabled = true;
             setMessage(membershipMessage, `Saving ${name.textContent}'s team…`);
@@ -416,7 +468,7 @@ function renderMemberships() {
             setMessage(membershipMessage, error.message, true);
           } finally {
             teamSelect.dataset.dirty = 'false';
-            membershipMutationCount -= 1;
+            membershipMutationGate.end();
             teamSelect.disabled = false;
           }
         });
@@ -449,7 +501,7 @@ function renderMemberships() {
             setMessage(membershipMessage, 'Enter a handicap index with one decimal place between -10.0 and 54.0.', true);
             return;
           }
-          membershipMutationCount += 1;
+          membershipMutationGate.begin();
           try {
             saveHandicap.disabled = true;
             handicapInput.disabled = true;
@@ -469,7 +521,7 @@ function renderMemberships() {
           } catch (error) {
             setMessage(membershipMessage, error.message, true);
           } finally {
-            membershipMutationCount -= 1;
+            membershipMutationGate.end();
             saveHandicap.disabled = false;
             handicapInput.disabled = false;
           }
@@ -493,7 +545,7 @@ function renderMemberships() {
           ? window.prompt(`Why are you deleting ${name.textContent}'s tournament membership? Their login and profile will remain, and a future request will require approval again.`)
           : 'Approved by administrator';
         if (!reason?.trim()) return;
-        membershipMutationCount += 1;
+        membershipMutationGate.begin();
         try {
           for (const button of actions.querySelectorAll('button')) button.disabled = true;
           setMessage(membershipMessage, `${action.textContent} in progress…`);
@@ -525,7 +577,7 @@ function renderMemberships() {
           for (const button of actions.querySelectorAll('button')) button.disabled = false;
           setMessage(membershipMessage, error.message, true);
         } finally {
-          membershipMutationCount -= 1;
+          membershipMutationGate.end();
         }
       });
       actions.append(action);
@@ -536,7 +588,7 @@ function renderMemberships() {
         deny.textContent = 'Deny';
         deny.addEventListener('click', async () => {
           if (!window.confirm(`Deny this membership request from ${name.textContent}? Their login and profile will remain.`)) return;
-          membershipMutationCount += 1;
+          membershipMutationGate.begin();
           try {
             for (const button of actions.querySelectorAll('button')) button.disabled = true;
             setMessage(membershipMessage, 'Deny in progress…');
@@ -553,7 +605,7 @@ function renderMemberships() {
             for (const button of actions.querySelectorAll('button')) button.disabled = false;
             setMessage(membershipMessage, error.message, true);
           } finally {
-            membershipMutationCount -= 1;
+            membershipMutationGate.end();
           }
         });
         actions.append(deny);
@@ -568,7 +620,7 @@ function renderMemberships() {
 async function refreshMembershipRoster() {
   if (!adminData) return;
   if (membershipRosterRefreshPromise) return membershipRosterRefreshPromise;
-  if (membershipMutationCount > 0) {
+  if (membershipMutationGate.active) {
     setMessage(membershipMessage, 'Wait for the current membership change to finish before refreshing.');
     return;
   }

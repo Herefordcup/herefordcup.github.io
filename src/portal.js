@@ -12,7 +12,7 @@ import {
   playerDirectoryEntries,
   segmentRelationships,
   selectActiveTournament,
-} from './member.js?v=membership-team-1';
+} from './member.js?v=member-role-1';
 import { hasSupabaseConfig } from './config.js';
 import {
   canSetNewPassword,
@@ -34,7 +34,7 @@ import {
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=membership-team-1';
+} from './supabase.js?v=member-role-1';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');
