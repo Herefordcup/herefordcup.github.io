@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 const ledgerModule = await import('../src/legacy-ledger.js').catch(() => ({}));
 const { summarizeLegacyLedger } = ledgerModule;
 const legacyModule = await import('../src/legacy.js').catch(() => ({}));
-const { groupLegacyResults, legacyOutcome, legacyResultText, normalizeLegacyText, normalizeLegacyEntry } = legacyModule;
+const { groupLegacyResults, legacyMatchupText, legacyOutcome, legacyResultText, normalizeLegacyText, normalizeLegacyEntry } = legacyModule;
 const root = new URL('../', import.meta.url);
 const migrationUrl = new URL('supabase/migrations/025_legacy_scoring_ledger.sql', root);
 const migrationSql = await readFile(migrationUrl, 'utf8').catch(() => '');
@@ -15,6 +15,8 @@ const textCleanupMigrationUrl = new URL('supabase/migrations/029_legacy_text_cle
 const textCleanupMigrationSql = await readFile(textCleanupMigrationUrl, 'utf8').catch(() => '');
 const friscoCleanupMigrationUrl = new URL('supabase/migrations/031_frisco_public_name_cleanup.sql', root);
 const friscoCleanupMigrationSql = await readFile(friscoCleanupMigrationUrl, 'utf8').catch(() => '');
+const pimentelCorrectionMigrationUrl = new URL('supabase/migrations/032_legacy_pimentel_name_correction.sql', root);
+const pimentelCorrectionMigrationSql = await readFile(pimentelCorrectionMigrationUrl, 'utf8').catch(() => '');
 
 function requiresColumn(table, column, definition) {
   assert.match(
@@ -258,6 +260,20 @@ test('groupLegacyResults keeps stable source order and falls back to Other resul
   assert.equal(groups[2].unresolvedRows, 1);
 });
 
+test('numbered historical groups use Round and never Match while standalone events stay unchanged', () => {
+  const groups = groupLegacyResults([
+    { event_group: 'Round 1 — 2v2 Scramble', sort_order: 1 },
+    { event_group: 'Match 2 — 2v2 Best Ball', sort_order: 2 },
+    { event_group: 'Long Drive', sort_order: 3 },
+  ]);
+  assert.deepEqual(groups.map(group => group.name), [
+    'Round 1 - 2v2 Scramble',
+    'Round 2 - 2v2 Best Ball',
+    'Long Drive',
+  ]);
+  assert.equal(groups.some(group => /^Match\s+\d+/i.test(group.name)), false);
+});
+
 test('legacyResultText reports only the recorded winner or split without source prose', () => {
   assert.equal(legacyResultText({ cardinal_entry: 'Gilbert & Abel', silver_entry: 'Sul & Ben', cardinal_points: 2, silver_points: 0, result: 'note: pretty sure' }), 'Gilbert & Abel won');
   assert.equal(legacyResultText({ cardinal_entry: 'Gilbert', silver_entry: 'Seo', cardinal_points: 0, silver_points: 1 }), 'Seo won');
@@ -280,11 +296,17 @@ test('Legacy display text gives Innisbrook and Frisco the same clean participant
   assert.equal(normalizeLegacyEntry('Blue: (?)', 2025), '(TBD)');
   assert.equal(normalizeLegacyEntry('Blue: John Jr.?', 2025), 'John Jr.');
   assert.equal(normalizeLegacyEntry('Blue: Gilbert / Abel', 2025), 'Gilbert & Abel');
+  assert.equal(normalizeLegacyEntry('Blue: Pimental / Lukas', 2025), 'Pimentel & Lukas');
   assert.equal(normalizeLegacyEntry('Blue: Question?able', 2025), 'Question?able',
     'embedded punctuation that is not an uncertainty suffix must be preserved');
   assert.equal(normalizeLegacyEntry('Blue: Keep?', 2023), 'Blue: Keep?',
     'question marks outside the approved 2024/2025 cleanup must remain untouched');
   assert.equal(normalizeLegacyEntry('Gilbert & Abel', 2026), 'Gilbert & Abel');
+});
+
+test('Pimentel renderer correction is limited to participant columns', () => {
+  assert.equal(legacyMatchupText({ cardinal_entry: 'Pimental', silver_entry: 'Lukas' }, 2025), 'Pimentel vs Lukas');
+  assert.equal(legacyMatchupText({ label: 'Pimental family trophy' }, 2025), 'Pimental family trophy');
 });
 
 test('migration 029 repairs persisted punctuation and Innisbrook placeholders without deleting source metadata', () => {
@@ -304,4 +326,13 @@ test('migration 031 removes Frisco public question marks without altering scores
   assert.match(friscoCleanupMigrationSql, /public_visible is true[\s\S]*coalesce\(result\.cardinal_entry[\s\S]*~[\s\S]*\\\?/i);
   assert.match(friscoCleanupMigrationSql, /raise exception 'PGA Frisco public participant names still contain question marks'/i);
   assert.doesNotMatch(friscoCleanupMigrationSql, /label\s*=|delete from|source_note\s*=|source_notes\s*=|confidence\s*=|cardinal_points\s*=|silver_points\s*=/i);
+});
+
+test('migration 032 corrects Pimentel participant spelling without altering scores or historical metadata', () => {
+  for (const column of ['cardinal_entry', 'silver_entry']) {
+    assert.match(pimentelCorrectionMigrationSql, new RegExp(`${column}\\s*=\\s*replace\\(${column}, 'Pimental', 'Pimentel'\\)`, 'i'));
+  }
+  assert.match(pimentelCorrectionMigrationSql, /public\.legacy_results/i);
+  assert.match(pimentelCorrectionMigrationSql, /raise exception 'Legacy participant spelling Pimental still exists'/i);
+  assert.doesNotMatch(pimentelCorrectionMigrationSql, /label\s*=|delete from|source_note\s*=|source_notes\s*=|confidence\s*=|cardinal_points\s*=|silver_points\s*=/i);
 });

@@ -165,9 +165,20 @@ export async function getCurrentSession() {
   return data.session;
 }
 
-export async function requestTournamentMembership() {
+export async function loadOwnTournamentMemberships(userId) {
   const supabase = await getSupabase();
-  const { data, error } = await supabase.rpc('request_tournament_membership');
+  const { data, error } = await supabase
+    .from('tournament_memberships')
+    .select('status, role, team, tournaments(id, edition_year, status)')
+    .eq('user_id', userId);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function requestTournamentMembership(targetTournamentId = null) {
+  const supabase = await getSupabase();
+  const args = targetTournamentId ? { target_tournament_id: targetTournamentId } : undefined;
+  const { data, error } = await supabase.rpc('request_tournament_membership', args);
   if (error) throw error;
   return data;
 }
@@ -230,7 +241,7 @@ export async function loadPlayerData(userId) {
   if (!tournament) {
     return {
       profile: profileResult.data,
-      memberships: [],
+      memberships,
       tournament: null,
       courses: coursesResult.data ?? [],
       assignments: [],
@@ -704,6 +715,20 @@ export async function correctHoleScore({ roundId, holeNumber, grossScore = null,
     .maybeSingle();
   if (auditError) throw auditError;
   return { score: data, audit };
+}
+
+export async function loadMembershipRosterData() {
+  const supabase = await getSupabase();
+  const [tournaments, memberships] = await Promise.all([
+    supabase.from('tournaments').select('*').order('edition_year', { ascending: false }),
+    supabase.from('tournament_memberships').select('*, profiles!tournament_memberships_user_id_fkey(id, display_name, handicap_index, role)').order('created_at'),
+  ]);
+  if (tournaments.error) throw tournaments.error;
+  if (memberships.error) throw memberships.error;
+  return {
+    tournaments: tournaments.data ?? [],
+    memberships: memberships.data ?? [],
+  };
 }
 
 export async function loadAdminData() {

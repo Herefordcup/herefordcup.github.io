@@ -7,15 +7,18 @@ import { commentaryForMatch, formatHomeDate, formatMatchupPlayers, orderHomeMatc
 import { avatarInitials, normalizeProfileInput, playerDisplayName, profileAvatarUrl, validateProfilePhoto } from './profile.js?v=player-name-1';
 import {
   assignedSegmentsForPlayer,
+  membershipAccessTransition,
   nextUpcomingAssignment,
   playerDirectoryEntries,
   segmentRelationships,
-} from './member.js';
+  selectActiveTournament,
+} from './member.js?v=membership-refresh-2';
 import { hasSupabaseConfig } from './config.js';
 import {
   canSetNewPassword,
   getCurrentSession,
   hasActiveTournamentMembership,
+  loadOwnTournamentMemberships,
   loadPlayerData,
   requestTournamentMembership,
   requestPasswordReset,
@@ -31,7 +34,7 @@ import {
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=public-preview-1';
+} from './supabase.js?v=membership-refresh-2';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');
@@ -78,6 +81,7 @@ let selectedTee;
 let existingRound;
 let authMode = 'signin';
 let recoveryVerified = false;
+let membershipRefreshPromise;
 let scores = Array.from({ length: 18 }, (_, index) => ({ hole_number: index + 1, gross_score: null }));
 
 function showAuthMessage(message, isError = false) {
@@ -847,7 +851,7 @@ authForm.addEventListener('submit', async event => {
     if (authMode === 'signup') {
       const result = await signUpWithEmail(values);
       if (!result.session) {
-        showAuthMessage('Check your email to verify your account, then return here to sign in.');
+        showAuthMessage('First, verify your email. Then return here and sign in. After you sign in, your membership request will be sent to an administrator for approval.');
         return;
       }
     } else {
@@ -961,6 +965,34 @@ profileSetupForm.addEventListener('submit', async event => {
   }
 });
 
+async function refreshMembershipAccess() {
+  if (!session || !playerData || document.hidden) return;
+  if (membershipRefreshPromise) return membershipRefreshPromise;
+  membershipRefreshPromise = (async () => {
+    const freshMemberships = await loadOwnTournamentMemberships(session.user.id);
+    const transition = membershipAccessTransition(playerData.memberships, freshMemberships);
+    if (transition === 'request') {
+      await requestTournamentMembership(selectActiveTournament(playerData.memberships)?.id);
+      window.location.reload();
+      return;
+    }
+    if (transition === 'reload') {
+      window.location.reload();
+      return;
+    }
+    if (transition === 'denied') {
+      playerData.memberships = freshMemberships;
+      setupMessage.hidden = false;
+      setupMessage.querySelector('p').textContent = 'This access request was denied. Reload the page when you are ready to submit a new request.';
+    }
+  })();
+  try {
+    return await membershipRefreshPromise;
+  } finally {
+    membershipRefreshPromise = null;
+  }
+}
+
 async function start() {
   if (!hasSupabaseConfig()) {
     setupMessage.hidden = false;
@@ -989,6 +1021,7 @@ async function start() {
     session = await getCurrentSession();
     if (!session) return;
     authView.hidden = true;
+    document.querySelector('#publicHomeLink').hidden = false;
     document.querySelector('#signOutButton').hidden = false;
     document.querySelector('#playerIdentity').textContent = playerDisplayName(null, session.user);
     await requestTournamentMembership();
@@ -1019,6 +1052,19 @@ async function start() {
 }
 
 start();
+
+function refreshMembershipAccessFromLifecycle() {
+  refreshMembershipAccess().catch(error => {
+    setupMessage.hidden = false;
+    setupMessage.querySelector('p').textContent = error.message;
+  });
+}
+
+window.addEventListener('focus', refreshMembershipAccessFromLifecycle);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshMembershipAccessFromLifecycle();
+});
+setInterval(refreshMembershipAccessFromLifecycle, 30000);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(registrations => {

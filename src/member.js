@@ -1,3 +1,45 @@
+export function membershipAccessTransition(previousMemberships = [], currentMemberships = [], editionYear = 2027) {
+  const statusPriority = { live: 0, open: 1, setup: 2 };
+  const joinable = membership => Number(membership.tournaments?.edition_year) === editionYear
+    && Object.hasOwn(statusPriority, membership.tournaments?.status);
+  const selectPriorityMembership = memberships => memberships
+    .filter(joinable)
+    .sort((left, right) => statusPriority[left.tournaments.status] - statusPriority[right.tournaments.status])[0] ?? null;
+  const identity = membership => membership?.tournament_id ?? membership?.tournaments?.id ?? null;
+  const previousActiveTournament = selectActiveTournament(previousMemberships, editionYear);
+  const previous = previousActiveTournament
+    ? previousMemberships.find(membership => membership.status === 'active'
+      && identity(membership) === (previousActiveTournament.id ?? null)) ?? null
+    : selectPriorityMembership(previousMemberships.filter(membership => membership.status === 'pending'));
+  if (!previous) return 'none';
+  const previousTournamentId = identity(previous);
+  const current = currentMemberships.find(membership => previousTournamentId === null
+    ? membership.tournaments === previous.tournaments
+    : identity(membership) === previousTournamentId) ?? null;
+
+  if (previous.status === 'active') {
+    if (!current) return 'request';
+    if (!joinable(current)) return 'reload';
+    const currentActiveTournament = selectActiveTournament(currentMemberships, editionYear);
+    const selectedTournamentChanged = currentActiveTournament
+      && (previousActiveTournament?.id || currentActiveTournament.id
+        ? previousActiveTournament?.id !== currentActiveTournament.id
+        : previousActiveTournament !== currentActiveTournament);
+    if (selectedTournamentChanged) return 'reload';
+    if (current.status === 'active') return 'none';
+    return 'reload';
+  }
+  if (previous.status === 'pending') {
+    if (selectActiveTournament(currentMemberships, editionYear)) return 'reload';
+    if (!current) return 'denied';
+    if (!joinable(current)) return 'reload';
+    if (current.status === 'active') return 'reload';
+    if (current.status === 'pending') return 'none';
+    return 'denied';
+  }
+  return 'none';
+}
+
 export function selectActiveTournament(memberships = [], editionYear = 2027) {
   const statusPriority = { live: 0, open: 1, setup: 2 };
   const candidates = memberships

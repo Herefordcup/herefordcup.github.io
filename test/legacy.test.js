@@ -45,8 +45,8 @@ test('uploaded Past Trips photos open in an accessible full-view dialog', () => 
   assert.match(pastTripsScript, /showModal\(\)/);
   assert.match(pastTripsScript, /legacyPhotoDialog\.close\(\)/);
   assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-scorecards-4"/);
-  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-scorecards-4"/);
-  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-scorecards-4'/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=pimentel-correction-1"/);
+  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=pimentel-correction-1'/);
 });
 
 test('legacy schema is publicly readable, admin-write-only, and seeds the known trips without fabricated winners', async () => {
@@ -213,8 +213,8 @@ test('Legacy admin renders final-score reconciliation and blocks an invalid conf
 
 test('Legacy admin cache-busts each changed browser dependency', () => {
   assert.match(adminHtml, /href="admin\.css\?v=legacy-ledger-2"/);
-  assert.match(adminHtml, /src="src\/admin\.js\?v=public-preview-1"/);
-  assert.match(adminScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
+  assert.match(adminHtml, /src="src\/admin\.js\?v=membership-refresh-2"/);
+  assert.match(adminScript, /from '\.\/supabase\.js\?v=membership-refresh-2'/);
   assert.match(adminScript, /from '\.\/legacy-ledger\.js\?v=legacy-ledger-2'/);
 });
 
@@ -243,13 +243,14 @@ test('Past Trips renders every trip with the same simple matchup and points form
 
 test('Past Trips cache-busts every changed scorecard dependency', async () => {
   assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-scorecards-4"/);
-  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-scorecards-4"/);
-  assert.match(pastTripsScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
-  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-scorecards-4'/);
-  assert.match(indexHtml, /src="src\/app\.js\?v=legacy-text-2"/);
-  assert.match(appScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
-  assert.match(appScript, /from '\.\/legacy\.js\?v=legacy-text-2'/);
-  assert.match(portalHtml, /src="src\/portal\.js\?v=public-preview-1"/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=pimentel-correction-1"/);
+  assert.match(pastTripsScript, /from '\.\/supabase\.js\?v=membership-refresh-2'/);
+  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=pimentel-correction-1'/);
+  assert.match(indexHtml, /src="src\/app\.js\?v=pimentel-correction-1"/);
+  assert.match(appScript, /from '\.\/supabase\.js\?v=membership-refresh-2'/);
+  assert.match(appScript, /from '\.\/legacy\.js\?v=pimentel-correction-1'/);
+  assert.match(portalHtml, /src="src\/portal\.js\?v=membership-refresh-2"/);
   const portalScript = await readFile(new URL('src/portal.js', root), 'utf8');
-  assert.match(portalScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
+  assert.match(portalScript, /from '\.\/supabase\.js\?v=membership-refresh-2'/);
+  assert.match(portalScript, /from '\.\/member\.js\?v=membership-refresh-2'/);
 });

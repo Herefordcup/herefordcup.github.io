@@ -23,6 +23,15 @@ test('player access offers account creation, email signin, and Google', () => {
   assert.doesNotMatch(html, />\s*Apple\s*</);
 });
 
+test('signed-in portal header offers every player a Home link beside account controls', () => {
+  assert.match(html, /id="publicHomeLink"[^>]*href="index\.html"[^>]*hidden[^>]*>Home<\/a>/);
+  assert.match(script, /document\.querySelector\('#publicHomeLink'\)\.hidden = false/);
+});
+
+test('email signup explains verification before administrator approval', () => {
+  assert.match(script, /First, verify your email\. Then return here and sign in\. After you sign in, your membership request will be sent to an administrator for approval\./);
+});
+
 test('registered accounts remain pending until an administrator approves them', () => {
   assert.match(html, /new player accounts require administrator approval/i);
   assert.match(html, /administrator must approve your membership/i);
