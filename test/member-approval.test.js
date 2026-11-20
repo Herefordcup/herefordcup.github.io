@@ -8,6 +8,7 @@ const deletionMigrationUrl = new URL('supabase/migrations/019_delete_membership_
 const denialMigrationUrl = new URL('supabase/migrations/020_deny_pending_membership.sql', root);
 const reRequestCleanupMigrationUrl = new URL('supabase/migrations/030_membership_rerequest_cleanup.sql', root);
 const targetedReRequestMigrationUrl = new URL('supabase/migrations/033_targeted_membership_rerequest.sql', root);
+const memberTeamMigrationUrl = new URL('supabase/migrations/034_tournament_member_team_assignment.sql', root);
 const adminHtml = await readFile(new URL('admin.html', root), 'utf8');
 const adminCss = await readFile(new URL('admin.css', root), 'utf8');
 const adminScript = await readFile(new URL('src/admin.js', root), 'utf8');
@@ -78,13 +79,13 @@ test('administrator portal exposes pending, active, and permanent membership del
   assert.match(supabaseScript, /profiles!tournament_memberships_user_id_fkey\(id, display_name, handicap_index, role\)/);
   assert.match(adminCss, /\.membership-columns\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(adminCss, /\.membership-card \.button\{[^}]*min-height:44px/);
-  assert.match(adminHtml, /admin\.css\?v=legacy-ledger-2/);
-  assert.match(adminHtml, /admin\.js\?v=membership-refresh-2/);
-  assert.match(adminScript, /supabase\.js\?v=membership-refresh-2/);
+  assert.match(adminHtml, /admin\.css\?v=active-members-team-1/);
+  assert.match(adminHtml, /admin\.js\?v=membership-team-1/);
+  assert.match(adminScript, /supabase\.js\?v=membership-team-1/);
   assert.match(adminScript, /match-results\.js\?v=automatic-results-2/);
-  assert.match(portalHtml, /portal\.js\?v=membership-refresh-2/);
-  assert.match(portalScript, /supabase\.js\?v=membership-refresh-2/);
-  assert.match(portalScript, /member\.js\?v=membership-refresh-2/);
+  assert.match(portalHtml, /portal\.js\?v=membership-team-1/);
+  assert.match(portalScript, /supabase\.js\?v=membership-team-1/);
+  assert.match(portalScript, /member\.js\?v=membership-team-1/);
   assert.match(supabaseScript, /export async function setTournamentMembershipStatus/);
   assert.match(supabaseScript, /rpc\('set_tournament_membership_status'/);
   assert.match(supabaseScript, /export async function deleteTournamentMembership/);
@@ -181,6 +182,21 @@ test('stale active deletion re-requests the exact displayed tournament', async (
   assert.match(sql, /grant execute on function public\.request_tournament_membership\(uuid\) to authenticated/i);
   assert.match(supabaseScript, /requestTournamentMembership\(targetTournamentId = null\)[\s\S]*target_tournament_id: targetTournamentId/);
   assert.match(portalScript, /selectActiveTournament[\s\S]*transition === 'request'[\s\S]*requestTournamentMembership\(selectActiveTournament\(playerData\.memberships\)\?\.id\)/);
+});
+
+test('administrators assign annual teams in a compact active-member roster', async () => {
+  const sql = await readFile(memberTeamMigrationUrl, 'utf8').catch(() => '');
+  assert.match(sql, /create or replace function public\.set_tournament_member_team\(\s*target_tournament_id uuid,\s*target_user_id uuid,\s*target_team text\s*\)/i);
+  assert.match(sql, /pg_advisory_xact_lock\(hashtextextended\(target_tournament_id::text, 0\)\)[\s\S]*from public\.tournaments[\s\S]*for update/i);
+  assert.match(sql, /status = 'active'[\s\S]*for update[\s\S]*public\.is_admin\(\)[\s\S]*public\.is_tournament_admin\(target_tournament_id\)/i);
+  assert.match(sql, /target_team is not null and target_team not in \('cardinal', 'silver'\)/i);
+  assert.match(sql, /set team = target_team/i);
+  assert.match(sql, /grant execute on function public\.set_tournament_member_team\(uuid, uuid, text\) to authenticated/i);
+  assert.match(supabaseScript, /export async function setTournamentMemberTeam/);
+  assert.match(adminScript, /setTournamentMemberTeam/);
+  assert.match(adminScript, /new Option\('Unassigned', ''\)[\s\S]*new Option\('Blue', 'cardinal'\)[\s\S]*new Option\('White', 'silver'\)/);
+  assert.match(adminHtml, /<div[^>]*class="[^"]*compact-member-list[^"]*"[^>]*id="activeMembers"/);
+  assert.match(adminCss, /\.compact-member-list\{[^}]*max-height:[^;}]+;[^}]*overflow-y:auto/i);
 });
 
 test('an authenticated user requests missing tournament membership before portal data loads', () => {

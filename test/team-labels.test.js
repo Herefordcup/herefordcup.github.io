@@ -31,7 +31,7 @@ test('public Blue team shield uses MIT dark blue', () => {
   const index = read('index.html');
   const styles = read('styles.css');
 
-  assert.match(index, /styles\.css\?v=public-preview-1/i);
+  assert.match(index, /styles\.css\?v=home-standings-1/i);
   assert.match(styles, /--team-blue:#002896/i);
   assert.match(styles, /\.team-cardinal \.team-code\{background:var\(--team-blue\)\}/i);
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { commentaryForMatch, formatHomeDate, formatMatchupPlayers, orderHomeMatches } from '../src/home.js';
+import { commentaryForMatch, formatHomeDate, formatHomeDateRange, formatMatchupPlayers, orderHomeMatches } from '../src/home.js';
 
 test('team matchup labels group teammates on the same side', () => {
   const players = [
@@ -41,6 +41,10 @@ test('match results select only approved commentary for their exact match', () =
   ];
   assert.deepEqual(commentaryForMatch(commentaries, 'match-1'), commentaries[2]);
   assert.equal(commentaryForMatch(commentaries, 'missing'), null);
+});
+
+test('player itinerary heading covers the full Thursday-through-Sunday trip', () => {
+  assert.equal(formatHomeDateRange('2027-03-18', '2027-03-21'), 'March 18–21, 2027');
 });
 
 test('date-only tournament values stay on their published Eastern calendar date', () => {

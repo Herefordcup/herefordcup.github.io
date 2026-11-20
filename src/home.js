@@ -7,6 +7,27 @@ export function formatPublicPoints(value) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(points);
 }
 
+export function formatHomeDateRange(startValue, endValue) {
+  if (!startValue) return '';
+  const normalize = value => /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value;
+  const parts = value => Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).formatToParts(new Date(normalize(value))).map(part => [part.type, part.value]));
+  const start = parts(startValue);
+  if (!endValue) return `${start.month} ${start.day}, ${start.year}`;
+  const end = parts(endValue);
+  if (start.year === end.year && start.month === end.month) {
+    return `${start.month} ${start.day}–${end.day}, ${start.year}`;
+  }
+  if (start.year === end.year) {
+    return `${start.month} ${start.day}–${end.month} ${end.day}, ${start.year}`;
+  }
+  return `${start.month} ${start.day}, ${start.year}–${end.month} ${end.day}, ${end.year}`;
+}
+
 export function formatHomeDate(value, options = {}) {
   if (!value) return '';
   const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value;

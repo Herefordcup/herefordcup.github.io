@@ -105,6 +105,17 @@ test('public point labels do not invent an unpublished target', async () => {
   assert.equal(homeModule.formatPublicPoints(6.25), '6.25');
 });
 
+test('homepage standings show only each team point total without a first-to target', async () => {
+  const [app, html, css] = await Promise.all([
+    readFile(appUrl, 'utf8'),
+    readFile(indexUrl, 'utf8'),
+    readFile(stylesUrl, 'utf8'),
+  ]);
+  assert.doesNotMatch(html, /FIRST TO|id="targetPoints"|class="score-center"/i);
+  assert.doesNotMatch(app, /targetPoints/);
+  assert.match(css, /\.scoreboard\{[^}]*grid-template-columns:1fr 1fr/i);
+});
+
 test('homepage is a read-only RPC preview with explicit loading, empty, and unavailable states', async () => {
   const [app, html] = await Promise.all([readFile(appUrl, 'utf8'), readFile(indexUrl, 'utf8')]);
   for (const forbidden of ['localStorage', 'applyHoleResult', 'hole-controls', 'data-result=', 'undo']) {
@@ -144,11 +155,11 @@ test('public itinerary and dynamic day tabs include narrow-screen overflow prote
 test('all entrypoints that reach changed shared modules are cache-busted together', async () => {
   const sources = await Promise.all(cachePaths.map(path => readFile(new URL(path, import.meta.url), 'utf8')));
   for (const [index, source] of sources.slice(0, 3).entries()) {
-    assert.match(source, /supabase\.js\?v=membership-refresh-2/, `missing shared data cache key in ${cachePaths[index]}`);
+    assert.match(source, /supabase\.js\?v=membership-team-1/, `missing shared data cache key in ${cachePaths[index]}`);
   }
-  assert.match(sources[1], /home\.js\?v=public-preview-1/);
+  assert.match(sources[1], /home\.js\?v=home-standings-1/);
   for (const [offset, source] of sources.slice(3).entries()) {
-    assert.match(source, /public-preview-1/, `missing public preview cache key in ${cachePaths[offset + 3]}`);
-    assert.match(source, /styles\.css\?v=public-preview-1/, 'all shared stylesheet consumers must be cache-busted');
+    assert.match(source, /home-standings-1/, `missing public preview cache key in ${cachePaths[offset + 3]}`);
+    assert.match(source, /styles\.css\?v=home-standings-1/, 'all shared stylesheet consumers must be cache-busted');
   }
 });
