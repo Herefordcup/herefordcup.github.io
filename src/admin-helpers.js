@@ -1,3 +1,32 @@
+export function tournamentTeamLabel(team) {
+  if (team === 'cardinal') return 'Blue';
+  if (team === 'silver') return 'White';
+  return 'No team';
+}
+
+export function segmentPlayerOptions(memberships, selectedUserId = '') {
+  const options = [
+    { value: '', label: 'Unassigned', disabled: false },
+    ...memberships.map(membership => ({
+      value: membership.user_id,
+      label: `${membership.profiles?.display_name || 'Player'} · ${tournamentTeamLabel(membership.team)}`,
+      disabled: membership.status !== 'active' || !['cardinal', 'silver'].includes(membership.team),
+    })),
+  ];
+  const selectedOption = options.find(option => option.value === selectedUserId && !option.disabled);
+  return { options, selectedUserId: selectedOption?.value ?? '' };
+}
+
+export function segmentPlayerFromMembership(membership, playingOrder) {
+  if (!membership || membership.status !== 'active' || !['cardinal', 'silver'].includes(membership.team)) return null;
+  return {
+    userId: membership.user_id,
+    team: membership.team,
+    side: membership.team,
+    playingOrder,
+  };
+}
+
 export function optionalNumber(value) {
   const normalized = String(value ?? '').trim();
   return normalized === '' ? null : Number(normalized);

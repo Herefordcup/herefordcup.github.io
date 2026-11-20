@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { easternDateTimeToIso, optionalNumber } from '../src/admin-helpers.js';
+import { easternDateTimeToIso, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions, tournamentTeamLabel } from '../src/admin-helpers.js';
 
 const html = await readFile(new URL('../admin.html', import.meta.url), 'utf8');
 const adminScript = await readFile(new URL('../src/admin.js', import.meta.url), 'utf8');
@@ -43,6 +43,50 @@ test('admin planner validates and saves independent segment lineups', () => {
   assert.match(adminScript, /validateSegments/);
   assert.match(adminScript, /saveMatchPlan/);
   assert.match(adminScript, /match_segment_players/);
+});
+
+test('segment player selection shows tournament teams and derives the scoring side automatically', () => {
+  const blue = { user_id: 'blue-player', team: 'cardinal', status: 'active' };
+  const white = { user_id: 'white-player', team: 'silver', status: 'active' };
+  const unassigned = { user_id: 'waiting-player', team: null, status: 'active' };
+  const inactive = { user_id: 'inactive-player', team: 'cardinal', status: 'pending' };
+
+  assert.equal(tournamentTeamLabel(blue.team), 'Blue');
+  assert.equal(tournamentTeamLabel(white.team), 'White');
+  assert.equal(tournamentTeamLabel(unassigned.team), 'No team');
+  assert.deepEqual(segmentPlayerFromMembership(blue, 1), {
+    userId: 'blue-player', team: 'cardinal', side: 'cardinal', playingOrder: 1,
+  });
+  assert.deepEqual(segmentPlayerFromMembership(white, 2), {
+    userId: 'white-player', team: 'silver', side: 'silver', playingOrder: 2,
+  });
+  assert.equal(segmentPlayerFromMembership(unassigned, 3), null);
+  assert.equal(segmentPlayerFromMembership(inactive, 4), null);
+  assert.doesNotMatch(adminScript, /Match side|data-side-select|Blue side|White side/);
+  assert.match(adminScript, /option\.disabled = disabled/);
+  assert.match(html, /src="src\/admin\.js\?v=automatic-segment-sides-1"/);
+  assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=automatic-segment-sides-1'/);
+});
+
+test('planner options refresh team labels and preserve only valid selections after roster changes', () => {
+  const refreshed = segmentPlayerOptions([
+    { user_id: 'selected-player', team: 'silver', status: 'active', profiles: { display_name: 'Selected Player' } },
+    { user_id: 'waiting-player', team: null, status: 'active', profiles: { display_name: 'Waiting Player' } },
+  ], 'selected-player');
+  assert.equal(refreshed.selectedUserId, 'selected-player');
+  assert.deepEqual(refreshed.options, [
+    { value: '', label: 'Unassigned', disabled: false },
+    { value: 'selected-player', label: 'Selected Player · White', disabled: false },
+    { value: 'waiting-player', label: 'Waiting Player · No team', disabled: true },
+  ]);
+
+  const unassignedSelection = segmentPlayerOptions([
+    { user_id: 'selected-player', team: null, status: 'active', profiles: { display_name: 'Selected Player' } },
+  ], 'selected-player');
+  assert.equal(unassignedSelection.selectedUserId, '');
+  assert.match(adminScript, /function refreshSegmentPlayerOptions/);
+  assert.match(adminScript, /membership\.team = saved\.team;[\s\S]*refreshSegmentPlayerOptions\(\)/);
+  assert.match(adminScript, /adminData\.memberships = freshData\.memberships;[\s\S]*refreshSegmentPlayerOptions\(\)/);
 });
 
 test('course form supports unrated tees and match times are interpreted in Eastern time', () => {
