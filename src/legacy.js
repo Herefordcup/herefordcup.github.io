@@ -32,12 +32,14 @@ export function normalizeLegacyText(value) {
 
 export function normalizeLegacyEntry(value, editionYear) {
   const text = normalizeLegacyText(value);
-  if (Number(editionYear) !== 2024) return text;
+  if (![2024, 2025].includes(Number(editionYear))) return text;
   return text
     .replace(/\bnames?\s+not\s+listed\b/gi, 'TBD')
     .replace(/\bnot\s+listed\b/gi, 'TBD')
-    .replace(/(^|[\s/])\?(?=$|[\s/),])/g, '$1TBD')
-    .replace(/\?/g, '')
+    .replace(/(^|[\s/(])\?(?=$|[\s/,).])/gu, '$1TBD')
+    .replace(/\?(?=$|\s*[/,).])/gu, '')
+    .replace(/^(?:Blue|White):\s*/i, '')
+    .replace(/\s*\/\s*/g, ' & ')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -183,6 +185,13 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
     }
 
     const resultGroups = groupLegacyResults(selected.legacy_results ?? []);
+    if (selected.status === 'completed' && !resultGroups.length) {
+      const emptyScorecard = node('div', 'legacy-scorecard-empty');
+      emptyScorecard.append(node('small', 'legacy-result-format', 'Scorecard'));
+      emptyScorecard.append(node('strong', '', 'Results not recorded'));
+      emptyScorecard.append(node('span', 'legacy-result-points', 'Blue — - White —'));
+      details.append(emptyScorecard);
+    }
     for (const group of resultGroups) {
       const disclosure = node('details', 'legacy-result-group');
       disclosure.open = true;

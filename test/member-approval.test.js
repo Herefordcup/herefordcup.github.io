@@ -6,6 +6,7 @@ const root = new URL('../', import.meta.url);
 const migrationUrl = new URL('supabase/migrations/018_membership_approval.sql', root);
 const deletionMigrationUrl = new URL('supabase/migrations/019_delete_membership_reenroll.sql', root);
 const denialMigrationUrl = new URL('supabase/migrations/020_deny_pending_membership.sql', root);
+const reRequestCleanupMigrationUrl = new URL('supabase/migrations/030_membership_rerequest_cleanup.sql', root);
 const adminHtml = await readFile(new URL('admin.html', root), 'utf8');
 const adminCss = await readFile(new URL('admin.css', root), 'utf8');
 const adminScript = await readFile(new URL('src/admin.js', root), 'utf8');
@@ -124,6 +125,28 @@ test('deleting a tournament member removes only the membership and permits a fre
   assert.match(sql, /on conflict \(tournament_id, user_id\) do nothing/i);
   assert.match(sql, /grant execute on function public\.delete_tournament_membership\(uuid, uuid, text\) to authenticated/i);
   assert.match(sql, /grant execute on function public\.request_tournament_membership\(\) to authenticated/i);
+});
+
+test('deleting or denying membership purges stale request data so a future request needs approval and notifies again', async () => {
+  const sql = await readFile(reRequestCleanupMigrationUrl, 'utf8').catch(() => '');
+
+  assert.match(sql, /create or replace function public\.delete_tournament_membership/i);
+  assert.match(sql, /create or replace function public\.deny_tournament_membership/i);
+  assert.match(sql, /current_membership\.status <> 'active'[\s\S]*Membership is not active/i,
+    'general deletion must reject pending requests so it cannot bypass denial race protection');
+  assert.match(sql, /delete from public\.tournament_memberships membership[\s\S]*membership\.status = 'active'/i,
+    'the final membership delete must remain conditional on active status');
+  assert.match(sql, /delete from public\.notification_jobs[\s\S]*notification_type = 'new_member'[\s\S]*source_type = 'membership'/i);
+  assert.doesNotMatch(sql, /delete from public\.notification_preferences/i,
+    'notification preferences are not membership-request history and must be preserved');
+  assert.match(sql, /delete from public\.membership_status_audit/i);
+  assert.match(sql, /delete from public\.tournament_memberships/i);
+  assert.match(sql, /delete from public\.notification_jobs orphaned_job[\s\S]*not exists[\s\S]*public\.tournament_memberships/i,
+    'already-orphaned approval jobs must be removed during the forward migration');
+  assert.match(sql, /membership\.status = 'pending'[\s\S]*perform public\.enqueue_notification_job/i,
+    'a currently suppressed pending re-request must receive a fresh approval job');
+  assert.doesNotMatch(sql, /delete from (?:auth\.users|public\.profiles)/i,
+    'login identities and profiles must remain so the person can request access again');
 });
 
 test('an authenticated user requests missing tournament membership before portal data loads', () => {
