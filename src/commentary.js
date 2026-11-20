@@ -27,10 +27,24 @@ const PHRASE_ALLOWLIST = Object.freeze({
     ruthless_halved_stalemate: 'The full card produced no winner and no appeal.',
     ruthless_halved_brags: 'No winner, no loser, and no room for creative scorekeeping.',
   }),
+  savage: Object.freeze({
+    savage_competition_left: 'The losing side was still on the scorecard, but the competition had already left.',
+    savage_apology: 'An answer was required. An apology would have been more realistic.',
+    savage_rental: 'The losing side spent the finish renting space on someone else’s scoreboard.',
+    savage_evidence: 'There was hope. Then the scorecard introduced evidence.',
+    savage_itemized: 'The scorecard kept the receipts and itemized the damage.',
+    savage_closed_case: 'The result needs no explanation. The scorecard already closed the case.',
+    savage_halved_afternoon: 'Nobody lost, nobody won, and the scorecard would like its afternoon back.',
+    savage_halved_explanations: 'The full match produced no winner—just two sides preparing very confident explanations.',
+  }),
 });
 
 export function phraseIdsForTone(tone) {
   return Object.keys(PHRASE_ALLOWLIST[tone] ?? {});
+}
+
+export function commentaryPhrasesForTone(tone) {
+  return { ...(PHRASE_ALLOWLIST[tone] ?? {}) };
 }
 
 export function composeCommentary(result, tone, phraseId) {

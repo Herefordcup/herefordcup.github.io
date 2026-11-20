@@ -81,7 +81,7 @@ test('administrator portal exposes pending, active, and permanent membership del
   assert.match(adminCss, /\.membership-columns\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(adminCss, /\.membership-card \.button\{[^}]*min-height:44px/);
   assert.match(adminHtml, /admin\.css\?v=active-members-team-1/);
-  assert.match(adminHtml, /admin\.js\?v=member-role-1/);
+  assert.match(adminHtml, /admin\.js\?v=savage-commentary-1/);
   assert.match(adminScript, /supabase\.js\?v=member-role-1/);
   assert.match(adminScript, /match-results\.js\?v=automatic-results-2/);
   assert.match(portalHtml, /portal\.js\?v=member-role-1/);
@@ -223,7 +223,7 @@ test('administrators manage tournament-specific Player and Admin roles from Acti
   assert.match(adminScript, /membership\.user_id === session\.user\.id[\s\S]*membership\.role === 'admin'/);
   assert.match(adminScript, /membership\.profiles\?\.role === 'admin'/);
   assert.match(adminScript, /membership\.role = saved\.role[\s\S]*renderMemberships\(\)/);
-  assert.match(adminHtml, /admin\.js\?v=member-role-1/);
+  assert.match(adminHtml, /admin\.js\?v=savage-commentary-1/);
 });
 
 test('an authenticated user requests missing tournament membership before portal data loads', () => {
