@@ -15,6 +15,19 @@ export function createMutationGate(target) {
   };
 }
 
+export function filterActiveMemberships(memberships, { search = '', team = '', role = '' } = {}) {
+  const normalizedSearch = String(search).trim().toLocaleLowerCase();
+  return memberships
+    .filter(membership => membership.status === 'active')
+    .filter(membership => !normalizedSearch
+      || (membership.profiles?.display_name || 'Player').toLocaleLowerCase().includes(normalizedSearch))
+    .filter(membership => !team
+      || (team === 'unassigned' ? !membership.team : membership.team === team))
+    .filter(membership => !role || membership.role === role)
+    .sort((left, right) => (left.profiles?.display_name || 'Player')
+      .localeCompare(right.profiles?.display_name || 'Player', undefined, { sensitivity: 'base' }));
+}
+
 export function tournamentTeamLabel(team) {
   if (team === 'cardinal') return 'Blue';
   if (team === 'silver') return 'White';

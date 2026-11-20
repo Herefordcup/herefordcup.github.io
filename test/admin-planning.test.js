@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createMutationGate, easternDateTimeToIso, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions, tournamentTeamLabel } from '../src/admin-helpers.js';
+import { createMutationGate, easternDateTimeToIso, filterActiveMemberships, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions, tournamentTeamLabel } from '../src/admin-helpers.js';
 
 const html = await readFile(new URL('../admin.html', import.meta.url), 'utf8');
 const adminScript = await readFile(new URL('../src/admin.js', import.meta.url), 'utf8');
@@ -50,6 +50,23 @@ test('membership mutation gate keeps the roster inert until every overlapping sa
   assert.equal(roster.inert, false);
 });
 
+test('active-member roster filters by name, team, and role while preserving alphabetical order', () => {
+  const memberships = [
+    { user_id: 'zoe', status: 'active', team: 'silver', role: 'admin', profiles: { display_name: 'Zoe' } },
+    { user_id: 'alice', status: 'active', team: 'cardinal', role: 'player', profiles: { display_name: 'alice' } },
+    { user_id: 'bob', status: 'active', team: null, role: 'captain', profiles: { display_name: 'Bob' } },
+    { user_id: 'pending', status: 'pending', team: 'cardinal', role: 'player', profiles: { display_name: 'Pending' } },
+  ];
+
+  assert.deepEqual(filterActiveMemberships(memberships).map(item => item.user_id), ['alice', 'bob', 'zoe']);
+  assert.deepEqual(filterActiveMemberships(memberships, { search: 'ALI' }).map(item => item.user_id), ['alice']);
+  assert.deepEqual(filterActiveMemberships(memberships, { team: 'silver' }).map(item => item.user_id), ['zoe']);
+  assert.deepEqual(filterActiveMemberships(memberships, { team: 'unassigned' }).map(item => item.user_id), ['bob']);
+  assert.deepEqual(filterActiveMemberships(memberships, { role: 'admin' }).map(item => item.user_id), ['zoe']);
+  assert.deepEqual(filterActiveMemberships(memberships, { search: 'zo', team: 'silver', role: 'admin' }).map(item => item.user_id), ['zoe']);
+  assert.deepEqual(memberships.map(item => item.user_id), ['zoe', 'alice', 'bob', 'pending'], 'filtering does not reorder the authoritative roster');
+});
+
 test('only supported active matches can enter the finalization workflow', async () => {
   assert.match(adminScript, /\['scheduled', 'live'\]\.includes\(match\.status\)/);
   const sql = await readFile(automaticFinalizationMigrationUrl, 'utf8');
@@ -82,8 +99,8 @@ test('segment player selection shows tournament teams and derives the scoring si
   assert.equal(segmentPlayerFromMembership(inactive, 4), null);
   assert.doesNotMatch(adminScript, /Match side|data-side-select|Blue side|White side/);
   assert.match(adminScript, /option\.disabled = disabled/);
-  assert.match(html, /src="src\/admin\.js\?v=savage-commentary-1"/);
-  assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=member-role-1'/);
+  assert.match(html, /src="src\/admin\.js\?v=member-roster-grid-1"/);
+  assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=member-roster-grid-1'/);
 });
 
 test('planner options refresh team labels and preserve only valid selections after roster changes', () => {

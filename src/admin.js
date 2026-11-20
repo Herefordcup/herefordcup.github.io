@@ -1,5 +1,5 @@
 import { validateSegments } from './formats.js';
-import { createMutationGate, easternDateTimeToIso, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions } from './admin-helpers.js?v=member-role-1';
+import { createMutationGate, easternDateTimeToIso, filterActiveMemberships, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions } from './admin-helpers.js?v=member-roster-grid-1';
 import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
 import { deriveSegmentResult } from './match-results.js?v=automatic-results-2';
 import {
@@ -52,6 +52,11 @@ const adminContent = document.querySelector('#adminContent');
 const membershipMessage = document.querySelector('#membershipMessage');
 const membershipManagement = document.querySelector('#membershipManagement');
 const refreshMembershipsButton = document.querySelector('#refreshMemberships');
+const activeMemberCount = document.querySelector('#activeMemberCount');
+const activeMemberSearch = document.querySelector('#activeMemberSearch');
+const activeMemberTeamFilter = document.querySelector('#activeMemberTeamFilter');
+const activeMemberRoleFilter = document.querySelector('#activeMemberRoleFilter');
+const activeMemberFilterEmpty = document.querySelector('#activeMemberFilterEmpty');
 const legacyEditionForm = document.querySelector('#legacyEditionForm');
 const legacyEditionSelect = document.querySelector('#legacyEditionSelect');
 const legacyResultForm = document.querySelector('#legacyResultForm');
@@ -347,6 +352,34 @@ function membershipTournamentId() {
   return '';
 }
 
+function applyActiveMemberFilters() {
+  if (!adminData) return;
+  const tournamentId = membershipTournamentId();
+  if (!tournamentId) {
+    activeMemberCount.textContent = '0 members';
+    activeMemberFilterEmpty.hidden = true;
+    return;
+  }
+  const activeMemberships = filterActiveMemberships(
+    adminData.memberships.filter(membership => membership.tournament_id === tournamentId),
+    {
+      search: activeMemberSearch.value,
+      team: activeMemberTeamFilter.value,
+      role: activeMemberRoleFilter.value,
+    },
+  );
+  const activeTotal = adminData.memberships.filter(membership =>
+    membership.tournament_id === tournamentId && membership.status === 'active').length;
+  const visibleIds = new Set(activeMemberships.map(membership => membership.user_id));
+  for (const card of document.querySelectorAll('#activeMembers [data-member-id]')) {
+    card.hidden = !visibleIds.has(card.dataset.memberId);
+  }
+  activeMemberCount.textContent = activeMemberships.length === activeTotal
+    ? `${activeTotal} ${activeTotal === 1 ? 'member' : 'members'}`
+    : `${activeMemberships.length} of ${activeTotal} members`;
+  activeMemberFilterEmpty.hidden = activeTotal === 0 || activeMemberships.length > 0;
+}
+
 function renderMemberships() {
   const tournamentId = membershipTournamentId();
   const groups = {
@@ -355,15 +388,24 @@ function renderMemberships() {
   };
   if (!tournamentId) {
     for (const container of Object.values(groups)) container.replaceChildren();
+    activeMemberCount.textContent = '0 members';
+    activeMemberFilterEmpty.hidden = true;
     setMessage(membershipMessage, 'No current tournament is available for membership management.', true);
     refreshSegmentPlayerOptions();
     return;
   }
+  const tournamentMemberships = adminData.memberships
+    .filter(membership => membership.tournament_id === tournamentId);
+  const activeMemberships = filterActiveMemberships(tournamentMemberships);
+
   for (const [status, container] of Object.entries(groups)) {
     container.replaceChildren();
-    const memberships = adminData.memberships
-      .filter(membership => membership.tournament_id === tournamentId && membership.status === status)
-      .sort((left, right) => (left.profiles?.display_name || '').localeCompare(right.profiles?.display_name || ''));
+    const memberships = status === 'active'
+      ? activeMemberships
+      : tournamentMemberships
+        .filter(membership => membership.status === status)
+        .sort((left, right) => (left.profiles?.display_name || '')
+          .localeCompare(right.profiles?.display_name || '', undefined, { sensitivity: 'base' }));
     if (!memberships.length) {
       const empty = document.createElement('p');
       empty.className = 'empty-panel';
@@ -374,6 +416,7 @@ function renderMemberships() {
     for (const membership of memberships) {
       const card = document.createElement('article');
       card.className = 'membership-card';
+      if (status === 'active') card.dataset.memberId = membership.user_id;
       const name = document.createElement('strong');
       name.textContent = membership.profiles?.display_name || 'Player';
       const details = document.createElement('p');
@@ -462,6 +505,7 @@ function renderMemberships() {
             teamSelect.value = saved.team ?? '';
             const savedTeamLabel = saved.team === 'cardinal' ? 'Blue' : saved.team === 'silver' ? 'White' : 'Team unassigned';
             details.textContent = `${membership.role} · ${savedTeamLabel}`;
+            applyActiveMemberFilters();
             setMessage(membershipMessage, `${name.textContent}'s team is now ${savedTeamLabel}.`);
           } catch (error) {
             teamSelect.value = previousTeam;
@@ -614,8 +658,13 @@ function renderMemberships() {
       container.append(card);
     }
   }
+  applyActiveMemberFilters();
   refreshSegmentPlayerOptions();
 }
+
+activeMemberSearch.addEventListener('input', applyActiveMemberFilters);
+activeMemberTeamFilter.addEventListener('change', applyActiveMemberFilters);
+activeMemberRoleFilter.addEventListener('change', applyActiveMemberFilters);
 
 async function refreshMembershipRoster() {
   if (!adminData) return;
