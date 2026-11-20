@@ -1,5 +1,3 @@
-import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
-
 export const knownLegacyTrips = [
   { edition_year: 2023, venue: 'Barefoot', destination: 'Myrtle Beach', status: 'completed', legacy_results: [], legacy_photos: [] },
   { edition_year: 2024, venue: 'Innisbrook', destination: 'Tampa', status: 'completed', legacy_results: [], legacy_photos: [] },
@@ -50,25 +48,36 @@ function resultIsUnresolved(result) {
 
 export function groupLegacyResults(results = []) {
   const groups = new Map();
-  const ordered = [...results].sort((left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0));
+  const ordered = [...results]
+    .filter(result => result.public_visible !== false && result.event_group?.trim() !== 'Reconciliation')
+    .sort((left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0));
   for (const result of ordered) {
     const name = result.event_group?.trim() || 'Other results';
-    if (!groups.has(name)) groups.set(name, { name, results: [], pointsAvailable: 0, unresolvedRows: 0, hasPoints: false });
+    if (!groups.has(name)) {
+      groups.set(name, {
+        name,
+        results: [],
+        pointsAvailable: 0,
+        bluePoints: 0,
+        whitePoints: 0,
+        unresolvedRows: 0,
+        hasPoints: false,
+      });
+    }
     const group = groups.get(name);
     group.results.push(result);
-    if (recordedNumber(result.points_available)) {
-      group.pointsAvailable += result.points_available;
+    if (recordedNumber(result.points_available)) group.pointsAvailable += result.points_available;
+    if (recordedNumber(result.cardinal_points)) {
+      group.bluePoints += result.cardinal_points;
+      group.hasPoints = true;
+    }
+    if (recordedNumber(result.silver_points)) {
+      group.whitePoints += result.silver_points;
       group.hasPoints = true;
     }
     if (resultIsUnresolved(result)) group.unresolvedRows += 1;
   }
   return [...groups.values()];
-}
-
-function confidenceLabel(confidence) {
-  if (confidence === 'confirmed') return 'Confirmed';
-  if (confidence === 'probable') return 'Probable';
-  return 'Source incomplete';
 }
 
 function pointsText(value) {
@@ -141,32 +150,6 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
 
     if (selected.story) details.append(node('p', 'legacy-story', selected.story));
 
-    const ledger = summarizeLegacyLedger(selected);
-    const hasLedger = [selected.expected_points, selected.cardinal_total, selected.silver_total]
-      .some(recordedNumber);
-    if (hasLedger) {
-      const summary = node('section', 'legacy-ledger-summary');
-      const summaryHead = node('div', 'legacy-ledger-summary-head');
-      summaryHead.append(node('strong', '', ledger.reconciled ? 'Final score reconciled' : 'Scoring needs reconciliation'));
-      summaryHead.append(node('span', `legacy-confidence is-${selected.score_confidence ?? 'unresolved'}`, confidenceLabel(selected.score_confidence)));
-      summary.append(summaryHead);
-      const totals = node('dl', 'legacy-ledger-totals');
-      for (const [label, value] of [
-        ['Blue', pointsText(ledger.blueTotal)],
-        ['White', pointsText(ledger.whiteTotal)],
-        ['Expected', pointsText(ledger.expectedPoints)],
-        ['Point gap', pointsText(ledger.unresolvedPoints)],
-        ['Scoring rows', `${ledger.unresolvedRows} unresolved`],
-      ]) {
-        const metric = node('div');
-        metric.append(node('dt', '', label), node('dd', '', value));
-        totals.append(metric);
-      }
-      summary.append(totals);
-      if (selected.source_notes) summary.append(node('p', 'legacy-source-note', selected.source_notes));
-      details.append(summary);
-    }
-
     const resultGroups = groupLegacyResults(selected.legacy_results ?? []);
     for (const group of resultGroups) {
       const disclosure = node('details', 'legacy-result-group');
@@ -174,32 +157,25 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
       const groupSummary = node('summary');
       groupSummary.append(node('span', '', group.name));
       const groupMeta = group.hasPoints
-        ? `${pointsText(group.pointsAvailable)} points · ${group.unresolvedRows} unresolved`
-        : `${group.results.length} results`;
+        ? `Blue ${pointsText(group.bluePoints)} · White ${pointsText(group.whitePoints)}`
+        : `${group.results.length} matches`;
       groupSummary.append(node('small', '', groupMeta));
       disclosure.append(groupSummary);
       const list = node('div', 'legacy-results');
       for (const result of group.results) {
         const row = node('article');
-        const rowHead = node('div', 'legacy-result-head');
-        rowHead.append(node('small', '', result.label));
-        if (result.confidence) {
-          rowHead.append(node('span', `legacy-confidence is-${result.confidence}`, confidenceLabel(result.confidence)));
-        }
-        row.append(rowHead);
-        row.append(node('strong', '', result.result));
-        const sides = [result.cardinal_entry, result.silver_entry].filter(Boolean).join(' · ');
-        if (sides) row.append(node('span', '', sides));
-        const scoring = [result.format_label, result.handicap_allowance].filter(Boolean).join(' · ');
-        if (scoring) row.append(node('span', 'legacy-result-format', scoring));
-        if (recordedNumber(result.points_available)) {
+        const matchType = result.format_label || group.name;
+        row.append(node('small', 'legacy-result-format', matchType));
+        const sides = [result.cardinal_entry, result.silver_entry].filter(Boolean).join(' vs ');
+        row.append(node('strong', '', sides || result.label));
+        row.append(node('span', '', result.result));
+        if (recordedNumber(result.cardinal_points) || recordedNumber(result.silver_points)) {
           row.append(node(
             'span',
             'legacy-result-points',
-            `Blue ${pointsText(result.cardinal_points)} · White ${pointsText(result.silver_points)} / ${pointsText(result.points_available)} points`,
+            `Blue ${pointsText(result.cardinal_points)} · White ${pointsText(result.silver_points)}`,
           ));
         }
-        if (result.source_note) row.append(node('p', 'legacy-source-note', result.source_note));
         list.append(row);
       }
       disclosure.append(list);

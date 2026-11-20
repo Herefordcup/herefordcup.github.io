@@ -9,6 +9,8 @@ const { groupLegacyResults, legacyOutcome } = legacyModule;
 const root = new URL('../', import.meta.url);
 const migrationUrl = new URL('supabase/migrations/025_legacy_scoring_ledger.sql', root);
 const migrationSql = await readFile(migrationUrl, 'utf8').catch(() => '');
+const scorecardMigrationUrl = new URL('supabase/migrations/028_legacy_scorecards.sql', root);
+const scorecardMigrationSql = await readFile(scorecardMigrationUrl, 'utf8').catch(() => '');
 
 function requiresColumn(table, column, definition) {
   assert.match(
@@ -95,6 +97,38 @@ test('migration 025 keeps uncertain rows uncertain and asserts complete 2024/202
   assert.match(migrationSql, /raise exception[^;]*Legacy scoring backfill is incomplete/i);
   assert.match(migrationSql, /edition_year in \(2024, 2025\)[\s\S]*event_group is null/i);
   assert.doesNotMatch(migrationSql, /set\s+(?:label|cardinal_entry|silver_entry|result)\s*=/i);
+});
+
+test('migration 028 publishes Barefoot and Kiawah winners with the supplied final points', () => {
+  assert.match(scorecardMigrationSql, /create or replace function public\.stamp_legacy_editor\(\)[\s\S]*new\.updated_by := coalesce\(auth\.uid\(\), old\.updated_by, new\.updated_by\)/i);
+  assert.doesNotMatch(scorecardMigrationSql, /disable trigger/i);
+  assert.match(scorecardMigrationSql, /set winner_name = 'Blue Team'[\s\S]*where edition_year = 2023/i);
+  assert.match(scorecardMigrationSql, /set expected_points = 41[\s\S]*cardinal_total = 18[\s\S]*silver_total = 23[\s\S]*winner_name = 'White Team'[\s\S]*where edition_year = 2026/i);
+  assert.match(scorecardMigrationSql, /final_score = 'Blue 18 – White 23'/i);
+  assert.doesNotMatch(scorecardMigrationSql, /source_notes\s*=\s*null/i);
+});
+
+test('migration 028 records every supplied Kiawah event and named matchup', () => {
+  for (const [group, blue, white] of [
+    ['Round 1 — Texas Scramble', 9, 10],
+    ['Round 2 — 2v2 Scramble', 5, 3],
+    ['Round 3 — 2v2 Best Ball', 3, 7],
+    ['Long Drive', 1, 1],
+    ['Chip Off', 0, 2],
+    ['Round 4 — 1v1', 0, 0],
+  ]) {
+    assert.match(scorecardMigrationSql, new RegExp(`${group}[\\s\\S]*?${blue}(?:\\.0+)?[\\s\\S]*?${white}(?:\\.0+)?`, 'iu'));
+  }
+  for (const name of ['Gilbert', 'Abel', 'Sul', 'Nicolai', 'PH', 'Trond', 'Radway', 'Ben', 'Carl', 'Jose', 'Seo', 'Lee', 'Szabo', 'Lukas', 'Cam', 'Colt']) {
+    assert.match(scorecardMigrationSql, new RegExp(`\\b${name}\\b`, 'i'), `missing Kiawah player ${name}`);
+  }
+  assert.match(scorecardMigrationSql, /add column if not exists public_visible boolean not null default true/i);
+  assert.match(scorecardMigrationSql, /set public_visible = false[\s\S]*event_group = 'Reconciliation'/i);
+  assert.match(scorecardMigrationSql, /create policy "published legacy results are public"[\s\S]*public_visible/i);
+  assert.match(scorecardMigrationSql, /update public\.legacy_results candidate[\s\S]*where candidate\.id = \([\s\S]*order by existing\.created_at, existing\.id[\s\S]*limit 1[\s\S]*\)[\s\S]*if not found then[\s\S]*insert into public\.legacy_results/i);
+  assert.doesNotMatch(scorecardMigrationSql, /set[\s\S]{0,400}source_note\s*=\s*null/i);
+  assert.match(scorecardMigrationSql, /persisted_count <> 40[\s\S]*persisted_total <> 41[\s\S]*persisted_blue <> 18[\s\S]*persisted_white <> 23[\s\S]*raise exception 'Persisted Kiawah scoring rows do not reconcile'/i);
+  assert.doesNotMatch(scorecardMigrationSql, /delete from public\.legacy_(?:results|editions)/i);
 });
 
 test('summarizeLegacyLedger reconciles a complete 2024-style ledger to 43 points', () => {
@@ -206,12 +240,16 @@ test('legacyOutcome presents a tied edition without fabricating a champion', () 
 test('groupLegacyResults keeps stable source order and falls back to Other results', () => {
   assert.equal(typeof groupLegacyResults, 'function');
   const unstructured = { label: 'Old row', sort_order: 5 };
-  const laterInFirstGroup = { label: 'Second A', event_group: 'Match A', sort_order: 30, points_available: 2, confidence: 'confirmed' };
-  const firstInSecondGroup = { label: 'First B', event_group: 'Match B', sort_order: 20, points_available: 1, confidence: 'unresolved' };
-  const firstInFirstGroup = { label: 'First A', event_group: 'Match A', sort_order: 10, points_available: 2, confidence: 'confirmed' };
+  const laterInFirstGroup = { label: 'Second A', event_group: 'Match A', sort_order: 30, points_available: 2, cardinal_points: 0, silver_points: 2, confidence: 'confirmed' };
+  const firstInSecondGroup = { label: 'First B', event_group: 'Match B', sort_order: 20, points_available: 1, cardinal_points: 0, silver_points: 1, confidence: 'unresolved' };
+  const firstInFirstGroup = { label: 'First A', event_group: 'Match A', sort_order: 10, points_available: 2, cardinal_points: 2, silver_points: 0, confidence: 'confirmed' };
   const groups = groupLegacyResults([laterInFirstGroup, firstInSecondGroup, unstructured, firstInFirstGroup]);
   assert.deepEqual(groups.map(group => group.name), ['Other results', 'Match A', 'Match B']);
   assert.deepEqual(groups[1].results, [firstInFirstGroup, laterInFirstGroup]);
   assert.equal(groups[1].pointsAvailable, 4);
+  assert.equal(groups[1].bluePoints, 2);
+  assert.equal(groups[1].whitePoints, 2);
+  assert.equal(groups[2].bluePoints, 0);
+  assert.equal(groups[2].whitePoints, 1);
   assert.equal(groups[2].unresolvedRows, 1);
 });
