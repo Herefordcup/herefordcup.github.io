@@ -44,9 +44,9 @@ test('uploaded Past Trips photos open in an accessible full-view dialog', () => 
   assert.match(legacyScript, /View .* full size/);
   assert.match(pastTripsScript, /showModal\(\)/);
   assert.match(pastTripsScript, /legacyPhotoDialog\.close\(\)/);
-  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-scorecards-1"/);
-  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-scorecards-1"/);
-  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-scorecards-1'/);
+  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-scorecards-2"/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-scorecards-2"/);
+  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-scorecards-2'/);
 });
 
 test('legacy schema is publicly readable, admin-write-only, and seeds the known trips without fabricated winners', async () => {
@@ -233,14 +233,16 @@ test('Past Trips renders every trip with the same simple matchup and points form
     assert.doesNotMatch(legacyScript, new RegExp(`['"\\x60]${hiddenLabel}`));
   }
   assert.doesNotMatch(legacyScript, /confidenceLabel|source_notes|source_note|summarizeLegacyLedger/);
+  assert.doesNotMatch(legacyScript, /selected\.story|result\.result/);
+  assert.match(legacyScript, /legacyResultText\(result\)/);
   assert.doesNotMatch(legacyScript, /innerHTML/);
 });
 
 test('Past Trips cache-busts every changed scorecard dependency', async () => {
-  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-scorecards-1"/);
-  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-scorecards-1"/);
+  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-scorecards-2"/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-scorecards-2"/);
   assert.match(pastTripsScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
-  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-scorecards-1'/);
+  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-scorecards-2'/);
   assert.match(indexHtml, /src="src\/app\.js\?v=public-preview-1"/);
   assert.match(appScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
   assert.match(appScript, /from '\.\/legacy\.js\?v=legacy-tie-1'/);

@@ -84,6 +84,20 @@ function pointsText(value) {
   return recordedNumber(value) ? String(value) : '—';
 }
 
+export function legacyResultText(result = {}) {
+  if (!recordedNumber(result.cardinal_points) || !recordedNumber(result.silver_points)) {
+    return 'Result not recorded';
+  }
+  if (result.cardinal_points > result.silver_points) {
+    return `${result.cardinal_entry || 'Blue Team'} won`;
+  }
+  if (result.silver_points > result.cardinal_points) {
+    return `${result.silver_entry || 'White Team'} won`;
+  }
+  if (result.cardinal_points === 0) return 'No points awarded';
+  return 'Points split';
+}
+
 export function renderLegacyWinners({ container, editions, emptyMessage = 'Champions will appear after results are published.' }) {
   const champions = normalizedEditions(editions)
     .filter(edition => edition.winner_name)
@@ -148,8 +162,6 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
         : 'Winner and score details can be added from Tournament Admin.'));
     }
 
-    if (selected.story) details.append(node('p', 'legacy-story', selected.story));
-
     const resultGroups = groupLegacyResults(selected.legacy_results ?? []);
     for (const group of resultGroups) {
       const disclosure = node('details', 'legacy-result-group');
@@ -168,14 +180,12 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
         row.append(node('small', 'legacy-result-format', matchType));
         const sides = [result.cardinal_entry, result.silver_entry].filter(Boolean).join(' vs ');
         row.append(node('strong', '', sides || result.label));
-        row.append(node('span', '', result.result));
-        if (recordedNumber(result.cardinal_points) || recordedNumber(result.silver_points)) {
-          row.append(node(
-            'span',
-            'legacy-result-points',
-            `Blue ${pointsText(result.cardinal_points)} · White ${pointsText(result.silver_points)}`,
-          ));
-        }
+        row.append(node('span', '', legacyResultText(result)));
+        row.append(node(
+          'span',
+          'legacy-result-points',
+          `Blue ${pointsText(result.cardinal_points)} · White ${pointsText(result.silver_points)}`,
+        ));
         list.append(row);
       }
       disclosure.append(list);
