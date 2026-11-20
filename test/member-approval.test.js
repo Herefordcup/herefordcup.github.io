@@ -80,7 +80,7 @@ test('administrator portal exposes pending, active, and permanent membership del
   assert.match(adminCss, /\.membership-columns\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(adminCss, /\.membership-card \.button\{[^}]*min-height:44px/);
   assert.match(adminHtml, /admin\.css\?v=active-members-team-1/);
-  assert.match(adminHtml, /admin\.js\?v=automatic-segment-sides-1/);
+  assert.match(adminHtml, /admin\.js\?v=automatic-team-save-1/);
   assert.match(adminScript, /supabase\.js\?v=membership-team-1/);
   assert.match(adminScript, /match-results\.js\?v=automatic-results-2/);
   assert.match(portalHtml, /portal\.js\?v=membership-team-1/);
@@ -194,6 +194,10 @@ test('administrators assign annual teams in a compact active-member roster', asy
   assert.match(sql, /grant execute on function public\.set_tournament_member_team\(uuid, uuid, text\) to authenticated/i);
   assert.match(supabaseScript, /export async function setTournamentMemberTeam/);
   assert.match(adminScript, /setTournamentMemberTeam/);
+  assert.match(adminScript, /teamSelect\.addEventListener\('change', async \(\) =>/);
+  assert.match(adminScript, /teamSelect\.addEventListener\('change',[\s\S]*await setTournamentMemberTeam\(/);
+  assert.doesNotMatch(adminScript, /saveTeam|Save team/);
+  assert.match(adminScript, /setMessage\(membershipMessage, `\$\{name\.textContent\}'s team is now/);
   assert.match(adminScript, /new Option\('Unassigned', ''\)[\s\S]*new Option\('Blue', 'cardinal'\)[\s\S]*new Option\('White', 'silver'\)/);
   assert.match(adminHtml, /<div[^>]*class="[^"]*compact-member-list[^"]*"[^>]*id="activeMembers"/);
   assert.match(adminCss, /\.compact-member-list\{[^}]*max-height:[^;}]+;[^}]*overflow-y:auto/i);
