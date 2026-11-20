@@ -39,7 +39,6 @@ jobs:
         env:
           PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           history="$(supabase migration list --remote="$PROJECT_REF")"
           printf '%s\n' "$history"
@@ -48,7 +47,6 @@ jobs:
         env:
           PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: >-
           supabase migration repair
           001 002 003 004 005 006 007 008 009 010 011 012 013 014
@@ -60,7 +58,6 @@ jobs:
         env:
           PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           history="$(supabase migration list --remote="$PROJECT_REF")"
           printf '%s\n' "$history"

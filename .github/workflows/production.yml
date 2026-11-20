@@ -44,7 +44,6 @@ jobs:
         env:
           PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           history="$(supabase migration list --remote="$PROJECT_REF")"
           printf '%s\n' "$history"
@@ -53,19 +52,16 @@ jobs:
         env:
           PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase db push --remote="$PROJECT_REF" --dry-run
       - name: Apply all pending production migrations
         env:
           PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase db push --remote="$PROJECT_REF" --yes
       - name: Verify every checked-out migration is recorded remotely
         env:
           PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           history="$(supabase migration list --remote="$PROJECT_REF")"
           printf '%s\n' "$history"

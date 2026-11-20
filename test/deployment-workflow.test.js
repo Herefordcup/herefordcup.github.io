@@ -37,6 +37,10 @@ test('production mutation paths are serialized, exact-project-scoped, and use st
   assert.doesNotMatch(workflow, /migrate:[\s\S]{0,350}\n\s+env:\s*\n\s+SUPABASE_ACCESS_TOKEN/);
   assert.doesNotMatch(bootstrap, /bootstrap:[\s\S]{0,350}\n\s+env:\s*\n\s+SUPABASE_ACCESS_TOKEN/);
   assert.doesNotMatch(`${workflow}\n${bootstrap}`, /SUPABASE_(?:ACCESS_TOKEN|DB_PASSWORD):\s*[^$\s]/);
+  assert.doesNotMatch(`${workflow}\n${bootstrap}`, /SUPABASE_DB_PASSWORD/);
+  const patDeclaration = /SUPABASE_ACCESS_TOKEN:\s*\$\{\{ secrets\.SUPABASE_ACCESS_TOKEN \}\}/g;
+  assert.equal([...workflow.matchAll(patDeclaration)].length, 4);
+  assert.equal([...bootstrap.matchAll(patDeclaration)].length, 3);
 });
 
 test('all production actions and the Supabase CLI are pinned', () => {
