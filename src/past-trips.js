@@ -1,5 +1,5 @@
 import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js?v=public-preview-1';
-import { renderLegacyArchive } from './legacy.js?v=legacy-scorecards-1';
+import { renderLegacyArchive } from './legacy.js?v=legacy-scorecards-2';
 
 const target = {
   timeline: document.querySelector('#legacyTimeline'),

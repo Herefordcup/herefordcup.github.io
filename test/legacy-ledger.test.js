@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 const ledgerModule = await import('../src/legacy-ledger.js').catch(() => ({}));
 const { summarizeLegacyLedger } = ledgerModule;
 const legacyModule = await import('../src/legacy.js').catch(() => ({}));
-const { groupLegacyResults, legacyOutcome } = legacyModule;
+const { groupLegacyResults, legacyOutcome, legacyResultText } = legacyModule;
 const root = new URL('../', import.meta.url);
 const migrationUrl = new URL('supabase/migrations/025_legacy_scoring_ledger.sql', root);
 const migrationSql = await readFile(migrationUrl, 'utf8').catch(() => '');
@@ -252,4 +252,12 @@ test('groupLegacyResults keeps stable source order and falls back to Other resul
   assert.equal(groups[2].bluePoints, 0);
   assert.equal(groups[2].whitePoints, 1);
   assert.equal(groups[2].unresolvedRows, 1);
+});
+
+test('legacyResultText reports only the recorded winner or split without source prose', () => {
+  assert.equal(legacyResultText({ cardinal_entry: 'Gilbert & Abel', silver_entry: 'Sul & Ben', cardinal_points: 2, silver_points: 0, result: 'note: pretty sure' }), 'Gilbert & Abel won');
+  assert.equal(legacyResultText({ cardinal_entry: 'Gilbert', silver_entry: 'Seo', cardinal_points: 0, silver_points: 1 }), 'Seo won');
+  assert.equal(legacyResultText({ cardinal_points: 1, silver_points: 1 }), 'Points split');
+  assert.equal(legacyResultText({ cardinal_points: 0, silver_points: 0 }), 'No points awarded');
+  assert.equal(legacyResultText({ cardinal_points: null, silver_points: null }), 'Result not recorded');
 });
