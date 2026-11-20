@@ -205,6 +205,17 @@ export async function deleteTournamentMembership({ tournamentId, userId, reason 
   return data;
 }
 
+export async function setTournamentMemberTeam({ tournamentId, userId, team }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('set_tournament_member_team', {
+    target_tournament_id: tournamentId,
+    target_user_id: userId,
+    target_team: team || null,
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}
+
 export async function setTournamentMemberHandicap({ tournamentId, userId, handicapIndex }) {
   const supabase = await getSupabase();
   const { data, error } = await supabase.rpc('set_tournament_member_handicap', {
@@ -228,7 +239,7 @@ export async function loadPlayerData(userId) {
     supabase.from('profiles').select('*').eq('id', userId).single(),
     supabase
       .from('tournament_memberships')
-      .select('status, role, team, tournaments(id, name, slug, edition_year, status, starts_on)')
+      .select('status, role, team, tournaments(id, name, slug, edition_year, status, starts_on, ends_on)')
       .eq('user_id', userId),
     supabase.from('courses').select('*, tees(*, holes(*))').eq('active', true).order('name'),
   ]);

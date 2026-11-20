@@ -21,11 +21,12 @@ import {
   saveMatchPlan,
   saveTournamentRule,
   setTournamentMemberHandicap,
+  setTournamentMemberTeam,
   setTournamentMembershipStatus,
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=membership-refresh-2';
+} from './supabase.js?v=membership-team-1';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -367,9 +368,57 @@ function renderMemberships() {
       const name = document.createElement('strong');
       name.textContent = membership.profiles?.display_name || 'Player';
       const details = document.createElement('p');
-      details.textContent = `${membership.role} · ${membership.team || 'Team unassigned'}`;
+      const teamLabel = membership.team === 'cardinal' ? 'Blue' : membership.team === 'silver' ? 'White' : 'Team unassigned';
+      details.textContent = `${membership.role} · ${teamLabel}`;
       const actions = document.createElement('div');
       if (status === 'active') {
+        const teamControls = document.createElement('div');
+        teamControls.className = 'membership-team';
+        const teamSelectLabel = document.createElement('label');
+        teamSelectLabel.textContent = 'Tournament team';
+        const teamSelect = document.createElement('select');
+        teamSelect.append(
+          new Option('Unassigned', ''),
+          new Option('Blue', 'cardinal'),
+          new Option('White', 'silver'),
+        );
+        teamSelect.value = membership.team ?? '';
+        teamSelect.addEventListener('change', () => {
+          teamSelect.dataset.dirty = 'true';
+        });
+        teamSelectLabel.append(teamSelect);
+        const saveTeam = document.createElement('button');
+        saveTeam.type = 'button';
+        saveTeam.className = 'button';
+        saveTeam.textContent = 'Save team';
+        saveTeam.addEventListener('click', async () => {
+          membershipMutationCount += 1;
+          try {
+            saveTeam.disabled = true;
+            teamSelect.disabled = true;
+            setMessage(membershipMessage, `Saving ${name.textContent}'s team…`);
+            const saved = await setTournamentMemberTeam({
+              tournamentId,
+              userId: membership.user_id,
+              team: teamSelect.value,
+            });
+            membership.team = saved.team;
+            teamSelect.value = saved.team ?? '';
+            teamSelect.dataset.dirty = 'false';
+            const savedTeamLabel = saved.team === 'cardinal' ? 'Blue' : saved.team === 'silver' ? 'White' : 'Team unassigned';
+            details.textContent = `${membership.role} · ${savedTeamLabel}`;
+            setMessage(membershipMessage, `${name.textContent}'s team is now ${savedTeamLabel}.`);
+          } catch (error) {
+            setMessage(membershipMessage, error.message, true);
+          } finally {
+            membershipMutationCount -= 1;
+            saveTeam.disabled = false;
+            teamSelect.disabled = false;
+          }
+        });
+        teamControls.append(teamSelectLabel, saveTeam);
+        actions.append(teamControls);
+
         const handicapLabel = document.createElement('label');
         handicapLabel.className = 'membership-handicap';
         handicapLabel.textContent = 'Handicap index';
@@ -517,8 +566,8 @@ async function refreshMembershipRoster() {
     setMessage(membershipMessage, 'Wait for the current membership change to finish before refreshing.');
     return;
   }
-  if (membershipManagement.querySelector('.membership-handicap input[data-dirty="true"]')) {
-    setMessage(membershipMessage, 'Save the handicap edit before refreshing membership requests.', true);
+  if (membershipManagement.querySelector('[data-dirty="true"]')) {
+    setMessage(membershipMessage, 'Save the team or handicap edit before refreshing membership requests.', true);
     return;
   }
   refreshMembershipsButton.disabled = true;

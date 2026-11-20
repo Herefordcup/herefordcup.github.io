@@ -3,7 +3,7 @@ import { matchPoints } from './scoring.js';
 import { assignedRoundScoringMode, formatSegmentLabel, individualEntryBlockReason, segmentHoleCount } from './formats.js?v=handicap-scoring-1';
 import { summarizeLeagueStats, summarizePlayerStats } from './stats.js';
 import { assertRoundAssignment, holeNumbersForRound, mergePersistedScores, unsavedScoreRows } from './round-entry.js?v=round-holes-1';
-import { commentaryForMatch, formatHomeDate, formatMatchupPlayers, orderHomeMatches } from './home.js?v=public-preview-1';
+import { commentaryForMatch, formatHomeDate, formatHomeDateRange, formatMatchupPlayers, orderHomeMatches } from './home.js?v=home-standings-1';
 import { avatarInitials, normalizeProfileInput, playerDisplayName, profileAvatarUrl, validateProfilePhoto } from './profile.js?v=player-name-1';
 import {
   assignedSegmentsForPlayer,
@@ -12,7 +12,7 @@ import {
   playerDirectoryEntries,
   segmentRelationships,
   selectActiveTournament,
-} from './member.js?v=membership-refresh-2';
+} from './member.js?v=membership-team-1';
 import { hasSupabaseConfig } from './config.js';
 import {
   canSetNewPassword,
@@ -34,7 +34,7 @@ import {
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=membership-refresh-2';
+} from './supabase.js?v=membership-team-1';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');
@@ -205,15 +205,14 @@ function renderHomeSummary() {
   document.querySelector('#homeTournamentStatus').textContent = (statusLabels[tournament?.status] ?? 'Season').toUpperCase();
   renderProfileAvatar();
   document.querySelector('#homeHandicap').textContent = playerData.profile.handicap_index ?? '—';
-  document.querySelector('#homeTeam').textContent = membership?.team
-    ? membership.team.charAt(0).toUpperCase() + membership.team.slice(1)
-    : 'Unassigned';
+  document.querySelector('#homeTeam').textContent = membership?.team === 'cardinal' ? 'Blue' : membership?.team === 'silver' ? 'White' : 'Unassigned';
   document.querySelector('#homeRounds').textContent = summarizePlayerStats(playerData.statistics, session.user.id).rounds;
   const start = formatHomeDate(tournament?.starts_on, { year: 'numeric' });
   document.querySelector('#homeTournamentMeta').textContent = start
     ? `${start} · Your schedule, matches, and Cup standing.`
     : 'Your schedule, matches, and Cup standing in one place.';
-  document.querySelector('#homeScheduleTitle').textContent = start ? `${start} itinerary` : 'Tournament itinerary';
+  const tripRange = formatHomeDateRange(tournament?.starts_on, tournament?.ends_on);
+  document.querySelector('#homeScheduleTitle').textContent = tripRange ? `${tripRange} itinerary` : 'Tournament itinerary';
 }
 
 function renderSchedule() {

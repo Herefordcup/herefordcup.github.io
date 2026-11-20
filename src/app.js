@@ -1,6 +1,6 @@
 import { formatMatchStatus } from './scoring.js';
-import { formatHomeDate, formatPublicPoints, groupPublicSchedule, hasPublishedPublicPairings } from './home.js?v=public-preview-1';
-import { loadLegacyArchive, loadPublicTournamentPreview } from './supabase.js?v=membership-refresh-2';
+import { formatHomeDate, formatPublicPoints, groupPublicSchedule, hasPublishedPublicPairings } from './home.js?v=home-standings-1';
+import { loadLegacyArchive, loadPublicTournamentPreview } from './supabase.js?v=membership-team-1';
 import { renderLegacyWinners } from './legacy.js?v=pimentel-correction-1';
 
 const previewStatus = document.querySelector('#previewStatus');
@@ -145,7 +145,6 @@ function renderTotals(totals = {}) {
   const whiteKnown = Number.isFinite(white);
   document.querySelector('#cardinalTotal').textContent = formatPublicPoints(blueKnown ? blue : null);
   document.querySelector('#silverTotal').textContent = formatPublicPoints(whiteKnown ? white : null);
-  document.querySelector('#targetPoints').textContent = formatPublicPoints(totals.target);
   const decided = blueKnown && whiteKnown ? blue + white : 0;
   document.querySelector('#scoreProgress').style.width = `${decided > 0 ? (blue / decided) * 100 : 50}%`;
 }
@@ -153,7 +152,6 @@ function renderTotals(totals = {}) {
 function renderUnknownTotals() {
   document.querySelector('#cardinalTotal').textContent = '—';
   document.querySelector('#silverTotal').textContent = '—';
-  document.querySelector('#targetPoints').textContent = '—';
   document.querySelector('#scoreProgress').style.width = '50%';
 }
 
