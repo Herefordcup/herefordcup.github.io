@@ -1,5 +1,6 @@
 export function createMutationGate(target) {
   let count = 0;
+  const idleCallbacks = [];
   return {
     begin() {
       count += 1;
@@ -8,6 +9,13 @@ export function createMutationGate(target) {
     end() {
       count = Math.max(0, count - 1);
       target.inert = count > 0;
+      if (count === 0) {
+        for (const callback of idleCallbacks.splice(0)) callback();
+      }
+    },
+    whenIdle(callback) {
+      if (count === 0) callback();
+      else idleCallbacks.push(callback);
     },
     get active() {
       return count > 0;
@@ -26,6 +34,16 @@ export function filterActiveMemberships(memberships, { search = '', team = '', r
     .filter(membership => !role || membership.role === role)
     .sort((left, right) => (left.profiles?.display_name || 'Player')
       .localeCompare(right.profiles?.display_name || 'Player', undefined, { sensitivity: 'base' }));
+}
+
+export function applyMemberCardVisibility(cards, visibleIds) {
+  for (const card of cards) card.hidden = !visibleIds.has(card.dataset.memberId);
+}
+
+export function moveFocusFromFilteredCard(card, fallback) {
+  if (!card.hidden) return false;
+  fallback.focus({ preventScroll: true });
+  return true;
 }
 
 export function tournamentTeamLabel(team) {

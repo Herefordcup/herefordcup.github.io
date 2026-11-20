@@ -15,7 +15,7 @@ jobs:
       contents: read
     steps:
       - name: Check out the exact release commit
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Run the complete test suite
         run: npm test
 
@@ -27,7 +27,7 @@ jobs:
       contents: read
     steps:
       - name: Check out the exact release commit
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Require the exact production deployment configuration
         env:
           PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
@@ -37,9 +37,14 @@ jobs:
           test "$PROJECT_REF" = "mqulycovrogurvmjcimt"
           test "$HISTORY_READY" = "true"
       - name: Install the reviewed Supabase CLI
-        uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb
+        uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13
         with:
           version: 3.2.0
+      - name: Preflight Edge Function access before database changes
+        env:
+          PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions list --remote="$PROJECT_REF" > /dev/null
       - name: Verify production history is a valid local prefix
         env:
           PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
@@ -79,7 +84,7 @@ jobs:
       contents: read
     steps:
       - name: Check out the migrated release commit
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Configure GitHub Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b
       - name: Build the GitHub Pages site

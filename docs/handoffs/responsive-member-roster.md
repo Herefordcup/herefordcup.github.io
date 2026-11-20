@@ -57,4 +57,4 @@ npm test
 git diff origin/main...HEAD
 ```
 
-Before reporting production complete, verify the production workflow for the exact merge SHA, read back `admin.html`, `admin.css?v=member-roster-grid-1`, `src/admin.js?v=member-roster-grid-1`, and `src/admin-helpers.js?v=member-roster-grid-1`, then exercise the authenticated Active Members search/filter and one existing save control without deleting a member.
+Before reporting production complete, verify the production workflow for the exact merge SHA, read back `admin.html`, `admin.css?v=member-roster-grid-1`, `src/admin.js?v=production-readiness-1`, and `src/admin-helpers.js?v=production-readiness-1`, then exercise the authenticated Active Members search/filter and one existing save control without deleting a member.

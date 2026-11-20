@@ -1,5 +1,5 @@
 import { validateSegments } from './formats.js';
-import { createMutationGate, easternDateTimeToIso, filterActiveMemberships, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions } from './admin-helpers.js?v=member-roster-grid-1';
+import { applyMemberCardVisibility, createMutationGate, easternDateTimeToIso, filterActiveMemberships, moveFocusFromFilteredCard, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions } from './admin-helpers.js?v=production-readiness-1';
 import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
 import { deriveSegmentResult } from './match-results.js?v=automatic-results-2';
 import {
@@ -371,9 +371,7 @@ function applyActiveMemberFilters() {
   const activeTotal = adminData.memberships.filter(membership =>
     membership.tournament_id === tournamentId && membership.status === 'active').length;
   const visibleIds = new Set(activeMemberships.map(membership => membership.user_id));
-  for (const card of document.querySelectorAll('#activeMembers [data-member-id]')) {
-    card.hidden = !visibleIds.has(card.dataset.memberId);
-  }
+  applyMemberCardVisibility(document.querySelectorAll('#activeMembers [data-member-id]'), visibleIds);
   activeMemberCount.textContent = activeMemberships.length === activeTotal
     ? `${activeTotal} ${activeTotal === 1 ? 'member' : 'members'}`
     : `${activeMemberships.length} of ${activeTotal} members`;
@@ -506,6 +504,7 @@ function renderMemberships() {
             const savedTeamLabel = saved.team === 'cardinal' ? 'Blue' : saved.team === 'silver' ? 'White' : 'Team unassigned';
             details.textContent = `${membership.role} · ${savedTeamLabel}`;
             applyActiveMemberFilters();
+            if (card.hidden) membershipMutationGate.whenIdle(() => moveFocusFromFilteredCard(card, activeMemberSearch));
             setMessage(membershipMessage, `${name.textContent}'s team is now ${savedTeamLabel}.`);
           } catch (error) {
             teamSelect.value = previousTeam;

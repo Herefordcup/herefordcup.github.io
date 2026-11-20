@@ -80,7 +80,8 @@ test('administrator portal exposes pending, active, and permanent membership del
   assert.match(supabaseScript, /profiles!tournament_memberships_user_id_fkey\(id, display_name, handicap_index, role\)/);
   assert.match(adminHtml, /id="pendingMembers"[\s\S]*id="activeMemberSearch"[\s\S]*id="activeMembers"/);
   assert.match(adminScript, /filterActiveMemberships\(/);
-  assert.match(adminScript, /function applyActiveMemberFilters\(\)[\s\S]*card\.hidden = !visibleIds\.has\(card\.dataset\.memberId\)/);
+  assert.match(adminScript, /function applyActiveMemberFilters\(\)[\s\S]*applyMemberCardVisibility\([^;]+visibleIds\)/);
+  assert.match(adminScript, /membership\.team = saved\.team[\s\S]*applyActiveMemberFilters\(\)[\s\S]*membershipMutationGate\.whenIdle\(\(\) => moveFocusFromFilteredCard\(card, activeMemberSearch\)\)[\s\S]*membershipMutationGate\.end\(\)/);
   assert.match(adminScript, /activeMemberSearch\.addEventListener\('input', applyActiveMemberFilters\)/);
   assert.match(adminScript, /activeMemberTeamFilter\.addEventListener\('change', applyActiveMemberFilters\)/);
   assert.match(adminScript, /activeMemberRoleFilter\.addEventListener\('change', applyActiveMemberFilters\)/);
@@ -90,7 +91,7 @@ test('administrator portal exposes pending, active, and permanent membership del
   assert.match(adminCss, /@media\(max-width:520px\)[\s\S]*\.active-member-list\{grid-template-columns:1fr\}/i);
   assert.match(adminCss, /\.membership-card \.button\{[^}]*min-height:44px/);
   assert.match(adminHtml, /admin\.css\?v=member-roster-grid-1/);
-  assert.match(adminHtml, /admin\.js\?v=member-roster-grid-1/);
+  assert.match(adminHtml, /admin\.js\?v=production-readiness-1/);
   assert.match(adminScript, /supabase\.js\?v=member-role-1/);
   assert.match(adminScript, /match-results\.js\?v=automatic-results-2/);
   assert.match(portalHtml, /portal\.js\?v=member-role-1/);
@@ -233,7 +234,7 @@ test('administrators manage tournament-specific Player and Admin roles from Acti
   assert.match(adminScript, /membership\.user_id === session\.user\.id[\s\S]*membership\.role === 'admin'/);
   assert.match(adminScript, /membership\.profiles\?\.role === 'admin'/);
   assert.match(adminScript, /membership\.role = saved\.role[\s\S]*renderMemberships\(\)/);
-  assert.match(adminHtml, /admin\.js\?v=member-roster-grid-1/);
+  assert.match(adminHtml, /admin\.js\?v=production-readiness-1/);
 });
 
 test('an authenticated user requests missing tournament membership before portal data loads', () => {
