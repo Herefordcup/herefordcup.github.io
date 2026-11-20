@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { summarizeLeagueStats, summarizePlayerStats } from '../src/stats.js';
 import {
   assignedSegmentsForPlayer,
+  membershipAccessTransition,
   nextUpcomingAssignment,
   playerDirectoryEntries,
   segmentRelationships,
@@ -16,6 +17,71 @@ const supabaseScript = await readFile(new URL('../src/supabase.js', import.meta.
 const formatsScript = await readFile(new URL('../src/formats.js', import.meta.url), 'utf8');
 const portalCss = await readFile(new URL('../portal.css', import.meta.url), 'utf8');
 const homeCss = await readFile(new URL('../home.css', import.meta.url), 'utf8');
+
+test('membership refresh recreates deleted active access but does not resurrect denied requests', () => {
+  const tournament = { edition_year: 2027, status: 'setup' };
+  const active = { status: 'active', tournaments: tournament };
+  const pending = { status: 'pending', tournaments: tournament };
+  assert.equal(membershipAccessTransition([active], []), 'request');
+  assert.equal(membershipAccessTransition([pending], []), 'denied');
+  assert.equal(membershipAccessTransition([pending], [active]), 'reload');
+  assert.equal(membershipAccessTransition([active], [pending]), 'reload');
+  assert.equal(membershipAccessTransition([active], [active]), 'none');
+  assert.equal(membershipAccessTransition([
+    { status: 'active', tournaments: { edition_year: 2026, status: 'complete' } },
+    active,
+  ], [{ status: 'active', tournaments: { edition_year: 2026, status: 'complete' } }]), 'request');
+});
+
+test('membership refresh tracks the priority tournament identity instead of masking deletion with another active edition', () => {
+  const live = { id: 'live-2027', edition_year: 2027, status: 'live' };
+  const setup = { id: 'setup-2027', edition_year: 2027, status: 'setup' };
+  const liveActive = { tournament_id: live.id, status: 'active', tournaments: live };
+  const setupActive = { tournament_id: setup.id, status: 'active', tournaments: setup };
+
+  assert.equal(membershipAccessTransition([liveActive, setupActive], [setupActive]), 'request');
+});
+
+test('membership refresh follows the displayed active tournament ahead of a higher-priority pending request', () => {
+  const live = { id: 'live-2027', edition_year: 2027, status: 'live' };
+  const setup = { id: 'setup-2027', edition_year: 2027, status: 'setup' };
+  const livePending = { tournament_id: live.id, status: 'pending', tournaments: live };
+  const setupActive = { tournament_id: setup.id, status: 'active', tournaments: setup };
+
+  assert.equal(membershipAccessTransition([livePending, setupActive], [livePending]), 'request');
+});
+
+test('membership refresh reloads when any pending request becomes active behind a higher-priority pending request', () => {
+  const live = { id: 'live-2027', edition_year: 2027, status: 'live' };
+  const setup = { id: 'setup-2027', edition_year: 2027, status: 'setup' };
+  const livePending = { tournament_id: live.id, status: 'pending', tournaments: live };
+  const setupPending = { tournament_id: setup.id, status: 'pending', tournaments: setup };
+  const setupActive = { ...setupPending, status: 'active' };
+
+  assert.equal(membershipAccessTransition([livePending, setupPending], [livePending, setupActive]), 'reload');
+});
+
+test('membership refresh reloads rather than re-requesting when the displayed tournament completes', () => {
+  const setup = { id: 'setup-2027', edition_year: 2027, status: 'setup' };
+  const complete = { ...setup, status: 'complete' };
+  const active = { tournament_id: setup.id, status: 'active', tournaments: setup };
+  const completed = { ...active, tournaments: complete };
+
+  assert.equal(membershipAccessTransition([active], [completed]), 'reload');
+});
+
+test('membership refresh reloads when a higher-priority tournament becomes active', () => {
+  const live = { id: 'live-2027', edition_year: 2027, status: 'live' };
+  const setup = { id: 'setup-2027', edition_year: 2027, status: 'setup' };
+  const livePending = { tournament_id: live.id, status: 'pending', tournaments: live };
+  const liveActive = { ...livePending, status: 'active' };
+  const setupActive = { tournament_id: setup.id, status: 'active', tournaments: setup };
+
+  assert.equal(membershipAccessTransition(
+    [livePending, setupActive],
+    [liveActive, setupActive],
+  ), 'reload');
+});
 
 test('member portal opens with home and provides primary navigation', () => {
   for (const id of [
@@ -63,7 +129,7 @@ test('More includes a tournament player directory without private contact data',
   assert.match(html, /id="playersList"/);
   assert.match(html, />Players</);
   assert.match(supabaseScript, /profiles!tournament_memberships_user_id_fkey\(display_name, handicap_index, profile_photo_path\)/);
-  assert.match(portalScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
+  assert.match(portalScript, /from '\.\/supabase\.js\?v=membership-refresh-2'/);
   assert.match(portalScript, /function renderPlayers\(/);
   assert.doesNotMatch(portalScript, /player\.email|profiles\(email/);
 });
@@ -199,7 +265,7 @@ test('scorecard setup includes an 18-hole, front-nine, and back-nine selector', 
   assert.match(html, /<option value="front9">Front 9 \(holes 1–9\)<\/option>/);
   assert.match(html, /<option value="back9">Back 9 \(holes 10–18\)<\/option>/);
   assert.match(portalScript, /holeNumbersForRound\(holeRangeSelect\.value, selectedMatchSegments\(\)\)/);
-  assert.match(html, /src="src\/portal\.js\?v=public-preview-1"/);
+  assert.match(html, /src="src\/portal\.js\?v=membership-refresh-2"/);
   assert.match(portalScript, /from '\.\/round-entry\.js\?v=round-holes-1'/);
 });
 

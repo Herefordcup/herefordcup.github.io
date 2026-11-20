@@ -7,6 +7,7 @@ const migrationUrl = new URL('supabase/migrations/018_membership_approval.sql', 
 const deletionMigrationUrl = new URL('supabase/migrations/019_delete_membership_reenroll.sql', root);
 const denialMigrationUrl = new URL('supabase/migrations/020_deny_pending_membership.sql', root);
 const reRequestCleanupMigrationUrl = new URL('supabase/migrations/030_membership_rerequest_cleanup.sql', root);
+const targetedReRequestMigrationUrl = new URL('supabase/migrations/033_targeted_membership_rerequest.sql', root);
 const adminHtml = await readFile(new URL('admin.html', root), 'utf8');
 const adminCss = await readFile(new URL('admin.css', root), 'utf8');
 const adminScript = await readFile(new URL('src/admin.js', root), 'utf8');
@@ -78,11 +79,12 @@ test('administrator portal exposes pending, active, and permanent membership del
   assert.match(adminCss, /\.membership-columns\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(adminCss, /\.membership-card \.button\{[^}]*min-height:44px/);
   assert.match(adminHtml, /admin\.css\?v=legacy-ledger-2/);
-  assert.match(adminHtml, /admin\.js\?v=public-preview-1/);
-  assert.match(adminScript, /supabase\.js\?v=public-preview-1/);
+  assert.match(adminHtml, /admin\.js\?v=membership-refresh-2/);
+  assert.match(adminScript, /supabase\.js\?v=membership-refresh-2/);
   assert.match(adminScript, /match-results\.js\?v=automatic-results-2/);
-  assert.match(portalHtml, /portal\.js\?v=public-preview-1/);
-  assert.match(portalScript, /supabase\.js\?v=public-preview-1/);
+  assert.match(portalHtml, /portal\.js\?v=membership-refresh-2/);
+  assert.match(portalScript, /supabase\.js\?v=membership-refresh-2/);
+  assert.match(portalScript, /member\.js\?v=membership-refresh-2/);
   assert.match(supabaseScript, /export async function setTournamentMembershipStatus/);
   assert.match(supabaseScript, /rpc\('set_tournament_membership_status'/);
   assert.match(supabaseScript, /export async function deleteTournamentMembership/);
@@ -147,6 +149,38 @@ test('deleting or denying membership purges stale request data so a future reque
     'a currently suppressed pending re-request must receive a fresh approval job');
   assert.doesNotMatch(sql, /delete from (?:auth\.users|public\.profiles)/i,
     'login identities and profiles must remain so the person can request access again');
+});
+
+test('returning members and administrators refresh access without reopening stale tabs', () => {
+  assert.match(supabaseScript, /export async function loadOwnTournamentMemberships/);
+  assert.match(supabaseScript, /if \(!tournament\)[\s\S]*memberships,[\s\S]*tournament: null/,
+    'pending membership state must remain available to the lifecycle monitor');
+  assert.match(portalScript, /async function refreshMembershipAccess/);
+  assert.match(portalScript, /await loadOwnTournamentMemberships\(session\.user\.id\)/);
+  assert.match(portalScript, /transition === 'request'[\s\S]*await requestTournamentMembership\(\)/);
+  assert.doesNotMatch(portalScript, /setInterval[\s\S]*requestTournamentMembership\(\)/,
+    'the monitor must not recreate a request after an administrator denial');
+  assert.match(portalScript, /window\.addEventListener\('focus',[\s\S]*refreshMembershipAccess/);
+  assert.match(portalScript, /visibilitychange[\s\S]*refreshMembershipAccess/);
+  assert.match(portalScript, /setInterval\(refreshMembershipAccessFromLifecycle, 30000\)/);
+  assert.match(adminHtml, /id="refreshMemberships"[^>]*>Refresh requests</i);
+  assert.match(adminScript, /async function refreshMembershipRoster/);
+  assert.match(supabaseScript, /export async function loadMembershipRosterData/);
+  assert.match(adminScript, /freshData = await loadMembershipRosterData\(\)[\s\S]*adminData\.memberships = freshData\.memberships[\s\S]*renderMemberships\(\)/);
+  assert.match(adminScript, /membershipMutationCount > 0/);
+  assert.doesNotMatch(adminScript, /button:disabled:not\(#refreshMemberships\)/);
+  assert.match(adminScript, /membershipManagement\.inert = true[\s\S]*membershipManagement\.inert = false/);
+  assert.match(adminScript, /document\.activeElement\?\.closest\('#membershipManagement'\)[\s\S]*refreshMembershipRoster/);
+});
+
+test('stale active deletion re-requests the exact displayed tournament', async () => {
+  const sql = await readFile(targetedReRequestMigrationUrl, 'utf8').catch(() => '');
+  assert.match(sql, /create or replace function public\.request_tournament_membership\(target_tournament_id uuid\)/i);
+  assert.match(sql, /tournament\.id = target_tournament_id[\s\S]*tournament\.status in \('setup', 'open', 'live'\)/i);
+  assert.match(sql, /on conflict \(tournament_id, user_id\) do nothing/i);
+  assert.match(sql, /grant execute on function public\.request_tournament_membership\(uuid\) to authenticated/i);
+  assert.match(supabaseScript, /requestTournamentMembership\(targetTournamentId = null\)[\s\S]*target_tournament_id: targetTournamentId/);
+  assert.match(portalScript, /selectActiveTournament[\s\S]*transition === 'request'[\s\S]*requestTournamentMembership\(selectActiveTournament\(playerData\.memberships\)\?\.id\)/);
 });
 
 test('an authenticated user requests missing tournament membership before portal data loads', () => {

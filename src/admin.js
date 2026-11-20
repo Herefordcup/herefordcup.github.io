@@ -12,6 +12,7 @@ import {
   generateMatchCommentary,
   finalizeMatchResults,
   loadAdminData,
+  loadMembershipRosterData,
   loadPlayerData,
   saveCommentarySettings,
   saveCourseWithTee,
@@ -24,7 +25,7 @@ import {
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=public-preview-1';
+} from './supabase.js?v=membership-refresh-2';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -47,6 +48,8 @@ const resultMatch = document.querySelector('#resultMatch');
 const resultSegmentRows = document.querySelector('#resultSegmentRows');
 const adminContent = document.querySelector('#adminContent');
 const membershipMessage = document.querySelector('#membershipMessage');
+const membershipManagement = document.querySelector('#membershipManagement');
+const refreshMembershipsButton = document.querySelector('#refreshMemberships');
 const legacyEditionForm = document.querySelector('#legacyEditionForm');
 const legacyEditionSelect = document.querySelector('#legacyEditionSelect');
 const legacyResultForm = document.querySelector('#legacyResultForm');
@@ -55,6 +58,8 @@ const defaultPars = [4, 4, 3, 5, 4, 4, 3, 5, 4, 4, 4, 3, 5, 4, 4, 3, 5, 4];
 
 let session;
 let adminData;
+let membershipRosterRefreshPromise;
+let membershipMutationCount = 0;
 let correctionDialogTrigger;
 
 function setMessage(target, text, isError = false) {
@@ -375,6 +380,9 @@ function renderMemberships() {
         handicapInput.step = '0.1';
         handicapInput.required = true;
         handicapInput.value = membership.profiles?.handicap_index ?? '';
+        handicapInput.addEventListener('input', () => {
+          handicapInput.dataset.dirty = 'true';
+        });
         handicapLabel.append(handicapInput);
         const saveHandicap = document.createElement('button');
         saveHandicap.type = 'button';
@@ -387,6 +395,7 @@ function renderMemberships() {
             setMessage(membershipMessage, 'Enter a handicap index with one decimal place between -10.0 and 54.0.', true);
             return;
           }
+          membershipMutationCount += 1;
           try {
             saveHandicap.disabled = true;
             handicapInput.disabled = true;
@@ -401,10 +410,12 @@ function renderMemberships() {
               handicap_index: Number(saved.handicap_index),
             };
             handicapInput.value = membership.profiles.handicap_index.toFixed(1);
+            handicapInput.dataset.dirty = 'false';
             setMessage(membershipMessage, `${name.textContent}'s handicap is now ${handicapInput.value}.`);
           } catch (error) {
             setMessage(membershipMessage, error.message, true);
           } finally {
+            membershipMutationCount -= 1;
             saveHandicap.disabled = false;
             handicapInput.disabled = false;
           }
@@ -428,6 +439,7 @@ function renderMemberships() {
           ? window.prompt(`Why are you deleting ${name.textContent}'s tournament membership? Their login and profile will remain, and a future request will require approval again.`)
           : 'Approved by administrator';
         if (!reason?.trim()) return;
+        membershipMutationCount += 1;
         try {
           for (const button of actions.querySelectorAll('button')) button.disabled = true;
           setMessage(membershipMessage, `${action.textContent} in progress…`);
@@ -458,6 +470,8 @@ function renderMemberships() {
         } catch (error) {
           for (const button of actions.querySelectorAll('button')) button.disabled = false;
           setMessage(membershipMessage, error.message, true);
+        } finally {
+          membershipMutationCount -= 1;
         }
       });
       actions.append(action);
@@ -468,6 +482,7 @@ function renderMemberships() {
         deny.textContent = 'Deny';
         deny.addEventListener('click', async () => {
           if (!window.confirm(`Deny this membership request from ${name.textContent}? Their login and profile will remain.`)) return;
+          membershipMutationCount += 1;
           try {
             for (const button of actions.querySelectorAll('button')) button.disabled = true;
             setMessage(membershipMessage, 'Deny in progress…');
@@ -483,6 +498,8 @@ function renderMemberships() {
           } catch (error) {
             for (const button of actions.querySelectorAll('button')) button.disabled = false;
             setMessage(membershipMessage, error.message, true);
+          } finally {
+            membershipMutationCount -= 1;
           }
         });
         actions.append(deny);
@@ -492,6 +509,43 @@ function renderMemberships() {
     }
   }
 }
+
+async function refreshMembershipRoster() {
+  if (!adminData) return;
+  if (membershipRosterRefreshPromise) return membershipRosterRefreshPromise;
+  if (membershipMutationCount > 0) {
+    setMessage(membershipMessage, 'Wait for the current membership change to finish before refreshing.');
+    return;
+  }
+  if (membershipManagement.querySelector('.membership-handicap input[data-dirty="true"]')) {
+    setMessage(membershipMessage, 'Save the handicap edit before refreshing membership requests.', true);
+    return;
+  }
+  refreshMembershipsButton.disabled = true;
+  membershipManagement.inert = true;
+  setMessage(membershipMessage, 'Refreshing membership requests…');
+  membershipRosterRefreshPromise = (async () => {
+    const freshData = await loadMembershipRosterData();
+    adminData.tournaments = freshData.tournaments;
+    adminData.memberships = freshData.memberships;
+    renderMemberships();
+    setMessage(membershipMessage, 'Membership requests refreshed.');
+  })();
+  try {
+    return await membershipRosterRefreshPromise;
+  } catch (error) {
+    setMessage(membershipMessage, error.message, true);
+  } finally {
+    membershipRosterRefreshPromise = null;
+    membershipManagement.inert = false;
+    refreshMembershipsButton.disabled = false;
+  }
+}
+
+refreshMembershipsButton.addEventListener('click', refreshMembershipRoster);
+window.addEventListener('focus', () => {
+  if (!document.hidden && !document.activeElement?.closest('#membershipManagement')) refreshMembershipRoster();
+});
 
 function renderRuleEditor(selectedRuleId = '') {
   const tournamentId = document.querySelector('#ruleTournament').value;

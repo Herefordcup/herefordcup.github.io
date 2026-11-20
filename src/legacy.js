@@ -31,7 +31,7 @@ export function normalizeLegacyText(value) {
 }
 
 export function normalizeLegacyEntry(value, editionYear) {
-  const text = normalizeLegacyText(value);
+  const text = normalizeLegacyText(value).replace(/\bPimental\b/g, 'Pimentel');
   if (![2024, 2025].includes(Number(editionYear))) return text;
   return text
     .replace(/\bnames?\s+not\s+listed\b/gi, 'TBD')
@@ -74,7 +74,8 @@ export function groupLegacyResults(results = []) {
     .filter(result => result.public_visible !== false && result.event_group?.trim() !== 'Reconciliation')
     .sort((left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0));
   for (const result of ordered) {
-    const name = normalizeLegacyText(result.event_group) || 'Other results';
+    const name = (normalizeLegacyText(result.event_group) || 'Other results')
+      .replace(/^Match(?=\s+\d+\b)/i, 'Round');
     if (!groups.has(name)) {
       groups.set(name, {
         name,
@@ -104,6 +105,14 @@ export function groupLegacyResults(results = []) {
 
 function pointsText(value) {
   return recordedNumber(value) ? String(value) : '—';
+}
+
+export function legacyMatchupText(result = {}, editionYear) {
+  const sides = [result.cardinal_entry, result.silver_entry]
+    .map(value => normalizeLegacyEntry(value, editionYear))
+    .filter(Boolean)
+    .join(' vs ');
+  return sides || normalizeLegacyText(result.label);
 }
 
 export function legacyResultText(result = {}, editionYear) {
@@ -207,11 +216,7 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
         const row = node('article');
         const matchType = normalizeLegacyText(result.format_label || group.name);
         row.append(node('small', 'legacy-result-format', matchType));
-        const sides = [result.cardinal_entry, result.silver_entry]
-          .map(value => normalizeLegacyEntry(value, selected.edition_year))
-          .filter(Boolean)
-          .join(' vs ');
-        row.append(node('strong', '', sides || normalizeLegacyEntry(result.label, selected.edition_year)));
+        row.append(node('strong', '', legacyMatchupText(result, selected.edition_year)));
         row.append(node('span', '', legacyResultText(result, selected.edition_year)));
         row.append(node(
           'span',

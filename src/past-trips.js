@@ -1,5 +1,5 @@
-import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js?v=public-preview-1';
-import { renderLegacyArchive } from './legacy.js?v=legacy-scorecards-4';
+import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js?v=membership-refresh-2';
+import { renderLegacyArchive } from './legacy.js?v=pimentel-correction-1';
 
 const target = {
   timeline: document.querySelector('#legacyTimeline'),
