@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createMutationGate, easternDateTimeToIso, filterActiveMemberships, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions, tournamentTeamLabel } from '../src/admin-helpers.js';
+import { applyMemberCardVisibility, createMutationGate, easternDateTimeToIso, filterActiveMemberships, moveFocusFromFilteredCard, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions, tournamentTeamLabel } from '../src/admin-helpers.js';
 
 const html = await readFile(new URL('../admin.html', import.meta.url), 'utf8');
 const adminScript = await readFile(new URL('../src/admin.js', import.meta.url), 'utf8');
@@ -35,19 +35,23 @@ test('admin portal exposes planning, rules, and commentary controls', () => {
 test('membership mutation gate keeps the roster inert until every overlapping save settles', () => {
   const roster = { inert: false };
   const gate = createMutationGate(roster);
+  const idleStates = [];
 
   gate.begin();
   gate.begin();
+  gate.whenIdle(() => idleStates.push({ active: gate.active, inert: roster.inert }));
   assert.equal(gate.active, true);
   assert.equal(roster.inert, true);
 
   gate.end();
   assert.equal(gate.active, true);
   assert.equal(roster.inert, true);
+  assert.deepEqual(idleStates, []);
 
   gate.end();
   assert.equal(gate.active, false);
   assert.equal(roster.inert, false);
+  assert.deepEqual(idleStates, [{ active: false, inert: false }]);
 });
 
 test('active-member roster filters by name, team, and role while preserving alphabetical order', () => {
@@ -65,6 +69,29 @@ test('active-member roster filters by name, team, and role while preserving alph
   assert.deepEqual(filterActiveMemberships(memberships, { role: 'admin' }).map(item => item.user_id), ['zoe']);
   assert.deepEqual(filterActiveMemberships(memberships, { search: 'zo', team: 'silver', role: 'admin' }).map(item => item.user_id), ['zoe']);
   assert.deepEqual(memberships.map(item => item.user_id), ['zoe', 'alice', 'bob', 'pending'], 'filtering does not reorder the authoritative roster');
+});
+
+test('card filtering preserves unsaved input nodes and moves focus from a newly hidden card', () => {
+  const unsavedHandicap = { value: '12.3' };
+  const cards = [
+    { dataset: { memberId: 'alice' }, hidden: false, handicapInput: unsavedHandicap },
+    { dataset: { memberId: 'bob' }, hidden: false, handicapInput: { value: '8.0' } },
+  ];
+  const fallback = {
+    calls: [],
+    focus(options) { this.calls.push(options); },
+  };
+
+  applyMemberCardVisibility(cards, new Set(['bob']));
+
+  assert.equal(cards[0].hidden, true);
+  assert.equal(cards[1].hidden, false);
+  assert.equal(cards[0].handicapInput, unsavedHandicap);
+  assert.equal(cards[0].handicapInput.value, '12.3');
+  assert.equal(moveFocusFromFilteredCard(cards[0], fallback), true);
+  assert.deepEqual(fallback.calls, [{ preventScroll: true }]);
+  assert.equal(moveFocusFromFilteredCard(cards[1], fallback), false);
+  assert.equal(fallback.calls.length, 1);
 });
 
 test('only supported active matches can enter the finalization workflow', async () => {
@@ -99,8 +126,8 @@ test('segment player selection shows tournament teams and derives the scoring si
   assert.equal(segmentPlayerFromMembership(inactive, 4), null);
   assert.doesNotMatch(adminScript, /Match side|data-side-select|Blue side|White side/);
   assert.match(adminScript, /option\.disabled = disabled/);
-  assert.match(html, /src="src\/admin\.js\?v=member-roster-grid-1"/);
-  assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=member-roster-grid-1'/);
+  assert.match(html, /src="src\/admin\.js\?v=production-readiness-1"/);
+  assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=production-readiness-1'/);
 });
 
 test('planner options refresh team labels and preserve only valid selections after roster changes', () => {

@@ -213,7 +213,7 @@ test('Legacy admin renders final-score reconciliation and blocks an invalid conf
 
 test('Legacy admin cache-busts each changed browser dependency', () => {
   assert.match(adminHtml, /href="admin\.css\?v=member-roster-grid-1"/);
-  assert.match(adminHtml, /src="src\/admin\.js\?v=member-roster-grid-1"/);
+  assert.match(adminHtml, /src="src\/admin\.js\?v=production-readiness-1"/);
   assert.match(adminScript, /from '\.\/supabase\.js\?v=member-role-1'/);
   assert.match(adminScript, /from '\.\/legacy-ledger\.js\?v=legacy-ledger-2'/);
 });

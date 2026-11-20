@@ -11,6 +11,7 @@ import {
 const root = new URL('../', import.meta.url);
 const workflow = await readFile(new URL('.github/workflows/production.yml', root), 'utf8').catch(() => '');
 const bootstrap = await readFile(new URL('.github/workflows/bootstrap-migration-history.yml', root), 'utf8').catch(() => '');
+const readiness = await readFile(new URL('.github/workflows/deployment-readiness.yml', root), 'utf8').catch(() => '');
 
 function listOutput(local, remote, remoteOnly = []) {
   const rows = local.map((version, index) => `   \`${version}\` | \`${remote[index] ?? ' '}\` | \`2026-01-01\``);
@@ -39,15 +40,17 @@ test('production mutation paths are serialized, exact-project-scoped, and use st
   assert.doesNotMatch(`${workflow}\n${bootstrap}`, /SUPABASE_(?:ACCESS_TOKEN|DB_PASSWORD):\s*[^$\s]/);
   assert.doesNotMatch(`${workflow}\n${bootstrap}`, /SUPABASE_DB_PASSWORD/);
   const patDeclaration = /SUPABASE_ACCESS_TOKEN:\s*\$\{\{ secrets\.SUPABASE_ACCESS_TOKEN \}\}/g;
-  assert.equal([...workflow.matchAll(patDeclaration)].length, 5);
+  assert.equal([...workflow.matchAll(patDeclaration)].length, 6);
   assert.equal([...bootstrap.matchAll(patDeclaration)].length, 3);
+  assert.equal([...readiness.matchAll(patDeclaration)].length, 1);
 });
 
 test('all production actions and the Supabase CLI are pinned', () => {
-  const combined = `${workflow}\n${bootstrap}`;
+  const combined = `${workflow}\n${bootstrap}\n${readiness}`;
   assert.doesNotMatch(combined, /uses:\s*[^\s]+@v\d|version:\s*latest/);
-  assert.match(combined, /actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/);
-  assert.match(combined, /supabase\/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb[\s\S]*version: 3\.2\.0/);
+  assert.match(combined, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
+  assert.match(combined, /supabase\/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13[\s\S]*version: 3\.2\.0/);
+  assert.doesNotMatch(combined, /actions\/checkout@11d5960a326750d5838078e36cf38b85af677262|supabase\/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb/);
 });
 
 test('bootstrap is main-only, confirmation-gated, and repairs exactly 001-028 without replaying SQL', () => {
@@ -93,6 +96,26 @@ test('migration history parser rejects incomplete, divergent, and unexpected his
 
 test('production verifies a valid prefix before push and an exact history afterward', () => {
   assert.match(workflow, /migration list[\s\S]*verify-migration-history\.mjs prefix[\s\S]*db push[\s\S]*--dry-run[\s\S]*db push[\s\S]*--yes[\s\S]*migration list[\s\S]*verify-migration-history\.mjs complete/);
+});
+
+test('production checks Edge Function read access before any database mutation', () => {
+  assert.match(
+    workflow,
+    /functions list --remote="\$PROJECT_REF"[\s\S]*verify-migration-history\.mjs prefix[\s\S]*db push[\s\S]*--dry-run[\s\S]*db push[\s\S]*--yes/,
+  );
+});
+
+test('daily deployment readiness reports expiring or under-scoped credentials without mutating production', () => {
+  assert.match(readiness, /schedule:\s*[\s\S]*cron:\s*['"]0 13 \* \* \*['"]/);
+  assert.match(readiness, /workflow_dispatch:/);
+  assert.match(readiness, /environment: production/);
+  assert.match(readiness, /SUPABASE_ACCESS_TOKEN_EXPIRES_ON/);
+  assert.match(readiness, /functions list --remote="\$PROJECT_REF"/);
+  assert.match(readiness, /migration list --remote="\$PROJECT_REF"/);
+  assert.match(readiness, /issues: write[\s\S]*gh issue/);
+  assert.ok(readiness.includes('gh issue list --search "\\"$title\\" in:title" --state all'));
+  assert.doesNotMatch(readiness, /gh issue list --state all --limit 100/);
+  assert.doesNotMatch(readiness, /db push|functions deploy|migration repair/);
 });
 
 test('production deploys the commentary Edge Function after migration verification and before Pages build', () => {
