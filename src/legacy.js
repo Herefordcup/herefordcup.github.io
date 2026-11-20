@@ -22,6 +22,26 @@ function recordedNumber(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+export function normalizeLegacyText(value) {
+  return String(value ?? '')
+    .replace(/ΓÇ[ôö]|┬╖|[–—·]/g, ' - ')
+    .replace(/\s+-\s+/g, ' - ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+export function normalizeLegacyEntry(value, editionYear) {
+  const text = normalizeLegacyText(value);
+  if (Number(editionYear) !== 2024) return text;
+  return text
+    .replace(/\bnames?\s+not\s+listed\b/gi, 'TBD')
+    .replace(/\bnot\s+listed\b/gi, 'TBD')
+    .replace(/(^|[\s/])\?(?=$|[\s/),])/g, '$1TBD')
+    .replace(/\?/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 export function legacyOutcome(edition = {}) {
   if (edition.winner_name) {
     return { label: 'CHAMPION', title: edition.winner_name, score: edition.final_score || null };
@@ -52,7 +72,7 @@ export function groupLegacyResults(results = []) {
     .filter(result => result.public_visible !== false && result.event_group?.trim() !== 'Reconciliation')
     .sort((left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0));
   for (const result of ordered) {
-    const name = result.event_group?.trim() || 'Other results';
+    const name = normalizeLegacyText(result.event_group) || 'Other results';
     if (!groups.has(name)) {
       groups.set(name, {
         name,
@@ -84,15 +104,15 @@ function pointsText(value) {
   return recordedNumber(value) ? String(value) : '—';
 }
 
-export function legacyResultText(result = {}) {
+export function legacyResultText(result = {}, editionYear) {
   if (!recordedNumber(result.cardinal_points) || !recordedNumber(result.silver_points)) {
     return 'Result not recorded';
   }
   if (result.cardinal_points > result.silver_points) {
-    return `${result.cardinal_entry || 'Blue Team'} won`;
+    return `${normalizeLegacyEntry(result.cardinal_entry, editionYear) || 'Blue Team'} won`;
   }
   if (result.silver_points > result.cardinal_points) {
-    return `${result.silver_entry || 'White Team'} won`;
+    return `${normalizeLegacyEntry(result.silver_entry, editionYear) || 'White Team'} won`;
   }
   if (result.cardinal_points === 0) return 'No points awarded';
   return 'Points split';
@@ -154,7 +174,7 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
       const winner = node('div', 'legacy-winner');
       winner.append(node('small', '', outcome.label));
       winner.append(node('strong', '', outcome.title));
-      if (outcome.score) winner.append(node('span', '', outcome.score));
+      if (outcome.score) winner.append(node('span', '', normalizeLegacyText(outcome.score)));
       details.append(winner);
     } else {
       details.append(node('p', 'legacy-pending', selected.status === 'planned'
@@ -169,22 +189,25 @@ export function renderLegacyArchive({ timeline, details, gallery, editions, phot
       const groupSummary = node('summary');
       groupSummary.append(node('span', '', group.name));
       const groupMeta = group.hasPoints
-        ? `Blue ${pointsText(group.bluePoints)} · White ${pointsText(group.whitePoints)}`
+        ? `Blue ${pointsText(group.bluePoints)} - White ${pointsText(group.whitePoints)}`
         : `${group.results.length} matches`;
       groupSummary.append(node('small', '', groupMeta));
       disclosure.append(groupSummary);
       const list = node('div', 'legacy-results');
       for (const result of group.results) {
         const row = node('article');
-        const matchType = result.format_label || group.name;
+        const matchType = normalizeLegacyText(result.format_label || group.name);
         row.append(node('small', 'legacy-result-format', matchType));
-        const sides = [result.cardinal_entry, result.silver_entry].filter(Boolean).join(' vs ');
-        row.append(node('strong', '', sides || result.label));
-        row.append(node('span', '', legacyResultText(result)));
+        const sides = [result.cardinal_entry, result.silver_entry]
+          .map(value => normalizeLegacyEntry(value, selected.edition_year))
+          .filter(Boolean)
+          .join(' vs ');
+        row.append(node('strong', '', sides || normalizeLegacyEntry(result.label, selected.edition_year)));
+        row.append(node('span', '', legacyResultText(result, selected.edition_year)));
         row.append(node(
           'span',
           'legacy-result-points',
-          `Blue ${pointsText(result.cardinal_points)} · White ${pointsText(result.silver_points)}`,
+          `Blue ${pointsText(result.cardinal_points)} - White ${pointsText(result.silver_points)}`,
         ));
         list.append(row);
       }

@@ -5,12 +5,14 @@ import { readFile } from 'node:fs/promises';
 const ledgerModule = await import('../src/legacy-ledger.js').catch(() => ({}));
 const { summarizeLegacyLedger } = ledgerModule;
 const legacyModule = await import('../src/legacy.js').catch(() => ({}));
-const { groupLegacyResults, legacyOutcome, legacyResultText } = legacyModule;
+const { groupLegacyResults, legacyOutcome, legacyResultText, normalizeLegacyText, normalizeLegacyEntry } = legacyModule;
 const root = new URL('../', import.meta.url);
 const migrationUrl = new URL('supabase/migrations/025_legacy_scoring_ledger.sql', root);
 const migrationSql = await readFile(migrationUrl, 'utf8').catch(() => '');
 const scorecardMigrationUrl = new URL('supabase/migrations/028_legacy_scorecards.sql', root);
 const scorecardMigrationSql = await readFile(scorecardMigrationUrl, 'utf8').catch(() => '');
+const textCleanupMigrationUrl = new URL('supabase/migrations/029_legacy_text_cleanup.sql', root);
+const textCleanupMigrationSql = await readFile(textCleanupMigrationUrl, 'utf8').catch(() => '');
 
 function requiresColumn(table, column, definition) {
   assert.match(
@@ -260,4 +262,24 @@ test('legacyResultText reports only the recorded winner or split without source 
   assert.equal(legacyResultText({ cardinal_points: 1, silver_points: 1 }), 'Points split');
   assert.equal(legacyResultText({ cardinal_points: 0, silver_points: 0 }), 'No points awarded');
   assert.equal(legacyResultText({ cardinal_points: null, silver_points: null }), 'Result not recorded');
+});
+
+test('Legacy display text removes mojibake punctuation and normalizes missing Innisbrook names', () => {
+  assert.equal(normalizeLegacyText('Round 2 ΓÇö 2v2 Scramble'), 'Round 2 - 2v2 Scramble');
+  assert.equal(normalizeLegacyText('2v2 Scramble ┬╖ Front 9'), '2v2 Scramble - Front 9');
+  assert.equal(normalizeLegacyText('Blue 18 – White 23'), 'Blue 18 - White 23');
+  assert.equal(normalizeLegacyEntry('Blue: Carl / Troy?', 2024), 'Blue: Carl / Troy');
+  assert.equal(normalizeLegacyEntry('White: Radway / ?', 2024), 'White: Radway / TBD');
+  assert.equal(normalizeLegacyEntry('White: Team White (names not listed)', 2024), 'White: Team White (TBD)');
+  assert.equal(normalizeLegacyEntry('White: not listed', 2024), 'White: TBD');
+  assert.equal(normalizeLegacyEntry('Long Drive - Lukas?', 2025), 'Long Drive - Lukas?');
+});
+
+test('migration 029 repairs persisted punctuation and Innisbrook placeholders without deleting source metadata', () => {
+  assert.match(textCleanupMigrationSql, /final_score = 'Blue 18 - White 23'[\s\S]*edition_year = 2026/i);
+  assert.match(textCleanupMigrationSql, /chr\(915\)[\s\S]*chr\(199\)[\s\S]*chr\(246\)/i);
+  assert.match(textCleanupMigrationSql, /chr\(9516\)[\s\S]*chr\(9558\)/i);
+  assert.match(textCleanupMigrationSql, /Innisbrook:[\s\S]*Troy\?[\s\S]*TBD/i);
+  assert.match(textCleanupMigrationSql, /where edition_year = 2024/i);
+  assert.doesNotMatch(textCleanupMigrationSql, /delete from|source_note\s*=|source_notes\s*=/i);
 });

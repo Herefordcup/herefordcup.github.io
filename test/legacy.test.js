@@ -44,9 +44,9 @@ test('uploaded Past Trips photos open in an accessible full-view dialog', () => 
   assert.match(legacyScript, /View .* full size/);
   assert.match(pastTripsScript, /showModal\(\)/);
   assert.match(pastTripsScript, /legacyPhotoDialog\.close\(\)/);
-  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-scorecards-2"/);
-  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-scorecards-2"/);
-  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-scorecards-2'/);
+  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-scorecards-3"/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-scorecards-3"/);
+  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-scorecards-3'/);
 });
 
 test('legacy schema is publicly readable, admin-write-only, and seeds the known trips without fabricated winners', async () => {
@@ -234,18 +234,18 @@ test('Past Trips renders every trip with the same simple matchup and points form
   }
   assert.doesNotMatch(legacyScript, /confidenceLabel|source_notes|source_note|summarizeLegacyLedger/);
   assert.doesNotMatch(legacyScript, /selected\.story|result\.result/);
-  assert.match(legacyScript, /legacyResultText\(result\)/);
+  assert.match(legacyScript, /legacyResultText\(result, selected\.edition_year\)/);
   assert.doesNotMatch(legacyScript, /innerHTML/);
 });
 
 test('Past Trips cache-busts every changed scorecard dependency', async () => {
-  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-scorecards-2"/);
-  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-scorecards-2"/);
+  assert.match(pastTripsHtml, /href="past-trips\.css\?v=legacy-scorecards-3"/);
+  assert.match(pastTripsHtml, /src="src\/past-trips\.js\?v=legacy-scorecards-3"/);
   assert.match(pastTripsScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
-  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-scorecards-2'/);
-  assert.match(indexHtml, /src="src\/app\.js\?v=public-preview-1"/);
+  assert.match(pastTripsScript, /from '\.\/legacy\.js\?v=legacy-scorecards-3'/);
+  assert.match(indexHtml, /src="src\/app\.js\?v=legacy-text-1"/);
   assert.match(appScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
-  assert.match(appScript, /from '\.\/legacy\.js\?v=legacy-tie-1'/);
+  assert.match(appScript, /from '\.\/legacy\.js\?v=legacy-text-1'/);
   assert.match(portalHtml, /src="src\/portal\.js\?v=public-preview-1"/);
   const portalScript = await readFile(new URL('src/portal.js', root), 'utf8');
   assert.match(portalScript, /from '\.\/supabase\.js\?v=public-preview-1'/);
