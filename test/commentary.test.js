@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { composeCommentary, phraseIdsForTone } from '../src/commentary.js';
+import { commentaryPhrasesForTone, composeCommentary, phraseIdsForTone } from '../src/commentary.js';
 
 const commentaryModuleUrl = new URL('../src/commentary.js', import.meta.url);
 const edgeFunctionUrl = new URL('../supabase/functions/generate-match-commentary/index.ts', import.meta.url);
@@ -9,6 +9,7 @@ const autoPublicationMigrationUrl = new URL('../supabase/migrations/007_auto_com
 const commentaryLifecycleMigrationUrl = new URL('../supabase/migrations/012_commentary_and_legacy_hardening.sql', import.meta.url);
 const commentaryBanterMigrationUrl = new URL('../supabase/migrations/024_commentary_banter.sql', import.meta.url);
 const ruthlessDefaultMigrationUrl = new URL('../supabase/migrations/026_ruthless_commentary_default.sql', import.meta.url);
+const savageDefaultMigrationUrl = new URL('../supabase/migrations/036_savage_commentary_default.sql', import.meta.url);
 const adminHtmlUrl = new URL('../admin.html', import.meta.url);
 const supabaseClientUrl = new URL('../src/supabase.js', import.meta.url);
 const adminUrl = new URL('../src/admin.js', import.meta.url);
@@ -16,6 +17,7 @@ const adminUrl = new URL('../src/admin.js', import.meta.url);
 test('commentary composition accepts only server-owned tone phrase identifiers', () => {
   assert.ok(phraseIdsForTone('playful').length >= 6);
   assert.ok(phraseIdsForTone('ruthless').length >= 6);
+  assert.ok(phraseIdsForTone('savage').length >= 6);
   assert.equal(
     composeCommentary('Blue wins 2 & 1', 'playful', 'playful_excuses'),
     'Blue wins 2 & 1. The winners get bragging rights; the losers get first crack at the excuses.',
@@ -26,17 +28,59 @@ test('commentary composition accepts only server-owned tone phrase identifiers',
   );
 });
 
-test('Ruthless is the default commentary tone without overwriting saved choices', async () => {
-  const [sql, html, adminSource] = await Promise.all([
-    readFile(ruthlessDefaultMigrationUrl, 'utf8').catch(() => ''),
-    readFile(adminHtmlUrl, 'utf8'),
-    readFile(adminUrl, 'utf8'),
+test('Savage commentary uses scorecard-grounded roasting from the server allowlist', () => {
+  assert.equal(
+    composeCommentary('Blue wins 5 & 4', 'savage', 'savage_competition_left'),
+    'Blue wins 5 & 4. The losing side was still on the scorecard, but the competition had already left.',
+  );
+  assert.equal(
+    composeCommentary('Match Halved', 'savage', 'savage_halved_afternoon'),
+    'Match Halved. Nobody lost, nobody won, and the scorecard would like its afternoon back.',
+  );
+});
+
+test('Savage phrase identifiers and text stay identical in the browser, Edge Function, and database', async () => {
+  const [edgeSource, sql] = await Promise.all([
+    readFile(edgeFunctionUrl, 'utf8'),
+    readFile(savageDefaultMigrationUrl, 'utf8'),
   ]);
+  const normalizedEdgeSource = edgeSource.replaceAll('\r\n', '\n');
+  const edgeBlock = /savage:\s*\{([\s\S]*?)\n\s*\},\n\};/.exec(normalizedEdgeSource)?.[1] ?? '';
+  const edgePhrases = Object.fromEntries(
+    [...edgeBlock.matchAll(/^\s*(savage_[a-z_]+): '([^']+)',?$/gm)].map(match => [match[1], match[2]]),
+  );
+  const databasePhrases = Object.fromEntries(
+    [...sql.matchAll(/when 'savage:(savage_[a-z_]+)' then '([^']+)'/g)].map(match => [match[1], match[2]]),
+  );
+  const browserPhrases = commentaryPhrasesForTone('savage');
+  assert.equal(Object.keys(browserPhrases).length, 8);
+  assert.deepEqual(edgePhrases, browserPhrases);
+  assert.deepEqual(databasePhrases, browserPhrases);
+});
+
+test('Ruthless migration originally changed only the default', async () => {
+  const sql = await readFile(ruthlessDefaultMigrationUrl, 'utf8');
   assert.match(sql, /alter table public\.commentary_settings[\s\S]*alter column tone set default 'ruthless'/i);
   assert.doesNotMatch(sql, /update public\.commentary_settings[\s\S]*set tone/i);
-  assert.match(html, /<option value="ruthless" selected>Ruthless<\/option>/i);
-  assert.doesNotMatch(html, /<option value="playful" selected>Playful<\/option>/i);
-  assert.match(adminSource, /settings\?\.tone \?\? 'ruthless'/);
+});
+
+test('Savage becomes the default commentary tone without overwriting saved choices', async () => {
+  const [sql, html, adminSource, edgeSource] = await Promise.all([
+    readFile(savageDefaultMigrationUrl, 'utf8').catch(() => ''),
+    readFile(adminHtmlUrl, 'utf8'),
+    readFile(adminUrl, 'utf8'),
+    readFile(edgeFunctionUrl, 'utf8'),
+  ]);
+  assert.match(sql, /alter table public\.commentary_settings[\s\S]*alter column tone set default 'savage'/i);
+  assert.match(sql, /check \(tone in \('clean', 'playful', 'ruthless', 'savage'\)\)/i);
+  assert.doesNotMatch(sql, /update public\.commentary_settings[\s\S]*set tone/i);
+  assert.match(sql, /savage:savage_competition_left[\s\S]*competition had already left/i);
+  assert.match(sql, /savage:savage_halved_afternoon[\s\S]*scorecard would like its afternoon back/i);
+  assert.match(html, /<option value="savage" selected>Savage<\/option>/i);
+  assert.doesNotMatch(html, /<option value="ruthless" selected>Ruthless<\/option>/i);
+  assert.match(adminSource, /settings\?\.tone \?\? 'savage'/);
+  assert.match(edgeSource, /savage_competition_left:[\s\S]*competition had already left/i);
+  assert.match(edgeSource, /savage_halved_afternoon:[\s\S]*scorecard would like its afternoon back/i);
 });
 
 test('server-owned banter avoids invented play and course details', async () => {
@@ -195,6 +239,6 @@ test('admin entrypoint cache-busts both changed modules', async () => {
     readFile(new URL('../admin.html', import.meta.url), 'utf8'),
     readFile(adminUrl, 'utf8'),
   ]);
-  assert.match(html, /src\/admin\.js\?v=member-role-1/);
+  assert.match(html, /src\/admin\.js\?v=savage-commentary-1/);
   assert.match(adminSource, /from '\.\/supabase\.js\?v=member-role-1'/);
 });

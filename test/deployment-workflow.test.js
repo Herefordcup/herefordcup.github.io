@@ -39,7 +39,7 @@ test('production mutation paths are serialized, exact-project-scoped, and use st
   assert.doesNotMatch(`${workflow}\n${bootstrap}`, /SUPABASE_(?:ACCESS_TOKEN|DB_PASSWORD):\s*[^$\s]/);
   assert.doesNotMatch(`${workflow}\n${bootstrap}`, /SUPABASE_DB_PASSWORD/);
   const patDeclaration = /SUPABASE_ACCESS_TOKEN:\s*\$\{\{ secrets\.SUPABASE_ACCESS_TOKEN \}\}/g;
-  assert.equal([...workflow.matchAll(patDeclaration)].length, 4);
+  assert.equal([...workflow.matchAll(patDeclaration)].length, 5);
   assert.equal([...bootstrap.matchAll(patDeclaration)].length, 3);
 });
 
@@ -64,7 +64,7 @@ test('bootstrap is main-only, confirmation-gated, and repairs exactly 001-028 wi
 
 test('migration history parser rejects incomplete, divergent, and unexpected histories', () => {
   const local = localMigrationVersions();
-  assert.deepEqual(local, [...BASELINE_VERSIONS, '029', '030', '031', '032', '033', '034', '035']);
+  assert.deepEqual(local, [...BASELINE_VERSIONS, '029', '030', '031', '032', '033', '034', '035', '036']);
   const empty = listOutput(local, []);
   const baseline = listOutput(local, BASELINE_VERSIONS);
   const complete = listOutput(local, local);
@@ -93,4 +93,11 @@ test('migration history parser rejects incomplete, divergent, and unexpected his
 
 test('production verifies a valid prefix before push and an exact history afterward', () => {
   assert.match(workflow, /migration list[\s\S]*verify-migration-history\.mjs prefix[\s\S]*db push[\s\S]*--dry-run[\s\S]*db push[\s\S]*--yes[\s\S]*migration list[\s\S]*verify-migration-history\.mjs complete/);
+});
+
+test('production deploys the commentary Edge Function after migration verification and before Pages build', () => {
+  assert.match(
+    workflow,
+    /verify-migration-history\.mjs complete[\s\S]*functions deploy generate-match-commentary --remote="\$PROJECT_REF" --use-api --yes[\s\S]*build:\s*[\s\S]*needs: migrate/,
+  );
 });

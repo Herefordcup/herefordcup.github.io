@@ -82,7 +82,7 @@ test('segment player selection shows tournament teams and derives the scoring si
   assert.equal(segmentPlayerFromMembership(inactive, 4), null);
   assert.doesNotMatch(adminScript, /Match side|data-side-select|Blue side|White side/);
   assert.match(adminScript, /option\.disabled = disabled/);
-  assert.match(html, /src="src\/admin\.js\?v=member-role-1"/);
+  assert.match(html, /src="src\/admin\.js\?v=savage-commentary-1"/);
   assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=member-role-1'/);
 });
 

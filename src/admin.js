@@ -739,7 +739,7 @@ function populateCorrectionRounds(matchId) {
 function hydrateCommentarySettings() {
   const settings = adminData.settings.find(item => item.tournament_id === commentaryTournament.value);
   commentarySettingsForm.elements.enabled.checked = settings?.enabled ?? false;
-  commentarySettingsForm.elements.tone.value = settings?.tone ?? 'ruthless';
+  commentarySettingsForm.elements.tone.value = settings?.tone ?? 'savage';
   commentarySettingsForm.elements.timing.value = settings?.timing ?? 'post_match';
   commentarySettingsForm.elements.maxCharacters.value = settings?.max_characters ?? 600;
 }
