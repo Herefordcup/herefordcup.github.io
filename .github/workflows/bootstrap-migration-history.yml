@@ -1,0 +1,64 @@
+name: Bootstrap production migration history
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type MARK_001_TO_028_APPLIED after independently verifying the production schema
+        required: true
+        type: string
+
+concurrency:
+  group: production-database
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Require protected main and exact confirmation
+        env:
+          CONFIRMATION: ${{ github.event.inputs.confirmation }}
+          PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$CONFIRMATION" = "MARK_001_TO_028_APPLIED"
+          test "$PROJECT_REF" = "mqulycovrogurvmjcimt"
+      - name: Check out protected main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: refs/heads/main
+      - name: Install the reviewed Supabase CLI
+        uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb
+        with:
+          version: 3.2.0
+      - name: Require empty production migration history before bootstrap
+        env:
+          PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          history="$(supabase migration list --remote="$PROJECT_REF")"
+          printf '%s\n' "$history"
+          printf '%s\n' "$history" | node scripts/verify-migration-history.mjs empty
+      - name: Record only the already-applied 001-028 baseline without replaying SQL
+        env:
+          PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: >-
+          supabase migration repair
+          001 002 003 004 005 006 007 008 009 010 011 012 013 014
+          015 016 017 018 019 020 021 022 023 024 025 026 027 028
+          --status applied
+          --yes
+          --remote="$PROJECT_REF"
+      - name: Verify remote history is exactly 001-028 and excludes 029
+        env:
+          PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          history="$(supabase migration list --remote="$PROJECT_REF")"
+          printf '%s\n' "$history"
+          printf '%s\n' "$history" | node scripts/verify-migration-history.mjs baseline
