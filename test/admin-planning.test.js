@@ -64,7 +64,7 @@ test('segment player selection shows tournament teams and derives the scoring si
   assert.equal(segmentPlayerFromMembership(inactive, 4), null);
   assert.doesNotMatch(adminScript, /Match side|data-side-select|Blue side|White side/);
   assert.match(adminScript, /option\.disabled = disabled/);
-  assert.match(html, /src="src\/admin\.js\?v=automatic-segment-sides-1"/);
+  assert.match(html, /src="src\/admin\.js\?v=automatic-team-save-1"/);
   assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=automatic-segment-sides-1'/);
 });
 

@@ -391,41 +391,37 @@ function renderMemberships() {
           new Option('White', 'silver'),
         );
         teamSelect.value = membership.team ?? '';
-        teamSelect.addEventListener('change', () => {
+        teamSelect.addEventListener('change', async () => {
+          const previousTeam = membership.team ?? '';
+          const requestedTeam = teamSelect.value;
+          if (requestedTeam === previousTeam) return;
           teamSelect.dataset.dirty = 'true';
-        });
-        teamSelectLabel.append(teamSelect);
-        const saveTeam = document.createElement('button');
-        saveTeam.type = 'button';
-        saveTeam.className = 'button';
-        saveTeam.textContent = 'Save team';
-        saveTeam.addEventListener('click', async () => {
           membershipMutationCount += 1;
           try {
-            saveTeam.disabled = true;
             teamSelect.disabled = true;
             setMessage(membershipMessage, `Saving ${name.textContent}'s team…`);
             const saved = await setTournamentMemberTeam({
               tournamentId,
               userId: membership.user_id,
-              team: teamSelect.value,
+              team: requestedTeam,
             });
             membership.team = saved.team;
             refreshSegmentPlayerOptions();
             teamSelect.value = saved.team ?? '';
-            teamSelect.dataset.dirty = 'false';
             const savedTeamLabel = saved.team === 'cardinal' ? 'Blue' : saved.team === 'silver' ? 'White' : 'Team unassigned';
             details.textContent = `${membership.role} · ${savedTeamLabel}`;
             setMessage(membershipMessage, `${name.textContent}'s team is now ${savedTeamLabel}.`);
           } catch (error) {
+            teamSelect.value = previousTeam;
             setMessage(membershipMessage, error.message, true);
           } finally {
+            teamSelect.dataset.dirty = 'false';
             membershipMutationCount -= 1;
-            saveTeam.disabled = false;
             teamSelect.disabled = false;
           }
         });
-        teamControls.append(teamSelectLabel, saveTeam);
+        teamSelectLabel.append(teamSelect);
+        teamControls.append(teamSelectLabel);
         actions.append(teamControls);
 
         const handicapLabel = document.createElement('label');
