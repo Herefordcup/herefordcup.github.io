@@ -1,5 +1,5 @@
 import { validateSegments } from './formats.js';
-import { easternDateTimeToIso, optionalNumber } from './admin-helpers.js';
+import { easternDateTimeToIso, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions } from './admin-helpers.js?v=automatic-segment-sides-1';
 import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
 import { deriveSegmentResult } from './match-results.js?v=automatic-results-2';
 import {
@@ -83,6 +83,22 @@ function membersForTournament(tournamentId) {
   return adminData.memberships.filter(membership => membership.tournament_id === tournamentId && membership.status === 'active');
 }
 
+function populateSegmentPlayerSelect(playerSelect, selectedUserId = playerSelect.value) {
+  const state = segmentPlayerOptions(membersForTournament(activeTournamentId()), selectedUserId);
+  playerSelect.replaceChildren(...state.options.map(({ value, label, disabled }) => {
+    const option = new Option(label, value);
+    option.disabled = disabled;
+    return option;
+  }));
+  playerSelect.value = state.selectedUserId;
+}
+
+function refreshSegmentPlayerOptions() {
+  for (const playerSelect of segmentRows.querySelectorAll('[data-player-select]')) {
+    populateSegmentPlayerSelect(playerSelect);
+  }
+}
+
 function createPlayerSlot(slotNumber) {
   const wrapper = document.createElement('div');
   wrapper.className = 'player-slot';
@@ -90,19 +106,9 @@ function createPlayerSlot(slotNumber) {
   playerLabel.textContent = `Player ${slotNumber}`;
   const playerSelect = document.createElement('select');
   playerSelect.dataset.playerSelect = 'true';
-  playerSelect.append(new Option('Unassigned', ''));
-  for (const membership of membersForTournament(activeTournamentId())) {
-    const name = membership.profiles?.display_name || 'Player';
-    playerSelect.append(new Option(`${name} · ${membership.team || 'No team'}`, membership.user_id));
-  }
+  populateSegmentPlayerSelect(playerSelect, '');
   playerLabel.append(playerSelect);
-  const sideLabel = document.createElement('label');
-  sideLabel.textContent = 'Match side';
-  const sideSelect = document.createElement('select');
-  sideSelect.dataset.sideSelect = 'true';
-  sideSelect.append(new Option('Blue side', 'cardinal'), new Option('White side', 'silver'));
-  sideLabel.append(sideSelect);
-  wrapper.append(playerLabel, sideLabel);
+  wrapper.append(playerLabel);
   return wrapper;
 }
 
@@ -135,7 +141,8 @@ function collectSegments() {
       const userId = slot.querySelector('[data-player-select]').value;
       if (!userId) return [];
       const membership = adminData.memberships.find(item => item.user_id === userId && item.tournament_id === activeTournamentId());
-      return [{ userId, team: membership?.team, side: slot.querySelector('[data-side-select]').value, playingOrder: playingIndex + 1 }];
+      const player = segmentPlayerFromMembership(membership, playingIndex + 1);
+      return player ? [player] : [];
     });
     return {
       segmentNumber: index + 1,
@@ -348,6 +355,7 @@ function renderMemberships() {
   if (!tournamentId) {
     for (const container of Object.values(groups)) container.replaceChildren();
     setMessage(membershipMessage, 'No current tournament is available for membership management.', true);
+    refreshSegmentPlayerOptions();
     return;
   }
   for (const [status, container] of Object.entries(groups)) {
@@ -403,6 +411,7 @@ function renderMemberships() {
               team: teamSelect.value,
             });
             membership.team = saved.team;
+            refreshSegmentPlayerOptions();
             teamSelect.value = saved.team ?? '';
             teamSelect.dataset.dirty = 'false';
             const savedTeamLabel = saved.team === 'cardinal' ? 'Blue' : saved.team === 'silver' ? 'White' : 'Team unassigned';
@@ -557,6 +566,7 @@ function renderMemberships() {
       container.append(card);
     }
   }
+  refreshSegmentPlayerOptions();
 }
 
 async function refreshMembershipRoster() {
@@ -577,6 +587,7 @@ async function refreshMembershipRoster() {
     const freshData = await loadMembershipRosterData();
     adminData.tournaments = freshData.tournaments;
     adminData.memberships = freshData.memberships;
+    refreshSegmentPlayerOptions();
     renderMemberships();
     setMessage(membershipMessage, 'Membership requests refreshed.');
   })();

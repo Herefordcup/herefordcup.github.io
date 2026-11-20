@@ -10,6 +10,7 @@ test('public and administrator interfaces label the teams Blue and White', () =>
   const admin = read('admin.html');
   const app = read('src/app.js');
   const adminScript = read('src/admin.js');
+  const adminHelpers = read('src/admin-helpers.js');
 
   assert.match(index, /<h3>Blue<\/h3>/);
   assert.match(index, /<h3>White<\/h3>/);
@@ -17,8 +18,9 @@ test('public and administrator interfaces label the teams Blue and White', () =>
   assert.match(app, /TEAM BLUE/);
   assert.match(app, /TEAM WHITE/);
   assert.doesNotMatch(app, /wins next hole/);
-  assert.match(adminScript, /new Option\('Blue side', 'cardinal'\)/);
-  assert.match(adminScript, /new Option\('White side', 'silver'\)/);
+  assert.match(adminScript, /segmentPlayerOptions\(membersForTournament\(activeTournamentId\(\)\)/);
+  assert.match(adminHelpers, /team === 'cardinal'\) return 'Blue'/);
+  assert.match(adminHelpers, /team === 'silver'\) return 'White'/);
   assert.match(admin, /Blue entry/);
   assert.match(admin, /White entry/);
 
