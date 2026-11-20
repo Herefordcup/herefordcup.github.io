@@ -216,6 +216,17 @@ export async function setTournamentMemberTeam({ tournamentId, userId, team }) {
   return Array.isArray(data) ? data[0] : data;
 }
 
+export async function setTournamentMemberRole({ tournamentId, userId, role }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('set_tournament_member_role', {
+    target_tournament_id: tournamentId,
+    target_user_id: userId,
+    target_role: role,
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}
+
 export async function setTournamentMemberHandicap({ tournamentId, userId, handicapIndex }) {
   const supabase = await getSupabase();
   const { data, error } = await supabase.rpc('set_tournament_member_handicap', {
