@@ -80,6 +80,37 @@ export function optionalNumber(value) {
   return normalized === '' ? null : Number(normalized);
 }
 
+export function tournamentCompletionReadiness({ tournament, matches = [], editions = [] }) {
+  if (!tournament) return { ready: false, text: 'Select a tournament to review completion readiness.' };
+  const tournamentMatches = matches.filter(match => match.tournament_id === tournament.id);
+  const edition = editions.find(item => item.edition_year === tournament.edition_year);
+  if (tournament.status === 'complete') {
+    const verified = edition?.source_tournament_id === tournament.id && edition.status === 'completed';
+    return verified
+      ? { ready: true, text: 'This tournament is complete. The server will verify the generated archive without changing it.' }
+      : { ready: false, text: 'This completed tournament does not have a matching generated Past Trips archive. Database review is required.' };
+  }
+  if (!tournamentMatches.length) return { ready: false, text: 'At least one planned match is required before completion.' };
+  const unfinished = tournamentMatches.filter(match => match.status !== 'final');
+  if (unfinished.length) return { ready: false, text: `${unfinished.length} of ${tournamentMatches.length} matches still need final results.` };
+  if (edition) {
+    const conflictingArchive = edition.source_tournament_id
+      || edition.status !== 'planned'
+      || edition.legacy_results?.length
+      || edition.winner_name
+      || edition.final_score
+      || edition.expected_points !== null
+      || edition.cardinal_total !== null
+      || edition.silver_total !== null
+      || edition.score_confidence !== 'unresolved';
+    if (conflictingArchive) return { ready: false, text: 'The matching Past Trips edition already contains scoring data or conflicting completion state.' };
+  }
+  return {
+    ready: true,
+    text: `All ${tournamentMatches.length} matches are final. The server will verify the planned Past Trips edition before publishing.`,
+  };
+}
+
 const easternFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/New_York',
   year: 'numeric',

@@ -1,8 +1,9 @@
 import { validateSegments } from './formats.js';
-import { applyMemberCardVisibility, createMutationGate, easternDateTimeToIso, filterActiveMemberships, moveFocusFromFilteredCard, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions } from './admin-helpers.js?v=production-readiness-1';
+import { applyMemberCardVisibility, createMutationGate, easternDateTimeToIso, filterActiveMemberships, moveFocusFromFilteredCard, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions, tournamentCompletionReadiness } from './admin-helpers.js?v=tournament-completion-1';
 import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
 import { deriveSegmentResult } from './match-results.js?v=automatic-results-2';
 import {
+  completeTournamentArchive,
   correctHoleScore,
   denyTournamentMembership,
   deleteTournamentMembership,
@@ -27,7 +28,7 @@ import {
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=member-role-1';
+} from './supabase.js?v=tournament-completion-1';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -48,6 +49,10 @@ const scoreCorrectionDialog = document.querySelector('#scoreCorrectionDialog');
 const resultFinalizationForm = document.querySelector('#resultFinalizationForm');
 const resultMatch = document.querySelector('#resultMatch');
 const resultSegmentRows = document.querySelector('#resultSegmentRows');
+const tournamentCompletionForm = document.querySelector('#tournamentCompletionForm');
+const completionTournament = document.querySelector('#completionTournament');
+const completionReadiness = document.querySelector('#completionReadiness');
+const completionConfirmation = document.querySelector('#completionConfirmation');
 const adminContent = document.querySelector('#adminContent');
 const membershipMessage = document.querySelector('#membershipMessage');
 const membershipManagement = document.querySelector('#membershipManagement');
@@ -755,6 +760,35 @@ function renderRuleEditor(selectedRuleId = '') {
   ruleForm.querySelector('button[type="submit"]').textContent = selectedRule ? 'Update rule' : 'Publish rule';
 }
 
+function completionPhrase(tournament) {
+  return `COMPLETE ${tournament.edition_year} HEREFORD CUP`;
+}
+
+function renderTournamentCompletion() {
+  const selectedId = completionTournament.value;
+  const tournaments = adminData.tournaments.filter(tournament => ['open', 'live', 'complete'].includes(tournament.status));
+  completionTournament.replaceChildren(
+    new Option('Select a tournament', ''),
+    ...tournaments.map(tournament => new Option(`${tournament.name} · ${tournament.edition_year} · ${tournament.status}`, tournament.id)),
+  );
+  completionTournament.value = tournaments.some(tournament => tournament.id === selectedId)
+    ? selectedId
+    : (tournaments.find(tournament => tournament.status !== 'complete')?.id ?? tournaments[0]?.id ?? '');
+  const tournament = tournaments.find(item => item.id === completionTournament.value);
+  const readiness = tournamentCompletionReadiness({
+    tournament,
+    matches: adminData.matches,
+    editions: adminData.legacyEditions,
+  });
+  completionReadiness.textContent = readiness.ready && tournament
+    ? `${readiness.text} Type ${completionPhrase(tournament)} exactly to continue.`
+    : readiness.text;
+  completionConfirmation.placeholder = tournament ? completionPhrase(tournament) : '';
+  const submitButton = tournamentCompletionForm.querySelector('button[type="submit"]');
+  submitButton.textContent = tournament?.status === 'complete' ? 'Verify completed archive' : 'Complete tournament and publish Past Trips';
+  submitButton.disabled = !readiness.ready || completionConfirmation.value.trim() !== (tournament ? completionPhrase(tournament) : '');
+}
+
 function populateAdminChoices() {
   const tournamentSelects = ['#matchTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
   for (const select of tournamentSelects) select.replaceChildren(...adminData.tournaments.map(tournament => new Option(`${tournament.name} · ${tournament.edition_year}`, tournament.id)));
@@ -772,6 +806,7 @@ function populateAdminChoices() {
   );
   populateCorrectionRounds('');
   populateLegacyChoices();
+  renderTournamentCompletion();
 }
 
 function populateCorrectionRounds(matchId) {
@@ -967,6 +1002,44 @@ resultFinalizationForm.addEventListener('submit', async event => {
 
     setMessage(message, 'Match finalized. Cup points and official statistics are now available.');
   } catch (error) { setMessage(message, error.message, true); }
+});
+
+completionTournament.addEventListener('change', () => {
+  completionConfirmation.value = '';
+  renderTournamentCompletion();
+});
+completionConfirmation.addEventListener('input', renderTournamentCompletion);
+tournamentCompletionForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const message = document.querySelector('#completionMessage');
+  const submitButton = tournamentCompletionForm.querySelector('button[type="submit"]');
+  const tournament = adminData.tournaments.find(item => item.id === completionTournament.value);
+  try {
+    if (!tournament) throw new Error('Select a tournament first.');
+    const readiness = tournamentCompletionReadiness({
+      tournament,
+      matches: adminData.matches,
+      editions: adminData.legacyEditions,
+    });
+    if (!readiness.ready) throw new Error(readiness.text);
+    const confirmation = completionConfirmation.value.trim();
+    if (confirmation !== completionPhrase(tournament)) throw new Error('Type the confirmation phrase exactly.');
+    submitButton.disabled = true;
+    setMessage(message, tournament.status === 'complete' ? 'Verifying the completed archive…' : 'Completing tournament and publishing Past Trips…');
+    await completeTournamentArchive(tournament.id);
+    adminData = await loadAdminData();
+    completionConfirmation.value = '';
+    populateAdminChoices();
+    hydrateLegacyEdition();
+    setMessage(message, tournament.status === 'complete'
+      ? 'Completed tournament archive verified without changes.'
+      : 'Tournament completed and Past Trips published.');
+  } catch (error) {
+    setMessage(message, error.message, true);
+  } finally {
+    submitButton.disabled = false;
+    renderTournamentCompletion();
+  }
 });
 
 document.querySelector('#ruleTournament').addEventListener('change', () => renderRuleEditor());
