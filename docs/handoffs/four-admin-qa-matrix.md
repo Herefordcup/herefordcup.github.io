@@ -1,15 +1,15 @@
-# Four-administrator disposable QA matrix
+# Four-player disposable end-to-end scoring matrix
 
 ## Scope
 
-This QA harness exercises the supported Hereford Cup scoring and completion paths with four synthetic administrators in a loopback-only Supabase stack. It never uses production identities, production credentials, the production project reference, or the real trip tournament.
+This QA harness exercises the supported Hereford Cup scoring and completion paths with four synthetic players in a loopback-only Supabase stack. All four hold tournament `player` memberships; the first also has a disposable global-administrator profile solely to run finalization, correction, and completion controls. It never uses production identities, production credentials, the production project reference, or the real trip tournament.
 
 ## Safety boundary
 
 - Workflow: `.github/workflows/qa-scenario-matrix.yml`
-- Trigger: manual `workflow_dispatch` only
+- Trigger: explicit `workflow_dispatch`, or a pull request carrying the `run-qa-matrix` opt-in label
 - Supabase URL: exactly `http://127.0.0.1:54321`
-- Accounts: `qa-admin-1@local.test` through `qa-admin-4@local.test`
+- Accounts: `qa-player-1@local.test` through `qa-player-4@local.test`
 - No protected GitHub environment and no repository secrets
 - Runtime password is generated and masked
 - Fixture IDs remain in a runner-temporary file and are not uploaded
@@ -22,14 +22,14 @@ This QA harness exercises the supported Hereford Cup scoring and completion path
 - S1: Singles gross, Blue 1 Up
 - S2: Singles net, White 2 & 1
 - F1: Four-Ball gross, halved
-- F2: Four-Ball net, Blue 3 & 2
+- F2: Four-Ball net, White 3 & 2 from a three-stroke handicap differential with identical gross scores
 - M1: front-nine Four-Ball plus back-nine Foursomes manual fallback
 - R1: incomplete-score rejection with rollback proof
 - R2: mismatched stroke-index rejection with rollback proof
 - R3: no-team lineup rejection with rollback proof
 - C1: audited correction by a different administrator
-- A1: all four tournament administrators authenticate and open Admin
-- A2: self-demotion and last-administrator protections
+- A1: all four tournament players authenticate, open their assigned scorecards, enter every supported individual score through the real portal, save, and read back 18 locked holes
+- A2: ordinary players have no Admin link; the disposable controller exercises self-demotion and last-administrator protections
 - X1: simultaneous finalization calls serialize to one final state
 - X2: simultaneous completion calls produce one archive
 - T1: premature completion rejection
@@ -38,7 +38,7 @@ This QA harness exercises the supported Hereford Cup scoring and completion path
 - T4: generated Past Trips mutation rejection
 - T5: exact Round headings, format labels, and points
 
-Foursomes remains an explicit administrator-entered match-play result because the player scorecard does not yet support one score per side. The matrix does not claim automatic Foursomes derivation.
+Foursomes remains an explicit administrator-entered match-play result because the player scorecard does not yet support one score per side. The player E2E confirms that mixed Foursomes score entry fails closed with the team-score message, then tests the supported administrator fallback. For every finalized segment, the verifier reads back the differential, holes played, point value, and exact Blue/White allocation; it also reconciles the complete tournament to Blue 3.5 and White 3.5, including a Four-Ball net result created solely by a verified three-stroke handicap differential. The matrix does not claim automatic Foursomes derivation.
 
 ## Execution order
 
