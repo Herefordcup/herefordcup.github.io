@@ -9,6 +9,7 @@ const seedSource = await read('scripts/e2e/seed-scenario-matrix.mjs');
 const browserSource = await read('e2e/four-admin-scenarios.spec.mjs');
 const verificationSource = await read('scripts/e2e/verify-scenario-matrix.mjs');
 const matrixConfig = await read('playwright.matrix.config.mjs');
+const ordinaryPlaywrightConfig = await read('playwright.config.mjs');
 const packageJson = JSON.parse(await read('package.json'));
 
 const productionProjectReference = 'mqulycovrogurvmjcimt';
@@ -57,6 +58,7 @@ test('matrix sources reserve four synthetic administrators and enumerate every s
 
 test('matrix browser configuration is serial and emits no credential-bearing media', () => {
   assert.equal(packageJson.scripts?.['test:e2e:matrix'], 'playwright test --config playwright.matrix.config.mjs');
+  assert.match(ordinaryPlaywrightConfig, /testIgnore: 'four-admin-scenarios\.spec\.mjs'/);
   assert.match(matrixConfig, /workers: 1/);
   assert.match(matrixConfig, /retries: 0/);
   assert.match(matrixConfig, /screenshot: 'off'/);
