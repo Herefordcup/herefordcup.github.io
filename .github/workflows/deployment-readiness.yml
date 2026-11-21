@@ -65,6 +65,7 @@ jobs:
       - name: Maintain the deployment-readiness issue
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           NEEDS_ACTION: ${{ steps.readiness.outputs.needs_action }}
           DETAILS: ${{ steps.readiness.outputs.details }}
           TOKEN_EXPIRES_ON: ${{ vars.SUPABASE_ACCESS_TOKEN_EXPIRES_ON }}
