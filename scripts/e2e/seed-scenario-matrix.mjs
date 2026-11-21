@@ -73,20 +73,14 @@ for (const definition of adminDefinitions) {
   admins.push({ ...definition, id: user.id });
 }
 
-const seededTournaments = await request('/rest/v1/tournaments?edition_year=eq.2027&select=*');
-if (seededTournaments.length !== 1) {
-  throw new Error(`Expected exactly one disposable 2027 tournament, found ${seededTournaments.length}.`);
-}
-const [mainTournament] = await request(`/rest/v1/tournaments?id=eq.${encodeURIComponent(seededTournaments[0].id)}`, {
-  method: 'PATCH',
-  body: {
-    name: '[DISPOSABLE-QA] Four-admin matrix',
-    slug: 'disposable-four-admin-qa',
-    starts_on: '2027-03-18',
-    ends_on: '2027-03-21',
-    status: 'live',
-  },
-  prefer: 'return=representation',
+const mainTournament = await insert('tournaments', {
+  name: '[DISPOSABLE-QA] Four-admin matrix',
+  slug: 'disposable-four-admin-qa',
+  edition_year: 2027,
+  starts_on: '2027-03-18',
+  ends_on: '2027-03-21',
+  status: 'live',
+  created_by: admins[0].id,
 });
 const rejectionTournament = await insert('tournaments', {
   name: '[DISPOSABLE-QA] Rejection matrix',
