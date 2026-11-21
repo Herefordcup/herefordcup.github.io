@@ -90,5 +90,8 @@ test('controlled account seed and browser smoke cover authenticated player and a
   assert.match(completionVerificationSource, /cardinal_total/);
   assert.match(completionVerificationSource, /silver_total/);
   assert.match(completionVerificationSource, /Round 1 - Singles/);
+  assert.match(completionVerificationSource, /cardinal_entry/);
+  assert.match(completionVerificationSource, /silver_entry/);
+  assert.doesNotMatch(completionVerificationSource, /participants,result_text/);
   assert.match(completionVerificationSource, /Generated Past Trips results cannot be changed or deleted/);
 });
