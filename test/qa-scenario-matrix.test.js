@@ -49,6 +49,8 @@ test('matrix sources reserve four synthetic administrators and enumerate every s
     assert.match(seedSource, new RegExp(`email: '${email}'[\\s\\S]*team: '${team}'`));
   }
   assert.match(seedSource, /assertDisposableSupabaseUrl/);
+  assert.match(seedSource, /\/rest\/v1\/tournament_memberships\?on_conflict=tournament_id,user_id/);
+  assert.match(seedSource, /resolution=merge-duplicates,return=representation/);
   assert.match(seedSource, /disposable-four-admin-qa/);
   assert.match(seedSource, /\[DISPOSABLE-QA\]/);
   assert.doesNotMatch(`${seedSource}\n${browserSource}\n${verificationSource}`, new RegExp(productionProjectReference));

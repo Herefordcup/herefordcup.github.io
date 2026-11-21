@@ -35,6 +35,14 @@ async function insert(table, body) {
   return Array.isArray(body) ? rows : rows[0];
 }
 
+async function upsertMemberships(body) {
+  return request('/rest/v1/tournament_memberships?on_conflict=tournament_id,user_id', {
+    method: 'POST',
+    body,
+    prefer: 'resolution=merge-duplicates,return=representation',
+  });
+}
+
 const adminDefinitions = [
   { email: 'qa-admin-1@local.test', name: 'QA Admin One', team: 'cardinal', handicap: 0, globalRole: 'admin' },
   { email: 'qa-admin-2@local.test', name: 'QA Admin Two', team: 'cardinal', handicap: 0, globalRole: 'player' },
@@ -93,7 +101,7 @@ const roleProtectionTournament = await insert('tournaments', {
   created_by: admins[0].id,
 });
 
-await insert('tournament_memberships', admins.map(admin => ({
+await upsertMemberships(admins.map(admin => ({
   tournament_id: mainTournament.id,
   user_id: admin.id,
   status: 'active',
@@ -101,7 +109,7 @@ await insert('tournament_memberships', admins.map(admin => ({
   team: admin.team,
   joined_at: new Date().toISOString(),
 })));
-await insert('tournament_memberships', admins.map((admin, index) => ({
+await upsertMemberships(admins.map((admin, index) => ({
   tournament_id: rejectionTournament.id,
   user_id: admin.id,
   status: 'active',
@@ -109,7 +117,7 @@ await insert('tournament_memberships', admins.map((admin, index) => ({
   team: index === 3 ? null : admin.team,
   joined_at: new Date().toISOString(),
 })));
-await insert('tournament_memberships', {
+await upsertMemberships({
   tournament_id: roleProtectionTournament.id,
   user_id: admins[1].id,
   status: 'active',
