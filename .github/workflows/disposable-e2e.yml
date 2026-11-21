@@ -1,0 +1,60 @@
+name: Disposable authenticated browser smoke
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: disposable-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out the exact test commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Install the reviewed Supabase CLI
+        uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13
+        with:
+          version: 3.2.0
+      - name: Start disposable local Supabase
+        run: supabase start --exclude studio,imgproxy,mailpit,postgres-meta,realtime,edge-runtime,logflare,vector,supavisor
+      - name: Rebuild the disposable database from migrations
+        run: supabase db reset --no-seed
+      - name: Export only disposable local connection values
+        run: |
+          supabase status -o env > "$RUNNER_TEMP/supabase-status.env"
+          set -a
+          . "$RUNNER_TEMP/supabase-status.env"
+          set +a
+          publishable_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+          service_key="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}"
+          test "$API_URL" = "http://127.0.0.1:54321"
+          test -n "$publishable_key"
+          test -n "$service_key"
+          password="E2E-$(openssl rand -hex 18)"
+          echo "::add-mask::$password"
+          {
+            echo "E2E_SUPABASE_URL=$API_URL"
+            echo "E2E_SUPABASE_PUBLISHABLE_KEY=$publishable_key"
+            echo "E2E_SERVICE_ROLE_KEY=$service_key"
+            echo "E2E_USER_EMAIL=e2e-admin@local.test"
+            echo "E2E_USER_PASSWORD=$password"
+          } >> "$GITHUB_ENV"
+      - name: Seed the controlled disposable account
+        run: node scripts/e2e/seed.mjs
+      - name: Install the reviewed Chromium browser
+        run: npx playwright install --with-deps chromium
+      - name: Run authenticated player and administrator smoke tests
+        run: npm run test:e2e
+      - name: Destroy disposable Supabase data
+        if: always()
+        run: supabase stop --no-backup
