@@ -1,0 +1,84 @@
+name: Four-admin disposable QA matrix
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: four-admin-disposable-qa-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out the exact QA commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Install the reviewed Supabase CLI
+        uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13
+        with:
+          version: 3.2.0
+      - name: Prepare transaction-compatible disposable project
+        run: |
+          workdir="$RUNNER_TEMP/hereford-four-admin-qa"
+          echo "E2E_WORKDIR=$workdir" >> "$GITHUB_ENV"
+          node scripts/e2e/prepare-project.mjs "$workdir"
+      - name: Start disposable local Supabase
+        run: supabase start --workdir "$E2E_WORKDIR" --exclude studio,imgproxy,mailpit,postgres-meta,realtime,edge-runtime,logflare,vector,supavisor
+      - name: Rebuild disposable database from migrations
+        run: supabase db reset --workdir "$E2E_WORKDIR" --no-seed
+      - name: Export only disposable local connection values
+        run: |
+          supabase status --workdir "$E2E_WORKDIR" -o env > "$RUNNER_TEMP/supabase-status.env"
+          set -a
+          . "$RUNNER_TEMP/supabase-status.env"
+          set +a
+          publishable_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+          service_key="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}"
+          test "$API_URL" = "http://127.0.0.1:54321"
+          test -n "$publishable_key"
+          test -n "$service_key"
+          password="QA-$(openssl rand -hex 18)"
+          echo "::add-mask::$password"
+          {
+            echo "E2E_SUPABASE_URL=$API_URL"
+            echo "E2E_SUPABASE_PUBLISHABLE_KEY=$publishable_key"
+            echo "E2E_SERVICE_ROLE_KEY=$service_key"
+            echo "E2E_USER_PASSWORD=$password"
+            echo "E2E_WEB_PORT=4174"
+            echo "E2E_FIXTURE_FILE=$RUNNER_TEMP/four-admin-fixtures.json"
+          } >> "$GITHUB_ENV"
+      - name: Seed four synthetic administrators and scenario fixtures
+        run: node scripts/e2e/seed-scenario-matrix.mjs
+      - name: Install the reviewed Chromium browser
+        run: npx playwright install --with-deps chromium
+      - name: Run pre-completion four-admin browser scenarios
+        run: npm run test:e2e:matrix -- --grep "pre-completion"
+      - name: Verify exact matrix rows, rollback, and concurrency
+        run: node scripts/e2e/verify-scenario-matrix.mjs
+      - name: Run post-completion replay and Past Trips browser scenarios
+        run: npm run test:e2e:matrix -- --grep "post-completion"
+      - name: Upload credential-free failure report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: four-admin-qa-report
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Destroy disposable Supabase data
+        if: always()
+        run: supabase stop --workdir "$E2E_WORKDIR" --no-backup
+      - name: Verify disposable Supabase is stopped
+        if: always()
+        run: |
+          if supabase status --workdir "$E2E_WORKDIR" >/dev/null 2>&1; then
+            echo "Disposable Supabase is still running." >&2
+            exit 1
+          fi
+          echo "Disposable Supabase is stopped."

@@ -1,0 +1,83 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const read = relativePath => readFile(new URL(`../${relativePath}`, import.meta.url), 'utf8').catch(() => '');
+
+const workflow = await read('.github/workflows/qa-scenario-matrix.yml');
+const seedSource = await read('scripts/e2e/seed-scenario-matrix.mjs');
+const browserSource = await read('e2e/four-admin-scenarios.spec.mjs');
+const verificationSource = await read('scripts/e2e/verify-scenario-matrix.mjs');
+const matrixConfig = await read('playwright.matrix.config.mjs');
+const packageJson = JSON.parse(await read('package.json'));
+
+const productionProjectReference = 'mqulycovrogurvmjcimt';
+const matrixIds = [
+  'S1', 'S2', 'F1', 'F2', 'M1', 'R1', 'R2', 'R3',
+  'C1', 'A1', 'A2', 'X1', 'X2', 'T1', 'T2', 'T3', 'T4', 'T5',
+];
+
+test('manual QA workflow is loopback-only, secret-free, and always destroys its stack', () => {
+  assert.match(workflow, /^name: Four-admin disposable QA matrix/m);
+  assert.match(workflow, /on:\s*\n\s*workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /\n\s*(?:pull_request|push):/);
+  assert.match(workflow, /permissions:\s*\n\s*contents: read/);
+  assert.match(workflow, /node scripts\/e2e\/prepare-project\.mjs "\$workdir"/);
+  assert.match(workflow, /supabase db reset --workdir "\$E2E_WORKDIR" --no-seed/);
+  assert.match(workflow, /test "\$API_URL" = "http:\/\/127\.0\.0\.1:54321"/);
+  assert.match(workflow, /password="QA-\$\(openssl rand -hex 18\)"/);
+  assert.match(workflow, /::add-mask::\$password/);
+  assert.match(workflow, /node scripts\/e2e\/seed-scenario-matrix\.mjs/);
+  assert.match(workflow, /npm run test:e2e:matrix/);
+  assert.match(workflow, /node scripts\/e2e\/verify-scenario-matrix\.mjs/);
+  assert.match(workflow, /if: always\(\)[\s\S]*supabase stop --workdir "\$E2E_WORKDIR" --no-backup/);
+  assert.match(workflow, /Verify disposable Supabase is stopped/);
+  assert.doesNotMatch(workflow, /environment:\s*production|SUPABASE_ACCESS_TOKEN|\$\{\{\s*secrets\.|supabase\.co/);
+  assert.doesNotMatch(workflow, new RegExp(productionProjectReference));
+});
+
+test('matrix sources reserve four synthetic administrators and enumerate every scenario', () => {
+  for (const [email, team] of [
+    ['qa-admin-1@local.test', 'cardinal'],
+    ['qa-admin-2@local.test', 'cardinal'],
+    ['qa-admin-3@local.test', 'silver'],
+    ['qa-admin-4@local.test', 'silver'],
+  ]) {
+    assert.match(seedSource, new RegExp(email.replace('.', '\\.')));
+    assert.match(seedSource, new RegExp(`email: '${email}'[\\s\\S]*team: '${team}'`));
+  }
+  assert.match(seedSource, /assertDisposableSupabaseUrl/);
+  assert.match(seedSource, /disposable-four-admin-qa/);
+  assert.match(seedSource, /\[DISPOSABLE-QA\]/);
+  assert.doesNotMatch(`${seedSource}\n${browserSource}\n${verificationSource}`, new RegExp(productionProjectReference));
+
+  const allSources = `${seedSource}\n${browserSource}\n${verificationSource}`;
+  for (const id of matrixIds) assert.match(allSources, new RegExp(`\\[${id}\\]`));
+});
+
+test('matrix browser configuration is serial and emits no credential-bearing media', () => {
+  assert.equal(packageJson.scripts?.['test:e2e:matrix'], 'playwright test --config playwright.matrix.config.mjs');
+  assert.match(matrixConfig, /workers: 1/);
+  assert.match(matrixConfig, /retries: 0/);
+  assert.match(matrixConfig, /screenshot: 'off'/);
+  assert.match(matrixConfig, /trace: 'off'/);
+  assert.match(matrixConfig, /video: 'off'/);
+  assert.match(browserSource, /portal\.html/);
+  assert.match(browserSource, /admin\.html/);
+  assert.match(browserSource, /past-trips\.html/);
+});
+
+test('exact verifier covers rollback, concurrency, completion, and generated archive protection', () => {
+  assert.match(verificationSource, /Promise\.all/);
+  assert.match(verificationSource, /finalize_match_results/);
+  assert.match(verificationSource, /complete_tournament_archive/);
+  assert.match(verificationSource, /score_correction_audit/);
+  assert.match(verificationSource, /match_commentaries/);
+  assert.match(verificationSource, /source_tournament_id/);
+  assert.match(verificationSource, /source_segment_id/);
+  assert.match(verificationSource, /Generated Past Trips results cannot be changed or deleted/);
+  assert.match(verificationSource, /Round/);
+  assert.match(verificationSource, /1v1/);
+  assert.match(verificationSource, /2v2 Best Ball/);
+  assert.match(verificationSource, /2v2 Foursomes/);
+});
