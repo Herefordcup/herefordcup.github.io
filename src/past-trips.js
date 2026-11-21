@@ -1,4 +1,4 @@
-import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js?v=member-role-1';
+import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js?v=tournament-completion-1';
 import { renderLegacyArchive } from './legacy.js?v=pimentel-correction-1';
 
 const target = {

@@ -35,8 +35,40 @@ test('controlled administrator can sign in, update disposable profile data, and 
   await expect(page.locator('#adminContent')).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('#membershipManagement')).toBeVisible();
   await expect(page.locator('#activeMemberSearch')).toBeVisible();
-  await expect(page.locator('#activeMemberCount')).toContainText('1 member');
-  await expect(page.locator('#activeMembers [data-member-id]')).toHaveCount(1);
+
+  await expect(page.locator('#tournamentCompletionForm')).toBeVisible();
+  const completionOption = page.locator('#completionTournament option').filter({ hasText: '2099' });
+  await expect(completionOption).toHaveCount(1);
+  const completionOptionText = await completionOption.textContent();
+  const alreadyCompleted = completionOptionText?.includes('complete') ?? false;
+  await page.locator('#completionTournament').selectOption(await completionOption.getAttribute('value'));
+  if (!alreadyCompleted) {
+    await expect(page.locator('#activeMemberCount')).toContainText('2 members');
+    await expect(page.locator('#activeMembers [data-member-id]')).toHaveCount(2);
+    await expect(page.locator('#completionReadiness')).toContainText('All 1 matches are final');
+  } else {
+    await expect(page.locator('#completionReadiness')).toContainText('already complete');
+  }
+  await page.locator('#completionConfirmation').fill('COMPLETE 2099 HEREFORD CUP');
+  const completionButton = page.locator('#tournamentCompletionForm button[type="submit"]');
+  await expect(completionButton).toBeEnabled();
+  await completionButton.click();
+  await expect(page.locator('#completionMessage')).toHaveText(alreadyCompleted
+    ? 'Completed tournament archive verified without changes.'
+    : 'Tournament completed and Past Trips published.');
+  await expect(completionButton).toHaveText('Verify completed archive');
+
+  await page.locator('#completionConfirmation').fill('COMPLETE 2099 HEREFORD CUP');
+  await expect(completionButton).toBeEnabled();
+  await completionButton.click();
+  await expect(page.locator('#completionMessage')).toHaveText('Completed tournament archive verified without changes.');
+
+  await page.goto('/past-trips.html');
+  await page.locator('#legacy-tab-2099').click();
+  await expect(page.locator('#legacyDetails')).toContainText('2099');
+  await expect(page.locator('#legacyDetails')).toContainText('Round 1 - Singles');
+  await expect(page.locator('#legacyDetails')).toContainText('Disposable E2E Admin vs Disposable E2E Opponent');
+  await expect(page.locator('#legacyDetails')).toContainText('Blue 1 - White 0');
 
   expect(browserErrors).toEqual([]);
 });

@@ -126,8 +126,8 @@ test('segment player selection shows tournament teams and derives the scoring si
   assert.equal(segmentPlayerFromMembership(inactive, 4), null);
   assert.doesNotMatch(adminScript, /Match side|data-side-select|Blue side|White side/);
   assert.match(adminScript, /option\.disabled = disabled/);
-  assert.match(html, /src="src\/admin\.js\?v=production-readiness-1"/);
-  assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=production-readiness-1'/);
+  assert.match(html, /src="src\/admin\.js\?v=tournament-completion-1"/);
+  assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=tournament-completion-1'/);
 });
 
 test('planner options refresh team labels and preserve only valid selections after roster changes', () => {

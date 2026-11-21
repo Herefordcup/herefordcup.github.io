@@ -60,6 +60,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run authenticated player and administrator smoke tests
         run: npm run test:e2e
+      - name: Verify exact completion rows and generated-archive protection
+        run: node scripts/e2e/verify-completion.mjs
       - name: Upload credential-free failure report
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

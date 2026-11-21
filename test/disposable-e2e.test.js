@@ -10,6 +10,7 @@ const seedSource = await readFile(new URL('../scripts/e2e/seed.mjs', import.meta
 const smokeSource = await readFile(new URL('../e2e/portal-admin.smoke.spec.mjs', import.meta.url), 'utf8').catch(() => '');
 const playwrightConfig = await readFile(new URL('../playwright.config.mjs', import.meta.url), 'utf8').catch(() => '');
 const prepareSource = await readFile(new URL('../scripts/e2e/prepare-project.mjs', import.meta.url), 'utf8').catch(() => '');
+const completionVerificationSource = await readFile(new URL('../scripts/e2e/verify-completion.mjs', import.meta.url), 'utf8').catch(() => '');
 
 const productionUrl = 'https://mqulycovrogurvmjcimt.supabase.co';
 
@@ -43,6 +44,7 @@ test('disposable browser workflow is local-only, secret-free, and never targets 
   assert.match(workflow, /prepare-project\.mjs/);
   assert.match(workflow, /--workdir "\$E2E_WORKDIR"/);
   assert.match(workflow, /npm run test:e2e/);
+  assert.match(workflow, /node scripts\/e2e\/verify-completion\.mjs/);
   assert.match(workflow, /actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
   assert.match(workflow, /if: failure\(\)/);
   assert.match(workflow, /supabase stop/);
@@ -63,9 +65,33 @@ test('controlled account seed and browser smoke cover authenticated player and a
   assert.match(seedSource, /role: 'admin'/);
   assert.match(seedSource, /status: 'active'/);
   assert.match(seedSource, /team: 'cardinal'/);
+  assert.match(seedSource, /Disposable E2E Opponent/);
+  assert.match(seedSource, /\/rest\/v1\/matches/);
+  assert.match(seedSource, /\/rest\/v1\/match_segments/);
+  assert.match(seedSource, /\/rest\/v1\/match_segment_players/);
+  assert.match(seedSource, /\/rest\/v1\/legacy_editions/);
+  assert.match(seedSource, /status: 'final'/);
   assert.match(smokeSource, /#emailAddress/);
   assert.match(smokeSource, /#dashboardView/);
   assert.match(smokeSource, /#profileSetupDialog/);
   assert.match(smokeSource, /admin\.html/);
   assert.match(smokeSource, /#membershipManagement/);
+  assert.match(smokeSource, /#tournamentCompletionForm/);
+  assert.match(smokeSource, /COMPLETE 2099 HEREFORD CUP/);
+  assert.match(smokeSource, /Tournament completed and Past Trips published/);
+  assert.match(smokeSource, /Verify completed archive/);
+  assert.match(smokeSource, /Completed tournament archive verified without changes/);
+  assert.match(smokeSource, /past-trips\.html/);
+  assert.match(smokeSource, /legacy-tab-2099/);
+  assert.match(smokeSource, /alreadyCompleted/);
+  assert.match(smokeSource, /Round 1 - Singles/);
+  assert.match(completionVerificationSource, /status.*complete/s);
+  assert.match(completionVerificationSource, /source_tournament_id/);
+  assert.match(completionVerificationSource, /cardinal_total/);
+  assert.match(completionVerificationSource, /silver_total/);
+  assert.match(completionVerificationSource, /Round 1 - Singles/);
+  assert.match(completionVerificationSource, /cardinal_entry/);
+  assert.match(completionVerificationSource, /silver_entry/);
+  assert.doesNotMatch(completionVerificationSource, /participants,result_text/);
+  assert.match(completionVerificationSource, /Generated Past Trips results cannot be changed or deleted/);
 });
