@@ -21,7 +21,8 @@ const matrixIds = [
 test('manual QA workflow is loopback-only, secret-free, and always destroys its stack', () => {
   assert.match(workflow, /^name: Four-admin disposable QA matrix/m);
   assert.match(workflow, /on:\s*\n\s*workflow_dispatch:/);
-  assert.doesNotMatch(workflow, /\n\s*(?:pull_request|push):/);
+  assert.match(workflow, /pull_request:\s*\n\s*branches: \[main\]\s*\n\s*types: \[opened, synchronize, reopened, labeled\]/);
+  assert.match(workflow, /if: github\.event_name == 'workflow_dispatch' \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'run-qa-matrix'\)/);
   assert.match(workflow, /permissions:\s*\n\s*contents: read/);
   assert.match(workflow, /node scripts\/e2e\/prepare-project\.mjs "\$workdir"/);
   assert.match(workflow, /supabase db reset --workdir "\$E2E_WORKDIR" --no-seed/);
