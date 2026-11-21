@@ -73,14 +73,20 @@ for (const definition of adminDefinitions) {
   admins.push({ ...definition, id: user.id });
 }
 
-const mainTournament = await insert('tournaments', {
-  name: '[DISPOSABLE-QA] Four-admin matrix',
-  slug: 'disposable-four-admin-qa',
-  edition_year: 2100,
-  starts_on: '2100-03-18',
-  ends_on: '2100-03-21',
-  status: 'live',
-  created_by: admins[0].id,
+const seededTournaments = await request('/rest/v1/tournaments?edition_year=eq.2027&select=*');
+if (seededTournaments.length !== 1) {
+  throw new Error(`Expected exactly one disposable 2027 tournament, found ${seededTournaments.length}.`);
+}
+const [mainTournament] = await request(`/rest/v1/tournaments?id=eq.${encodeURIComponent(seededTournaments[0].id)}`, {
+  method: 'PATCH',
+  body: {
+    name: '[DISPOSABLE-QA] Four-admin matrix',
+    slug: 'disposable-four-admin-qa',
+    starts_on: '2027-03-18',
+    ends_on: '2027-03-21',
+    status: 'live',
+  },
+  prefer: 'return=representation',
 });
 const rejectionTournament = await insert('tournaments', {
   name: '[DISPOSABLE-QA] Rejection matrix',
@@ -252,7 +258,7 @@ fixtures.S1 = await createFixture({
   tournamentId: mainTournament.id,
   code: 'S1',
   name: 'Singles gross Blue 1 Up',
-  startsAt: '2100-03-18T13:00:00Z',
+  startsAt: '2027-03-18T13:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'singles', scoringMode: 'gross', players: [0, 2] }],
   scoreSets: new Map([[0, withWins([1])], [2, baseScores()]]),
 });
@@ -260,7 +266,7 @@ fixtures.S2 = await createFixture({
   tournamentId: mainTournament.id,
   code: 'S2',
   name: 'Singles net White 2 & 1',
-  startsAt: '2100-03-18T14:00:00Z',
+  startsAt: '2027-03-18T14:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'singles', scoringMode: 'net', players: [1, 3] }],
   scoreSets: new Map([[1, baseScores()], [3, withWins([1, 2])]]),
 });
@@ -268,14 +274,14 @@ fixtures.F1 = await createFixture({
   tournamentId: mainTournament.id,
   code: 'F1',
   name: 'Four-Ball gross halve',
-  startsAt: '2100-03-19T13:00:00Z',
+  startsAt: '2027-03-19T13:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'fourball', scoringMode: 'gross', players: [0, 1, 2, 3] }],
 });
 fixtures.F2 = await createFixture({
   tournamentId: mainTournament.id,
   code: 'F2',
   name: 'Four-Ball net Blue 3 & 2',
-  startsAt: '2100-03-19T14:00:00Z',
+  startsAt: '2027-03-19T14:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'fourball', scoringMode: 'net', players: [0, 1, 2, 3] }],
   scoreSets: new Map([[0, withWins([1, 2, 3])], [1, baseScores()], [2, baseScores()], [3, baseScores()]]),
 });
@@ -283,7 +289,7 @@ fixtures.M1 = await createFixture({
   tournamentId: mainTournament.id,
   code: 'M1',
   name: 'Mixed Four-Ball and Foursomes',
-  startsAt: '2100-03-20T13:00:00Z',
+  startsAt: '2027-03-20T13:00:00Z',
   segments: [
     { startHole: 1, endHole: 9, format: 'fourball', scoringMode: 'gross', pointValue: 0.5, players: [0, 1, 2, 3] },
     { startHole: 10, endHole: 18, format: 'foursomes', scoringMode: 'net', handicapAllowance: 50, pointValue: 0.5, players: [0, 1, 2, 3] },
@@ -294,14 +300,14 @@ fixtures.C1 = await createFixture({
   tournamentId: mainTournament.id,
   code: 'C1',
   name: 'Audited correction changes result',
-  startsAt: '2100-03-20T14:00:00Z',
+  startsAt: '2027-03-20T14:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'singles', scoringMode: 'gross', players: [0, 2] }],
 });
 fixtures.X1 = await createFixture({
   tournamentId: mainTournament.id,
   code: 'X1',
   name: 'Concurrent finalization',
-  startsAt: '2100-03-21T13:00:00Z',
+  startsAt: '2027-03-21T13:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'singles', scoringMode: 'gross', players: [1, 3] }],
 });
 fixtures.R1 = await createFixture({

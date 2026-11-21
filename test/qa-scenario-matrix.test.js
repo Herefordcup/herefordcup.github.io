@@ -51,6 +51,10 @@ test('matrix sources reserve four synthetic administrators and enumerate every s
   assert.match(seedSource, /assertDisposableSupabaseUrl/);
   assert.match(seedSource, /\/rest\/v1\/tournament_memberships\?on_conflict=tournament_id,user_id/);
   assert.match(seedSource, /resolution=merge-duplicates,return=representation/);
+  assert.match(seedSource, /\/rest\/v1\/tournaments\?edition_year=eq\.2027&select=\*/);
+  assert.match(seedSource, /seededTournaments\.length !== 1/);
+  assert.doesNotMatch(seedSource, /const mainTournament = await insert\('tournaments'/);
+  assert.match(browserSource, /COMPLETE 2027 HEREFORD CUP/);
   assert.match(seedSource, /disposable-four-admin-qa/);
   assert.match(seedSource, /\[DISPOSABLE-QA\]/);
   assert.doesNotMatch(`${seedSource}\n${browserSource}\n${verificationSource}`, new RegExp(productionProjectReference));
