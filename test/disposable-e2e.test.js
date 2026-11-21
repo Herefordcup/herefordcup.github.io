@@ -9,6 +9,7 @@ const supabaseConfig = await readFile(new URL('../supabase/config.toml', import.
 const seedSource = await readFile(new URL('../scripts/e2e/seed.mjs', import.meta.url), 'utf8').catch(() => '');
 const smokeSource = await readFile(new URL('../e2e/portal-admin.smoke.spec.mjs', import.meta.url), 'utf8').catch(() => '');
 const playwrightConfig = await readFile(new URL('../playwright.config.mjs', import.meta.url), 'utf8').catch(() => '');
+const prepareSource = await readFile(new URL('../scripts/e2e/prepare-project.mjs', import.meta.url), 'utf8').catch(() => '');
 
 const productionUrl = 'https://mqulycovrogurvmjcimt.supabase.co';
 
@@ -39,8 +40,10 @@ test('disposable browser workflow is local-only, secret-free, and never targets 
   assert.match(workflow, /permissions:\s*[\s\S]*contents: read/);
   assert.match(workflow, /supabase start/);
   assert.match(workflow, /supabase db reset/);
+  assert.match(workflow, /prepare-project\.mjs/);
+  assert.match(workflow, /--workdir "\$E2E_WORKDIR"/);
   assert.match(workflow, /npm run test:e2e/);
-  assert.match(workflow, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/);
+  assert.match(workflow, /actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/);
   assert.match(workflow, /if: failure\(\)/);
   assert.match(workflow, /supabase stop/);
   assert.doesNotMatch(workflow, /environment:\s*production|SUPABASE_ACCESS_TOKEN|secrets\.|mqulycovrogurvmjcimt/);
@@ -49,6 +52,9 @@ test('disposable browser workflow is local-only, secret-free, and never targets 
   assert.match(playwrightConfig, /video: 'off'/);
   assert.equal(packageJson.scripts['test:e2e'], 'playwright test');
   assert.match(supabaseConfig, /^project_id = "hereford-cup-disposable-e2e"/m);
+  assert.match(prepareSource, /006_automatic_tournament_access\.sql/);
+  assert.match(prepareSource, /targetSupabase, '\.temp'/);
+  assert.match(prepareSource, /`begin;\\n\\n\$\{migration\.trim\(\)\}\\n\\ncommit;\\n`/);
 });
 
 test('controlled account seed and browser smoke cover authenticated player and administrator paths', () => {

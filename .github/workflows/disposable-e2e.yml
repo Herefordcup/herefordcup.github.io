@@ -25,13 +25,18 @@ jobs:
         uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13
         with:
           version: 3.2.0
+      - name: Prepare transaction-compatible disposable project
+        run: |
+          workdir="$RUNNER_TEMP/hereford-e2e"
+          echo "E2E_WORKDIR=$workdir" >> "$GITHUB_ENV"
+          node scripts/e2e/prepare-project.mjs "$workdir"
       - name: Start disposable local Supabase
-        run: supabase start --exclude studio,imgproxy,mailpit,postgres-meta,realtime,edge-runtime,logflare,vector,supavisor
+        run: supabase start --workdir "$E2E_WORKDIR" --exclude studio,imgproxy,mailpit,postgres-meta,realtime,edge-runtime,logflare,vector,supavisor
       - name: Rebuild the disposable database from migrations
-        run: supabase db reset --no-seed
+        run: supabase db reset --workdir "$E2E_WORKDIR" --no-seed
       - name: Export only disposable local connection values
         run: |
-          supabase status -o env > "$RUNNER_TEMP/supabase-status.env"
+          supabase status --workdir "$E2E_WORKDIR" -o env > "$RUNNER_TEMP/supabase-status.env"
           set -a
           . "$RUNNER_TEMP/supabase-status.env"
           set +a
@@ -57,7 +62,7 @@ jobs:
         run: npm run test:e2e
       - name: Upload credential-free failure report
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: disposable-e2e-report
           path: playwright-report/
@@ -65,4 +70,4 @@ jobs:
           retention-days: 7
       - name: Destroy disposable Supabase data
         if: always()
-        run: supabase stop --no-backup
+        run: supabase stop --workdir "$E2E_WORKDIR" --no-backup

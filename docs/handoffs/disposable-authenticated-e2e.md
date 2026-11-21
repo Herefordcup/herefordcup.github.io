@@ -8,6 +8,7 @@ This change adds an authenticated player/Admin smoke test without allowing brows
 
 - GitHub Actions starts a disposable loopback Supabase stack at `http://127.0.0.1:54321`.
 - The complete repository migration chain is applied with `supabase db reset --no-seed`.
+- `scripts/e2e/prepare-project.mjs` copies the Supabase project into runner-temporary storage, removes any local CLI link metadata, and wraps legacy migration `006` in an explicit transaction for Supabase CLI 3 without editing the already-applied production migration.
 - `scripts/e2e/safety.mjs` accepts only HTTP loopback Supabase URLs and rejects malformed, LAN, HTTPS, and hosted URLs before seeding or serving the app.
 - The workflow does not declare the protected `production` environment, reference GitHub secrets, or use the production project identifier.
 - A generated password and local service key exist only in the job environment. The password is masked.
