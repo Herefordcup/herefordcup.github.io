@@ -57,8 +57,8 @@ Never point these variables at a hosted project. The scripts reject non-loopback
 - Branch: `feat/controlled-e2e-smoke`
 - Base: `main`
 - Local source-contract/full test suite, Actionlint, dependency audit, diff check, and added-line security scan pass.
-- The development computer has no Docker runtime, so the real Supabase/Playwright path must be proven by the pull-request workflow before approval or merge.
-- Independent reviewer agents timed out without returning a verdict; they did not change files. GitHub CI is the required fail-closed acceptance gate.
+- The development computer has no Docker runtime; the real Supabase/Playwright path passed in pull-request CI, including full migration application, authenticated write/readback, and unconditional cleanup.
+- Independent reviewer agents timed out without returning a verdict; they did not change files. The executable CI gate remains fail-closed.
 - This PR does not change production frontend behavior, production data, migrations, Edge Functions, or deployment credentials.
 
 Hermes continuation:
