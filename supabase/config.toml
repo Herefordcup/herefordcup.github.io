@@ -1,2 +1,4 @@
+project_id = "hereford-cup-disposable-e2e"
+
 [functions.process-notifications]
 verify_jwt = false

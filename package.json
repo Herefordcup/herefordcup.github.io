@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "test:e2e": "playwright test",
     "serve": "npx --yes serve ."
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
   }
 }
