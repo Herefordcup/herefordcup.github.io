@@ -118,7 +118,7 @@ test('[T3][T5] post-completion browser replay and Past Trips rendering', async (
   await page.goto('/admin.html');
   await expect(page.locator('#adminContent')).toBeVisible({ timeout: 20_000 });
   await page.locator('#completionTournament').selectOption(manifest.tournaments.main);
-  await expect(page.locator('#completionReadiness')).toContainText('already complete');
+  await expect(page.locator('#completionReadiness')).toContainText('This tournament is complete.');
   await page.locator('#completionConfirmation').fill('COMPLETE 2027 HEREFORD CUP');
   const completionButton = page.locator('#tournamentCompletionForm button[type="submit"]');
   await expect(completionButton).toBeEnabled();
