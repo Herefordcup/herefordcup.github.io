@@ -86,14 +86,14 @@ jobs:
       - name: Check out the migrated release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Configure GitHub Pages
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
       - name: Build the GitHub Pages site
         uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697
         with:
           source: ./
           destination: ./_site
       - name: Upload the built site
-        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b
+        uses: actions/upload-pages-artifact@5f327015a708106f6f1b7c9a633901af30fe80cb
         with:
           path: ./_site
 

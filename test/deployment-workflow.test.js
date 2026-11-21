@@ -49,6 +49,8 @@ test('all production actions and the Supabase CLI are pinned', () => {
   const combined = `${workflow}\n${bootstrap}\n${readiness}`;
   assert.doesNotMatch(combined, /uses:\s*[^\s]+@v\d|version:\s*latest/);
   assert.match(combined, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
+  assert.match(workflow, /actions\/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d/);
+  assert.match(workflow, /actions\/upload-pages-artifact@5f327015a708106f6f1b7c9a633901af30fe80cb/);
   assert.match(combined, /supabase\/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13[\s\S]*version: 3\.2\.0/);
   assert.doesNotMatch(combined, /actions\/checkout@11d5960a326750d5838078e36cf38b85af677262|supabase\/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb/);
 });
