@@ -54,6 +54,7 @@ test('matrix sources reserve four synthetic administrators and enumerate every s
   assert.match(seedSource, /const mainTournament = await insert\('tournaments', \{[^}]*edition_year: 2027/);
   assert.doesNotMatch(seedSource, /const mainTournament = await insert\('tournaments', \{[^}]*edition_year: 2100/);
   assert.match(browserSource, /COMPLETE 2027 HEREFORD CUP/);
+  assert.match(seedSource, /tournament_id: roleProtectionTournament\.id,[\s\S]*role: index === 1 \? 'admin' : 'player'/);
   assert.match(seedSource, /disposable-four-admin-qa/);
   assert.match(seedSource, /\[DISPOSABLE-QA\]/);
   assert.doesNotMatch(`${seedSource}\n${browserSource}\n${verificationSource}`, new RegExp(productionProjectReference));

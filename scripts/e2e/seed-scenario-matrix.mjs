@@ -117,14 +117,14 @@ await upsertMemberships(admins.map((admin, index) => ({
   team: index === 3 ? null : admin.team,
   joined_at: new Date().toISOString(),
 })));
-await upsertMemberships({
+await upsertMemberships(admins.map((admin, index) => ({
   tournament_id: roleProtectionTournament.id,
-  user_id: admins[1].id,
+  user_id: admin.id,
   status: 'active',
-  role: 'admin',
-  team: 'cardinal',
+  role: index === 1 ? 'admin' : 'player',
+  team: admin.team,
   joined_at: new Date().toISOString(),
-});
+})));
 
 const course = await insert('courses', {
   name: '[DISPOSABLE-QA] Deterministic Golf Club',
