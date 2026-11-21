@@ -93,6 +93,8 @@ test('exact verifier covers rollback, concurrency, completion, and generated arc
   assert.match(verificationSource, /source_segment_id/);
   assert.match(verificationSource, /course_handicap/);
   assert.match(verificationSource, /expectedScores/);
+  assert.match(verificationSource, /\/rest\/v1\/scores\?round_id=eq\./);
+  assert.doesNotMatch(verificationSource, /\/rest\/v1\/round_scores\?/);
   assert.match(verificationSource, /gross_score/);
   assert.match(verificationSource, /bluePoints/);
   assert.match(verificationSource, /whitePoints/);

@@ -82,7 +82,7 @@ for (const [code, fixture] of Object.entries(manifest.fixtures)) {
     const expectedScores = [...fixture.expectedScores[playerIndex]];
     if (code === 'C1' && playerIndex === '0') expectedScores[17] = 4;
     const scores = await requireOk(request(
-      `/rest/v1/round_scores?round_id=eq.${roundId}&select=hole_number,gross_score&order=hole_number`,
+      `/rest/v1/scores?round_id=eq.${roundId}&select=hole_number,gross_score&order=hole_number`,
     ), `[${code}] player ${Number(playerIndex) + 1} score readback`);
     equal(scores.length, 18, `[${code}] player ${Number(playerIndex) + 1} submitted hole count`);
     scores.forEach((score, index) => {
