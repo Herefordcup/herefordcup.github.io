@@ -113,6 +113,7 @@ test('daily deployment readiness reports expiring or under-scoped credentials wi
   assert.match(readiness, /functions list --remote="\$PROJECT_REF"/);
   assert.match(readiness, /migration list --remote="\$PROJECT_REF"/);
   assert.match(readiness, /issues: write[\s\S]*gh issue/);
+  assert.ok(readiness.includes('GH_REPO: ${{ github.repository }}'));
   assert.ok(readiness.includes('gh issue list --search "\\"$title\\" in:title" --state all'));
   assert.doesNotMatch(readiness, /gh issue list --state all --limit 100/);
   assert.doesNotMatch(readiness, /db push|functions deploy|migration repair/);
