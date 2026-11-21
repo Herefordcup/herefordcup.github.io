@@ -8,6 +8,7 @@ const packageJson = JSON.parse(await readFile(new URL('../package.json', import.
 const supabaseConfig = await readFile(new URL('../supabase/config.toml', import.meta.url), 'utf8');
 const seedSource = await readFile(new URL('../scripts/e2e/seed.mjs', import.meta.url), 'utf8').catch(() => '');
 const smokeSource = await readFile(new URL('../e2e/portal-admin.smoke.spec.mjs', import.meta.url), 'utf8').catch(() => '');
+const playwrightConfig = await readFile(new URL('../playwright.config.mjs', import.meta.url), 'utf8').catch(() => '');
 
 const productionUrl = 'https://mqulycovrogurvmjcimt.supabase.co';
 
@@ -39,8 +40,13 @@ test('disposable browser workflow is local-only, secret-free, and never targets 
   assert.match(workflow, /supabase start/);
   assert.match(workflow, /supabase db reset/);
   assert.match(workflow, /npm run test:e2e/);
+  assert.match(workflow, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/);
+  assert.match(workflow, /if: failure\(\)/);
   assert.match(workflow, /supabase stop/);
   assert.doesNotMatch(workflow, /environment:\s*production|SUPABASE_ACCESS_TOKEN|secrets\.|mqulycovrogurvmjcimt/);
+  assert.match(playwrightConfig, /screenshot: 'off'/);
+  assert.match(playwrightConfig, /trace: 'off'/);
+  assert.match(playwrightConfig, /video: 'off'/);
   assert.equal(packageJson.scripts['test:e2e'], 'playwright test');
   assert.match(supabaseConfig, /^project_id = "hereford-cup-disposable-e2e"/m);
 });

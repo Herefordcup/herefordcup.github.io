@@ -55,6 +55,14 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run authenticated player and administrator smoke tests
         run: npm run test:e2e
+      - name: Upload credential-free failure report
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: disposable-e2e-report
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Destroy disposable Supabase data
         if: always()
         run: supabase stop --no-backup
