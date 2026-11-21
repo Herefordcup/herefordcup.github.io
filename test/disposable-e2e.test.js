@@ -82,6 +82,8 @@ test('controlled account seed and browser smoke cover authenticated player and a
   assert.match(smokeSource, /Verify completed archive/);
   assert.match(smokeSource, /Completed tournament archive verified without changes/);
   assert.match(smokeSource, /past-trips\.html/);
+  assert.match(smokeSource, /legacy-tab-2099/);
+  assert.match(smokeSource, /alreadyCompleted/);
   assert.match(smokeSource, /Round 1 - Singles/);
   assert.match(completionVerificationSource, /status.*complete/s);
   assert.match(completionVerificationSource, /source_tournament_id/);
