@@ -1,4 +1,4 @@
-name: Four-admin disposable QA matrix
+name: Four-player disposable E2E matrix
 
 on:
   workflow_dispatch:
@@ -57,11 +57,11 @@ jobs:
             echo "E2E_WEB_PORT=4174"
             echo "E2E_FIXTURE_FILE=$RUNNER_TEMP/four-admin-fixtures.json"
           } >> "$GITHUB_ENV"
-      - name: Seed four synthetic administrators and scenario fixtures
+      - name: Seed four synthetic players and scenario fixtures
         run: node scripts/e2e/seed-scenario-matrix.mjs
       - name: Install the reviewed Chromium browser
         run: npx playwright install --with-deps chromium
-      - name: Run pre-completion four-admin browser scenarios
+      - name: Run pre-completion four-player browser scenarios
         run: npm run test:e2e:matrix -- --grep "pre-completion"
       - name: Verify exact matrix rows, rollback, and concurrency
         run: node scripts/e2e/verify-scenario-matrix.mjs

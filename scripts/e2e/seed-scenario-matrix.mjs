@@ -44,10 +44,10 @@ async function upsertMemberships(body) {
 }
 
 const adminDefinitions = [
-  { email: 'qa-admin-1@local.test', name: 'QA Admin One', team: 'cardinal', handicap: 0, globalRole: 'admin' },
-  { email: 'qa-admin-2@local.test', name: 'QA Admin Two', team: 'cardinal', handicap: 0, globalRole: 'player' },
-  { email: 'qa-admin-3@local.test', name: 'QA Admin Three', team: 'silver', handicap: 0, globalRole: 'player' },
-  { email: 'qa-admin-4@local.test', name: 'QA Admin Four', team: 'silver', handicap: 0, globalRole: 'player' },
+  { email: 'qa-player-1@local.test', name: 'QA Player One', team: 'cardinal', handicap: 0, globalRole: 'admin' },
+  { email: 'qa-player-2@local.test', name: 'QA Player Two', team: 'cardinal', handicap: 0, globalRole: 'player' },
+  { email: 'qa-player-3@local.test', name: 'QA Player Three', team: 'silver', handicap: 3, globalRole: 'player' },
+  { email: 'qa-player-4@local.test', name: 'QA Player Four', team: 'silver', handicap: 0, globalRole: 'player' },
 ];
 
 const admins = [];
@@ -105,7 +105,7 @@ await upsertMemberships(admins.map(admin => ({
   tournament_id: mainTournament.id,
   user_id: admin.id,
   status: 'active',
-  role: 'admin',
+  role: 'player',
   team: admin.team,
   joined_at: new Date().toISOString(),
 })));
@@ -113,7 +113,7 @@ await upsertMemberships(admins.map((admin, index) => ({
   tournament_id: rejectionTournament.id,
   user_id: admin.id,
   status: 'active',
-  role: 'admin',
+  role: 'player',
   team: index === 3 ? null : admin.team,
   joined_at: new Date().toISOString(),
 })));
@@ -180,6 +180,7 @@ async function createFixture({
   scoreSets = new Map(),
   incomplete = new Map(),
   teeByUser = new Map(),
+  browserScored = false,
 }) {
   const match = await insert('matches', {
     tournament_id: tournamentId,
@@ -225,26 +226,30 @@ async function createFixture({
   })));
 
   const rounds = {};
+  const expectedScores = {};
   for (const player of playerIndexes) {
     const round = await insert('rounds', {
       user_id: admins[player].id,
       match_id: match.id,
       course_id: course.id,
       tee_id: teeByUser.get(player) ?? commonTee.id,
-      course_handicap: 0,
+      course_handicap: admins[player].handicap,
     });
     rounds[player] = round;
     const scores = scoreSets.get(player) ?? baseScores();
+    expectedScores[player] = scores;
     const holeLimit = incomplete.get(player) ?? 18;
-    await insert('scores', scores.slice(0, holeLimit).map((grossScore, index) => ({
-      round_id: round.id,
-      user_id: admins[player].id,
-      hole_number: index + 1,
-      gross_score: grossScore,
-    })));
+    if (!browserScored) {
+      await insert('scores', scores.slice(0, holeLimit).map((grossScore, index) => ({
+        round_id: round.id,
+        user_id: admins[player].id,
+        hole_number: index + 1,
+        gross_score: grossScore,
+      })));
+    }
   }
 
-  return { match, segments: segmentRows, rounds };
+  return { match, segments: segmentRows, rounds, expectedScores, browserScored };
 }
 
 const fixtures = {};
@@ -255,6 +260,7 @@ fixtures.S1 = await createFixture({
   startsAt: '2027-03-18T13:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'singles', scoringMode: 'gross', players: [0, 2] }],
   scoreSets: new Map([[0, withWins([1])], [2, baseScores()]]),
+  browserScored: true,
 });
 fixtures.S2 = await createFixture({
   tournamentId: mainTournament.id,
@@ -263,6 +269,7 @@ fixtures.S2 = await createFixture({
   startsAt: '2027-03-18T14:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'singles', scoringMode: 'net', players: [1, 3] }],
   scoreSets: new Map([[1, baseScores()], [3, withWins([1, 2])]]),
+  browserScored: true,
 });
 fixtures.F1 = await createFixture({
   tournamentId: mainTournament.id,
@@ -270,14 +277,15 @@ fixtures.F1 = await createFixture({
   name: 'Four-Ball gross halve',
   startsAt: '2027-03-19T13:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'fourball', scoringMode: 'gross', players: [0, 1, 2, 3] }],
+  browserScored: true,
 });
 fixtures.F2 = await createFixture({
   tournamentId: mainTournament.id,
   code: 'F2',
-  name: 'Four-Ball net Blue 3 & 2',
+  name: 'Four-Ball net White 3 & 2 by handicap',
   startsAt: '2027-03-19T14:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'fourball', scoringMode: 'net', players: [0, 1, 2, 3] }],
-  scoreSets: new Map([[0, withWins([1, 2, 3])], [1, baseScores()], [2, baseScores()], [3, baseScores()]]),
+  browserScored: true,
 });
 fixtures.M1 = await createFixture({
   tournamentId: mainTournament.id,
@@ -296,6 +304,7 @@ fixtures.C1 = await createFixture({
   name: 'Audited correction changes result',
   startsAt: '2027-03-20T14:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'singles', scoringMode: 'gross', players: [0, 2] }],
+  browserScored: true,
 });
 fixtures.X1 = await createFixture({
   tournamentId: mainTournament.id,
@@ -303,6 +312,7 @@ fixtures.X1 = await createFixture({
   name: 'Concurrent finalization',
   startsAt: '2027-03-21T13:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'singles', scoringMode: 'gross', players: [1, 3] }],
+  browserScored: true,
 });
 fixtures.R1 = await createFixture({
   tournamentId: rejectionTournament.id,
@@ -342,7 +352,9 @@ const manifest = {
     match: fixture.match.id,
     segments: fixture.segments.map(segment => segment.id),
     rounds: Object.fromEntries(Object.entries(fixture.rounds).map(([player, round]) => [player, round.id])),
-  }])),
+    expectedScores: fixture.expectedScores,
+    browserScored: fixture.browserScored,
+  }]))
 };
 await writeFile(fixtureFile, JSON.stringify(manifest), { mode: 0o600 });
 
