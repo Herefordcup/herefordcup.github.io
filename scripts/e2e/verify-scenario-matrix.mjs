@@ -160,7 +160,7 @@ await expectRejected(rpc('finalize_match_results', finalPayload('R1'), adminOneT
 // [R2] Two individually valid tees with different indexes must reject net finalization.
 await expectRejected(rpc('complete_match_if_ready', {
   target_match_id: manifest.fixtures.R2.match,
-}, adminOneToken), 'matching tee stroke indexes', '[R2] mismatched-index automatic completion');
+}, playerTwoToken), 'matching tee stroke indexes', '[R2] mismatched-index automatic completion');
 for (const code of ['R1', 'R2']) {
   const match = exactSingle(await requireOk(request(`/rest/v1/matches?id=eq.${manifest.fixtures[code].match}&select=status`), `[${code}] unchanged match readback`), `[${code}] unchanged match`);
   equal(match.status, 'scheduled', `[${code}] unchanged match status`);
