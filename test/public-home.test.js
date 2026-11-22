@@ -155,7 +155,7 @@ test('public itinerary and dynamic day tabs include narrow-screen overflow prote
 test('all entrypoints that reach changed shared modules are cache-busted together', async () => {
   const sources = await Promise.all(cachePaths.map(path => readFile(new URL(path, import.meta.url), 'utf8')));
   for (const [index, source] of sources.slice(0, 3).entries()) {
-    assert.match(source, /supabase\.js\?v=tournament-completion-1/, `missing shared data cache key in ${cachePaths[index]}`);
+    assert.match(source, /supabase\.js\?v=automatic-match-completion-1/, `missing shared data cache key in ${cachePaths[index]}`);
   }
   assert.match(sources[1], /home\.js\?v=home-standings-1/);
   for (const [offset, source] of sources.slice(3).entries()) {

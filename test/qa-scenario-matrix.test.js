@@ -19,7 +19,7 @@ const matrixIds = [
 ];
 
 test('manual QA workflow is loopback-only, secret-free, and always destroys its stack', () => {
-  assert.match(workflow, /^name: Four-admin disposable QA matrix/m);
+  assert.match(workflow, /^name: Four-player disposable E2E matrix/m);
   assert.match(workflow, /on:\s*\n\s*workflow_dispatch:/);
   assert.match(workflow, /pull_request:\s*\n\s*branches: \[main\]\s*\n\s*types: \[opened, synchronize, reopened, labeled\]/);
   assert.match(workflow, /if: github\.event_name == 'workflow_dispatch' \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'run-qa-matrix'\)/);
@@ -38,12 +38,12 @@ test('manual QA workflow is loopback-only, secret-free, and always destroys its 
   assert.doesNotMatch(workflow, new RegExp(productionProjectReference));
 });
 
-test('matrix sources reserve four synthetic administrators and enumerate every scenario', () => {
+test('matrix sources reserve four synthetic players and enumerate every scenario', () => {
   for (const [email, team] of [
-    ['qa-admin-1@local.test', 'cardinal'],
-    ['qa-admin-2@local.test', 'cardinal'],
-    ['qa-admin-3@local.test', 'silver'],
-    ['qa-admin-4@local.test', 'silver'],
+    ['qa-player-1@local.test', 'cardinal'],
+    ['qa-player-2@local.test', 'cardinal'],
+    ['qa-player-3@local.test', 'silver'],
+    ['qa-player-4@local.test', 'silver'],
   ]) {
     assert.match(seedSource, new RegExp(email.replace('.', '\\.')));
     assert.match(seedSource, new RegExp(`email: '${email}'[\\s\\S]*team: '${team}'`));
@@ -54,7 +54,14 @@ test('matrix sources reserve four synthetic administrators and enumerate every s
   assert.match(seedSource, /const mainTournament = await insert\('tournaments', \{[^}]*edition_year: 2027/);
   assert.doesNotMatch(seedSource, /const mainTournament = await insert\('tournaments', \{[^}]*edition_year: 2100/);
   assert.match(browserSource, /COMPLETE 2027 HEREFORD CUP/);
+  assert.match(seedSource, /tournament_id: mainTournament\.id,[\s\S]*role: 'player'/);
   assert.match(seedSource, /tournament_id: roleProtectionTournament\.id,[\s\S]*role: index === 1 \? 'admin' : 'player'/);
+  assert.match(seedSource, /qa-player-3@local\.test[^\n]*handicap: 3/);
+  assert.match(browserSource, /async function scoreFromPortal/);
+  assert.match(browserSource, /test\.setTimeout\(180_000\)/);
+  assert.match(browserSource, /Hole \$\{holeNumber\} gross score/);
+  assert.match(browserSource, /#saveRound/);
+  assert.match(seedSource, /browserScored: true/);
   assert.match(seedSource, /disposable-four-admin-qa/);
   assert.match(seedSource, /\[DISPOSABLE-QA\]/);
   assert.doesNotMatch(`${seedSource}\n${browserSource}\n${verificationSource}`, new RegExp(productionProjectReference));
@@ -84,9 +91,30 @@ test('exact verifier covers rollback, concurrency, completion, and generated arc
   assert.match(verificationSource, /match_commentaries/);
   assert.match(verificationSource, /source_tournament_id/);
   assert.match(verificationSource, /source_segment_id/);
+  assert.match(verificationSource, /course_handicap/);
+  assert.match(verificationSource, /expectedScores/);
+  assert.match(verificationSource, /\/rest\/v1\/scores\?round_id=eq\./);
+  assert.doesNotMatch(verificationSource, /\/rest\/v1\/round_scores\?/);
+  assert.match(verificationSource, /gross_score/);
+  assert.match(verificationSource, /bluePoints/);
+  assert.match(verificationSource, /whitePoints/);
+  assert.match(verificationSource, /point_value/);
   assert.match(verificationSource, /Generated Past Trips results cannot be changed or deleted/);
   assert.match(verificationSource, /Round/);
   assert.match(verificationSource, /1v1/);
   assert.match(verificationSource, /2v2 Best Ball/);
   assert.match(verificationSource, /2v2 Foursomes/);
+});
+
+test('matrix proves automatic completion, idempotency, and finalized-score recalculation', () => {
+  assert.match(browserSource, /Scores saved\. Match complete\./);
+  assert.match(browserSource, /Record Foursomes result/);
+  assert.doesNotMatch(browserSource, /await finalizeSelectedMatch\(page\);/);
+  assert.match(seedSource, /code: 'X1'[\s\S]*browserScored: false/);
+  assert.match(verificationSource, /target_match_id: manifest\.fixtures\.R2\.match,\s*\n\s*\}, playerTwoToken\)/);
+  assert.equal((verificationSource.match(/target_match_id: manifest\.fixtures\.X1\.match \}, playerTwoToken/g) || []).length, 2);
+  assert.match(verificationSource, /complete_match_if_ready/);
+  assert.match(verificationSource, /already_final/);
+  assert.match(verificationSource, /Score corrected and result recalculated/);
+  assert.match(verificationSource, /Finalized scores can be corrected but not deleted/);
 });

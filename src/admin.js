@@ -28,7 +28,7 @@ import {
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=tournament-completion-1';
+} from './supabase.js?v=automatic-match-completion-1';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -802,7 +802,7 @@ function populateAdminChoices() {
   );
   resultMatch.replaceChildren(
     new Option('Select a match', ''),
-    ...adminData.matches.filter(match => ['scheduled', 'live'].includes(match.status)).map(match => new Option(match.name, match.id)),
+    ...adminData.matches.filter(match => ['scheduled', 'live', 'final'].includes(match.status)).map(match => new Option(match.name, match.id)),
   );
   populateCorrectionRounds('');
   populateLegacyChoices();
@@ -825,6 +825,10 @@ function hydrateCommentarySettings() {
   commentarySettingsForm.elements.tone.value = settings?.tone ?? 'savage';
   commentarySettingsForm.elements.timing.value = settings?.timing ?? 'post_match';
   commentarySettingsForm.elements.maxCharacters.value = settings?.max_characters ?? 600;
+}
+
+function requiresManualTeamResult(match) {
+  return match?.match_segments?.some(segment => segment.format === 'foursomes') ?? false;
 }
 
 function renderResultSegments() {
@@ -859,7 +863,16 @@ function renderResultSegments() {
     }
     resultSegmentRows.append(card);
   }
-  resultFinalizationForm.querySelector('button[type="submit"]').disabled = !canFinalize;
+  const submitButton = resultFinalizationForm.querySelector('button[type="submit"]');
+  const manualTeamResult = requiresManualTeamResult(match) && match?.status !== 'final';
+  submitButton.hidden = !manualTeamResult;
+  submitButton.disabled = !manualTeamResult || !canFinalize;
+  const deleteToggle = document.querySelector('#correctionDelete');
+  deleteToggle.disabled = match?.status === 'final';
+  if (deleteToggle.disabled) {
+    deleteToggle.checked = false;
+    document.querySelector('#correctionScore').disabled = false;
+  }
 }
 
 function renderCommentaryApprovals() {
@@ -1279,10 +1292,29 @@ scoreCorrectionForm.addEventListener('submit', async event => {
     round.scores = deleteScore
       ? round.scores.filter(score => score.hole_number !== holeNumber)
       : [...round.scores.filter(score => score.hole_number !== holeNumber), result.score];
-    setMessage(message, `Correction saved and audited (${result.audit?.action || (deleteScore ? 'delete' : 'update')}).`);
+    const matchId = resultMatch.value;
+    const correctedMatch = adminData.matches.find(match => match.id === matchId);
+    let correctionStatus = `Correction saved and audited (${result.audit?.action || (deleteScore ? 'delete' : 'update')}).`;
+    if (correctedMatch?.status === 'final') {
+      const commentarySettings = adminData.settings.find(item => item.tournament_id === correctedMatch.tournament_id);
+      if (commentarySettings?.enabled) {
+        try {
+          const commentary = await generateMatchCommentary(matchId, { regenerate: true });
+          adminData.commentaries = upsertCommentaryById(adminData.commentaries, commentary);
+          renderCommentaryApprovals();
+          correctionStatus = 'Score corrected, result recalculated, and commentary regenerated.';
+        } catch (commentaryError) {
+          correctionStatus = `Score corrected and result recalculated, but commentary regeneration failed: ${commentaryError.message}`;
+        }
+      } else {
+        correctionStatus = 'Score corrected and result recalculated.';
+      }
+      renderResultSegments();
+    }
+    setMessage(message, correctionStatus);
     scoreCorrectionForm.reset();
     document.querySelector('#correctionScore').disabled = false;
-    setMessage(document.querySelector('#resultMessage'), 'Submitted score corrected and audited.');
+    setMessage(document.querySelector('#resultMessage'), correctionStatus);
     closeScoreCorrectionDialog();
   } catch (error) {
     setMessage(message, error.message, true);
