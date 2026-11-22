@@ -69,7 +69,7 @@ test('bootstrap is main-only, confirmation-gated, and repairs exactly 001-028 wi
 
 test('migration history parser rejects incomplete, divergent, and unexpected histories', () => {
   const local = localMigrationVersions();
-  assert.deepEqual(local, [...BASELINE_VERSIONS, '029', '030', '031', '032', '033', '034', '035', '036', '037', '038']);
+  assert.deepEqual(local, [...BASELINE_VERSIONS, '029', '030', '031', '032', '033', '034', '035', '036', '037', '038', '039']);
   const empty = listOutput(local, []);
   const baseline = listOutput(local, BASELINE_VERSIONS);
   const complete = listOutput(local, local);

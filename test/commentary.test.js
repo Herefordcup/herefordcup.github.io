@@ -239,6 +239,6 @@ test('admin entrypoint cache-busts both changed modules', async () => {
     readFile(new URL('../admin.html', import.meta.url), 'utf8'),
     readFile(adminUrl, 'utf8'),
   ]);
-  assert.match(html, /src\/admin\.js\?v=automatic-match-completion-1/);
-  assert.match(adminSource, /from '\.\/supabase\.js\?v=automatic-match-completion-1'/);
+  assert.match(html, /src\/admin\.js\?v=result-audit-layout-1/);
+  assert.match(adminSource, /from '\.\/supabase\.js\?v=result-audit-layout-1'/);
 });
