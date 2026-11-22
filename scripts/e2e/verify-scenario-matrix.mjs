@@ -140,11 +140,27 @@ equal(Number(correctionAudit.old_gross_score), 5, '[C1] old score');
 equal(Number(correctionAudit.new_gross_score), 4, '[C1] new score');
 equal(correctionAudit.correction_reason, '[C1] deterministic QA correction', '[C1] reason');
 equal(correctionAudit.corrected_by, manifest.admins[0].id, '[C1] correcting administrator');
+// [C1] Score corrected and result recalculated; deletion still fails closed after completion.
+await expectRejected(rpc('correct_hole_score', {
+  target_round_id: manifest.fixtures.C1.rounds['0'],
+  target_hole_number: 18,
+  target_reason: '[C1] forbidden finalized delete',
+  target_gross_score: null,
+  delete_score: true,
+}, adminOneToken), 'Finalized scores can be corrected but not deleted', '[C1] finalized delete rejection');
 
-// [R1] Missing score must reject without mutating match or segment state.
+// [R1] Missing score keeps automatic completion waiting without mutating state.
+const r1Waiting = await requireOk(rpc('complete_match_if_ready', {
+  target_match_id: manifest.fixtures.R1.match,
+}, adminOneToken), '[R1] automatic completion wait');
+equal(r1Waiting.finalized, false, '[R1] finalized flag');
+equal(r1Waiting.reason, 'incomplete_scores', '[R1] wait reason');
+// The privileged finalizer independently remains fail-closed on that same incomplete card.
 await expectRejected(rpc('finalize_match_results', finalPayload('R1'), adminOneToken), 'complete persisted hole scores', '[R1] incomplete finalization');
 // [R2] Two individually valid tees with different indexes must reject net finalization.
-await expectRejected(rpc('finalize_match_results', finalPayload('R2'), adminOneToken), 'matching tee stroke indexes', '[R2] mismatched-index finalization');
+await expectRejected(rpc('complete_match_if_ready', {
+  target_match_id: manifest.fixtures.R2.match,
+}, adminOneToken), 'matching tee stroke indexes', '[R2] mismatched-index automatic completion');
 for (const code of ['R1', 'R2']) {
   const match = exactSingle(await requireOk(request(`/rest/v1/matches?id=eq.${manifest.fixtures[code].match}&select=status`), `[${code}] unchanged match readback`), `[${code}] unchanged match`);
   equal(match.status, 'scheduled', `[${code}] unchanged match status`);
@@ -202,13 +218,14 @@ await expectRejected(rpc('complete_tournament_archive', {
 const rejectionTournament = exactSingle(await requireOk(request(`/rest/v1/tournaments?id=eq.${manifest.tournaments.rejection}&select=status`), '[T1] tournament readback'), '[T1] tournament');
 equal(rejectionTournament.status, 'open', '[T1] unchanged tournament status');
 
-// [X1] Two administrators race the same match; one commits and the other observes final state.
+// [X1] Two last-save completion requests serialize to one write and one idempotent replay.
 const x1Calls = await Promise.all([
-  rpc('finalize_match_results', finalPayload('X1'), adminOneToken),
-  rpc('finalize_match_results', finalPayload('X1'), adminOneToken),
+  rpc('complete_match_if_ready', { target_match_id: manifest.fixtures.X1.match }, adminOneToken),
+  rpc('complete_match_if_ready', { target_match_id: manifest.fixtures.X1.match }, adminOneToken),
 ]);
-equal(x1Calls.filter(response => response.ok).length, 1, '[X1] successful call count');
-equal(x1Calls.filter(response => !response.ok && response.text.includes('Only scheduled or live matches can be finalized')).length, 1, '[X1] serialized rejection count');
+equal(x1Calls.filter(response => response.ok).length, 2, '[X1] successful idempotent call count');
+equal(x1Calls.filter(response => response.data?.already_final === false).length, 1, '[X1] completing call count');
+equal(x1Calls.filter(response => response.data?.already_final === true).length, 1, '[X1] already-final replay count');
 const x1Segment = exactSingle(await requireOk(request(`/rest/v1/match_segments?id=eq.${manifest.fixtures.X1.segments[0]}&select=status,differential,holes_played,point_value`), '[X1] segment readback'), '[X1] segment');
 equal(x1Segment.status, 'final', '[X1] segment status');
 equal(Number(x1Segment.differential), 0, '[X1] segment differential');

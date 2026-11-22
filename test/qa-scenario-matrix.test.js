@@ -105,3 +105,13 @@ test('exact verifier covers rollback, concurrency, completion, and generated arc
   assert.match(verificationSource, /2v2 Best Ball/);
   assert.match(verificationSource, /2v2 Foursomes/);
 });
+
+test('matrix proves automatic completion, idempotency, and finalized-score recalculation', () => {
+  assert.match(browserSource, /Scores saved\. Match complete\./);
+  assert.match(browserSource, /Record Foursomes result/);
+  assert.doesNotMatch(browserSource, /await finalizeSelectedMatch\(page\);/);
+  assert.match(verificationSource, /complete_match_if_ready/);
+  assert.match(verificationSource, /already_final/);
+  assert.match(verificationSource, /Score corrected and result recalculated/);
+  assert.match(verificationSource, /Finalized scores can be corrected but not deleted/);
+});

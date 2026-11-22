@@ -94,8 +94,8 @@ test('card filtering preserves unsaved input nodes and moves focus from a newly 
   assert.equal(fallback.calls.length, 1);
 });
 
-test('only supported active matches can enter the finalization workflow', async () => {
-  assert.match(adminScript, /\['scheduled', 'live'\]\.includes\(match\.status\)/);
+test('supported active and finalized matches enter result review or correction workflows', async () => {
+  assert.match(adminScript, /\['scheduled', 'live', 'final'\]\.includes\(match\.status\)/);
   const sql = await readFile(automaticFinalizationMigrationUrl, 'utf8');
   assert.match(sql, /match_record\.status not in \('scheduled', 'live'\)/i);
   assert.match(sql, /Only scheduled or live matches can be finalized/i);
@@ -126,7 +126,7 @@ test('segment player selection shows tournament teams and derives the scoring si
   assert.equal(segmentPlayerFromMembership(inactive, 4), null);
   assert.doesNotMatch(adminScript, /Match side|data-side-select|Blue side|White side/);
   assert.match(adminScript, /option\.disabled = disabled/);
-  assert.match(html, /src="src\/admin\.js\?v=tournament-completion-1"/);
+  assert.match(html, /src="src\/admin\.js\?v=automatic-match-completion-1"/);
   assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=tournament-completion-1'/);
 });
 

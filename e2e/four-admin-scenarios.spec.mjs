@@ -22,7 +22,7 @@ async function signIn(browser, adminIndex) {
   return { context, page, admin };
 }
 
-async function scoreFromPortal(page, fixture, playerIndex) {
+async function scoreFromPortal(page, code, fixture, playerIndex) {
   await page.locator('[data-member-view="score"]').click();
   await page.locator('#matchSelect').selectOption(fixture.match);
   await expect(page.locator('#scorecard')).toBeVisible();
@@ -33,7 +33,14 @@ async function scoreFromPortal(page, fixture, playerIndex) {
   }
   await expect(page.locator('#saveRound')).toBeEnabled();
   await page.locator('#saveRound').click();
-  await expect(page.locator('#saveMessage')).toHaveText('Scores saved. Submitted holes are now locked; continue with any remaining holes.');
+  const lastAssignedPlayer = Math.max(...Object.keys(fixture.expectedScores).map(Number));
+  const completesAutomatically = ['S1', 'S2', 'F1', 'F2', 'C1'].includes(code)
+    && playerIndex === lastAssignedPlayer;
+  if (completesAutomatically) {
+    await expect(page.locator('#saveMessage')).toContainText('Scores saved. Match complete.');
+  } else {
+    await expect(page.locator('#saveMessage')).toHaveText('Scores saved. Submitted holes are now locked; continue with any remaining holes.');
+  }
   await expect(page.locator('#scorecard input[readonly]')).toHaveCount(18);
 }
 
@@ -49,6 +56,7 @@ async function finalizeSelectedMatch(page, { manual = [] } = {}) {
     await card.locator('[name="holesPlayed"]').fill(String(result.holesPlayed));
   }
   const submit = page.locator('#resultFinalizationForm button[type="submit"]');
+  await expect(submit).toHaveText('Record Foursomes result');
   await expect(submit).toBeEnabled();
   await submit.click();
   await expect(page.locator('#resultMessage')).toHaveText('Match finalized. Cup points and official statistics are now available.');
@@ -63,8 +71,8 @@ test('[A1][A2][R1][R2][R3][C1][S1][S2][F1][F2][M1] pre-completion browser matrix
     if (index === 0) await expect(page.locator('#adminLink')).toBeVisible();
     else await expect(page.locator('#adminLink')).toBeHidden();
 
-    for (const [, fixture] of browserScoredFixtures) {
-      if (fixture.expectedScores[String(index)]) await scoreFromPortal(page, fixture, index);
+    for (const [code, fixture] of browserScoredFixtures) {
+      if (fixture.expectedScores[String(index)]) await scoreFromPortal(page, code, fixture, index);
     }
 
     if (index === 0) {
@@ -86,11 +94,11 @@ test('[A1][A2][R1][R2][R3][C1][S1][S2][F1][F2][M1] pre-completion browser matrix
 
   await selectMatch(page, 'R1');
   await expect(page.locator('#resultSegmentRows')).toContainText('Waiting for completed scorecards');
-  await expect(page.locator('#resultFinalizationForm button[type="submit"]')).toBeDisabled();
+  await expect(page.locator('#resultFinalizationForm button[type="submit"]')).toBeHidden();
 
   await selectMatch(page, 'R2');
   await expect(page.locator('#resultSegmentRows')).toContainText('matching hole stroke indexes');
-  await expect(page.locator('#resultFinalizationForm button[type="submit"]')).toBeDisabled();
+  await expect(page.locator('#resultFinalizationForm button[type="submit"]')).toBeHidden();
 
   await page.locator('#matchTournament').selectOption(manifest.tournaments.rejection);
   const noTeamOption = page.locator(`#segmentRows [data-player-select] option[value="${manifest.admins[3].id}"]`).first();
@@ -105,7 +113,7 @@ test('[A1][A2][R1][R2][R3][C1][S1][S2][F1][F2][M1] pre-completion browser matrix
   await page.locator('#correctionScore').fill('4');
   await page.locator('#correctionReason').fill('[C1] deterministic QA correction');
   await page.locator('#scoreCorrectionForm button[type="submit"]').click();
-  await expect(page.locator('#resultMessage')).toHaveText('Submitted score corrected and audited.');
+  await expect(page.locator('#resultMessage')).toContainText('Score corrected and result recalculated');
 
   const expectedResults = {
     S1: 'Blue wins 1 Up',
@@ -118,7 +126,7 @@ test('[A1][A2][R1][R2][R3][C1][S1][S2][F1][F2][M1] pre-completion browser matrix
     await selectMatch(page, code);
     await expect(page.locator('#resultSegmentRows')).toContainText(expectedResults[code]);
     await expect(page.locator('#resultSegmentRows')).toContainText('Calculated automatically from submitted hole-by-hole scores.');
-    await finalizeSelectedMatch(page);
+    await expect(page.locator('#resultFinalizationForm button[type="submit"]')).toBeHidden();
   }
 
   await selectMatch(page, 'M1');

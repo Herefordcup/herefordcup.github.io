@@ -716,6 +716,15 @@ export async function finalizeMatchResults({ matchId, segmentResults }) {
   return data;
 }
 
+export async function completeMatchIfReady(matchId) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('complete_match_if_ready', {
+    target_match_id: matchId,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function completeTournamentArchive(tournamentId) {
   const supabase = await getSupabase();
   const { data, error } = await supabase.rpc('complete_tournament_archive', { target_tournament_id: tournamentId });

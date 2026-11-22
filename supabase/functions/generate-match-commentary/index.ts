@@ -107,8 +107,21 @@ Deno.serve(async request => {
       supabase.rpc('is_admin'),
       supabase.rpc('is_tournament_admin', { target_tournament_id: match.tournament_id }),
     ]);
-    if (adminError || tournamentAdminError || (!isAdmin && !isTournamentAdmin)) {
-      return json({ error: 'Administrator access required' }, 403);
+    if (adminError || tournamentAdminError) return json({ error: 'Authorization check failed' }, 403);
+    const administrator = Boolean(isAdmin || isTournamentAdmin);
+    if (regenerate && !administrator) {
+      return json({ error: 'Administrator access required to regenerate commentary' }, 403);
+    }
+    if (!administrator) {
+      const { data: assignments, error: assignmentError } = await supabase
+        .from('match_segment_players')
+        .select('segment_id, match_segments!inner(match_id)')
+        .eq('user_id', userData.user.id)
+        .eq('match_segments.match_id', match.id)
+        .limit(1);
+      if (assignmentError || !assignments?.length) {
+        return json({ error: 'Assigned match participant or administrator access required' }, 403);
+      }
     }
 
     const { data: settings, error: settingsError } = await supabase

@@ -16,6 +16,8 @@ import {
 import { hasSupabaseConfig } from './config.js';
 import {
   canSetNewPassword,
+  completeMatchIfReady,
+  generateMatchCommentary,
   getCurrentSession,
   hasActiveTournamentMembership,
   loadOwnTournamentMemberships,
@@ -34,7 +36,7 @@ import {
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=tournament-completion-1';
+} from './supabase.js?v=automatic-match-completion-1';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');
@@ -806,7 +808,26 @@ saveButton.addEventListener('click', async () => {
     scores = mergePersistedScores(blankScores(), savedRound.scores ?? []);
     renderScorecard();
     setSyncStatus('Saved');
-    showMessage('Scores saved. Submitted holes are now locked; continue with any remaining holes.');
+    let savedMessage = 'Scores saved. Submitted holes are now locked; continue with any remaining holes.';
+    if (matchSelect.value) {
+      try {
+        const completion = await completeMatchIfReady(matchSelect.value);
+        if (completion?.finalized) {
+          savedMessage = 'Scores saved. Match complete.';
+          if (completion.commentary_eligible) {
+            try {
+              await generateMatchCommentary(matchSelect.value);
+              savedMessage += ' The AI recap was generated.';
+            } catch (commentaryError) {
+              savedMessage += ` The recap could not be generated automatically: ${commentaryError.message}`;
+            }
+          }
+        }
+      } catch (completionError) {
+        savedMessage += ` Automatic completion is waiting: ${completionError.message}`;
+      }
+    }
+    showMessage(savedMessage);
   } catch (error) {
     setSyncStatus('Save failed', true);
     showMessage(error.message, true);
