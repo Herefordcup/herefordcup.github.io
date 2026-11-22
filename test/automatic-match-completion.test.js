@@ -8,6 +8,7 @@ const portal = await readFile(new URL('src/portal.js', root), 'utf8');
 const admin = await readFile(new URL('src/admin.js', root), 'utf8');
 const supabase = await readFile(new URL('src/supabase.js', root), 'utf8');
 const adminHtml = await readFile(new URL('admin.html', root), 'utf8');
+const adminCss = await readFile(new URL('admin.css', root), 'utf8');
 const commentaryFunction = await readFile(new URL('supabase/functions/generate-match-commentary/index.ts', root), 'utf8');
 
 test('assigned players automatically complete score-derived matches only when every score exists', () => {
@@ -29,6 +30,11 @@ test('automatic completion is idempotent and preserves the explicit Foursomes fa
   assert.match(adminHtml, /Record Foursomes result/);
   assert.doesNotMatch(adminHtml, />Finalize match</);
   assert.match(admin, /requiresManualTeamResult/);
+});
+
+test('hidden automatic-format controls stay visually hidden despite button display styles', () => {
+  assert.match(adminCss, /\[hidden\]\s*\{\s*display:\s*none\s*!important\s*;?\s*\}/i);
+  assert.match(adminHtml, /admin\.css\?v=automatic-match-completion-1/);
 });
 
 test('portal attempts completion and initial recap after an assigned score save', () => {
