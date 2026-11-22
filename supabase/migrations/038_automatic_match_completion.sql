@@ -647,12 +647,21 @@ begin
     delete from public.scores where id = existing_score.id returning * into saved_score;
     audit_action := 'delete';
   else
-    insert into public.scores(round_id, user_id, hole_number, gross_score, updated_at)
-    values (target_round_id, score_user_id, target_hole_number, target_gross_score, now())
-    on conflict (round_id, hole_number) do update
-      set gross_score = excluded.gross_score, updated_at = now()
-    returning * into saved_score;
-    audit_action := case when existing_score.id is null then 'insert' else 'update' end;
+    if was_final and existing_score.id is null then
+      raise exception 'Finalized scores can be corrected but missing scores cannot be inserted';
+    end if;
+    if existing_score.id is not null then
+      update public.scores
+      set gross_score = target_gross_score, updated_at = now()
+      where id = existing_score.id
+      returning * into saved_score;
+      audit_action := 'update';
+    else
+      insert into public.scores(round_id, user_id, hole_number, gross_score, updated_at)
+      values (target_round_id, score_user_id, target_hole_number, target_gross_score, now())
+      returning * into saved_score;
+      audit_action := 'insert';
+    end if;
   end if;
 
   insert into public.score_correction_audit(

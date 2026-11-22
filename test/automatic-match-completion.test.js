@@ -55,6 +55,8 @@ test('assigned players may request only the first recap while regeneration remai
 
 test('audited administrators can replace a finalized score and atomically recalculate the result', () => {
   assert.match(migration, /Finalized scores can be corrected but not deleted/i);
+  assert.match(migration, /was_final and existing_score\.id is null[\s\S]*missing scores cannot be inserted/i);
+  assert.match(migration, /if existing_score\.id is not null then[\s\S]*update public\.scores[\s\S]*where id = existing_score\.id[\s\S]*else[\s\S]*insert into public\.scores/i);
   assert.match(migration, /set_config\('app\.correcting_final_match_id', target_match_id::text, true\)/i);
   assert.match(migration, /public\.finalize_match_results\(target_match_id, recompute_results\)/i);
   assert.match(migration, /score_correction_audit/i);
