@@ -312,7 +312,7 @@ fixtures.X1 = await createFixture({
   name: 'Concurrent finalization',
   startsAt: '2027-03-21T13:00:00Z',
   segments: [{ startHole: 1, endHole: 18, format: 'singles', scoringMode: 'gross', players: [1, 3] }],
-  browserScored: true,
+  browserScored: false,
 });
 fixtures.R1 = await createFixture({
   tournamentId: rejectionTournament.id,

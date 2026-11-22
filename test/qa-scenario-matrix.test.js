@@ -110,6 +110,7 @@ test('matrix proves automatic completion, idempotency, and finalized-score recal
   assert.match(browserSource, /Scores saved\. Match complete\./);
   assert.match(browserSource, /Record Foursomes result/);
   assert.doesNotMatch(browserSource, /await finalizeSelectedMatch\(page\);/);
+  assert.match(seedSource, /code: 'X1'[\s\S]*browserScored: false/);
   assert.match(verificationSource, /complete_match_if_ready/);
   assert.match(verificationSource, /already_final/);
   assert.match(verificationSource, /Score corrected and result recalculated/);
