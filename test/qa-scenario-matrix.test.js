@@ -112,6 +112,7 @@ test('matrix proves automatic completion, idempotency, and finalized-score recal
   assert.doesNotMatch(browserSource, /await finalizeSelectedMatch\(page\);/);
   assert.match(seedSource, /code: 'X1'[\s\S]*browserScored: false/);
   assert.match(verificationSource, /target_match_id: manifest\.fixtures\.R2\.match,\s*\n\s*\}, playerTwoToken\)/);
+  assert.equal((verificationSource.match(/target_match_id: manifest\.fixtures\.X1\.match \}, playerTwoToken/g) || []).length, 2);
   assert.match(verificationSource, /complete_match_if_ready/);
   assert.match(verificationSource, /already_final/);
   assert.match(verificationSource, /Score corrected and result recalculated/);

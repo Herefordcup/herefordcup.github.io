@@ -220,8 +220,8 @@ equal(rejectionTournament.status, 'open', '[T1] unchanged tournament status');
 
 // [X1] Two last-save completion requests serialize to one write and one idempotent replay.
 const x1Calls = await Promise.all([
-  rpc('complete_match_if_ready', { target_match_id: manifest.fixtures.X1.match }, adminOneToken),
-  rpc('complete_match_if_ready', { target_match_id: manifest.fixtures.X1.match }, adminOneToken),
+  rpc('complete_match_if_ready', { target_match_id: manifest.fixtures.X1.match }, playerTwoToken),
+  rpc('complete_match_if_ready', { target_match_id: manifest.fixtures.X1.match }, playerTwoToken),
 ]);
 equal(x1Calls.filter(response => response.ok).length, 2, '[X1] successful idempotent call count');
 equal(x1Calls.filter(response => response.data?.already_final === false).length, 1, '[X1] completing call count');
