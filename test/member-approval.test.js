@@ -94,7 +94,7 @@ test('administrator portal exposes pending, active, and permanent membership del
   assert.match(adminHtml, /admin\.js\?v=result-audit-layout-1/);
   assert.match(adminScript, /supabase\.js\?v=result-audit-layout-1/);
   assert.match(adminScript, /match-results\.js\?v=automatic-results-2/);
-  assert.match(portalHtml, /portal\.js\?v=result-audit-layout-1/);
+  assert.match(portalHtml, /portal\.js\?v=itinerary-1/);
   assert.match(portalScript, /supabase\.js\?v=result-audit-layout-1/);
   assert.match(portalScript, /member\.js\?v=member-role-1/);
   assert.match(supabaseScript, /export async function setTournamentMembershipStatus/);
