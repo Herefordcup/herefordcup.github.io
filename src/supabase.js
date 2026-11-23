@@ -771,17 +771,23 @@ export async function loadMembershipRosterData() {
 
 export async function loadMatchResultAudits(matchId) {
   const supabase = await getSupabase();
-  const { data, error } = await supabase.from('match_result_audit')
-    .select('*, profiles!match_result_audit_changed_by_fkey(display_name)')
-    .eq('match_id', matchId)
-    .order('changed_at', { ascending: false });
-  if (error) throw error;
-  return data ?? [];
+  const pageSize = 500;
+  const audits = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase.from('match_result_audit')
+      .select('*')
+      .eq('match_id', matchId)
+      .order('event_sequence', { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    audits.push(...(data ?? []));
+    if ((data?.length ?? 0) < pageSize) return audits;
+  }
 }
 
 export async function loadAdminData() {
   const supabase = await getSupabase();
-  const [tournaments, memberships, courses, matches, rules, settings, commentaries, rounds, resultAudits, legacyEditions] = await Promise.all([
+  const [tournaments, memberships, courses, matches, rules, settings, commentaries, rounds, legacyEditions] = await Promise.all([
     supabase.from('tournaments').select('*').order('edition_year', { ascending: false }),
     supabase.from('tournament_memberships').select('*, profiles!tournament_memberships_user_id_fkey(id, display_name, handicap_index, role)').order('created_at'),
     supabase.from('courses').select('id, name').eq('active', true).order('name'),
@@ -790,10 +796,9 @@ export async function loadAdminData() {
     supabase.from('commentary_settings').select('*'),
     supabase.from('match_commentaries').select('*, matches(name)').order('created_at', { ascending: false }),
     supabase.from('rounds').select('*, profiles(display_name), courses(name), tees(name, holes(hole_number, stroke_index)), scores!scores_round_id_fkey(*)').order('created_at', { ascending: false }),
-    supabase.from('match_result_audit').select('*, profiles!match_result_audit_changed_by_fkey(display_name)').order('changed_at', { ascending: false }),
     supabase.from('legacy_editions').select('*, legacy_results(*), legacy_photos(*)').order('edition_year', { ascending: true }),
   ]);
-  for (const result of [tournaments, memberships, courses, matches, rules, settings, commentaries, rounds, resultAudits, legacyEditions]) {
+  for (const result of [tournaments, memberships, courses, matches, rules, settings, commentaries, rounds, legacyEditions]) {
     if (result.error) throw result.error;
   }
   return {
@@ -805,7 +810,7 @@ export async function loadAdminData() {
     settings: settings.data ?? [],
     commentaries: commentaries.data ?? [],
     rounds: rounds.data ?? [],
-    resultAudits: resultAudits.data ?? [],
+    resultAudits: [],
     legacyEditions: legacyEditions.data ?? [],
   };
 }

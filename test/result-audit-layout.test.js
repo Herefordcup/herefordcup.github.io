@@ -14,24 +14,33 @@ const matrixVerifier = await readFile(new URL('scripts/e2e/verify-scenario-matri
 
 test('authoritative result changes append immutable match-scoped audit entries', () => {
   assert.ok(migration, 'forward migration 039 is required');
+  assert.match(migration, /^begin;[\s\S]*lock table public\.matches in access exclusive mode/i);
   assert.match(migration, /create table if not exists public\.match_result_audit/i);
   assert.match(migration, /action text not null check \(action in \('baseline', 'finalized', 'recalculated'\)\)/i);
   assert.match(migration, /old_differential[\s\S]*new_differential[\s\S]*change_reason[\s\S]*changed_by[\s\S]*changed_at/i);
   assert.match(migration, /foreign key \(segment_id, match_id\) references public\.match_segments\(id, match_id\) on delete cascade/i);
   assert.match(migration, /create or replace function public\.audit_authoritative_result_change\(\)/i);
-  assert.match(migration, /after update on public\.match_segments/i);
+  assert.match(migration, /event_sequence bigint generated always as identity unique/i);
+  assert.match(migration, /actor_display_name text/i);
+  assert.match(migration, /after insert or update on public\.match_segments/i);
   assert.match(migration, /current_setting\('app\.correcting_final_match_id', true\)/i);
   assert.match(migration, /current_setting\('app\.auto_finalize_match_id', true\)/i);
   assert.match(migration, /insert into public\.match_result_audit/i);
   assert.match(migration, /revoke insert, update, delete on public\.match_result_audit from authenticated/i);
+  assert.match(migration, /revoke insert, update, delete on public\.match_result_audit from service_role/i);
+  assert.match(migration, /not exists \([\s\S]*from public\.match_result_audit existing_audit[\s\S]*existing_audit\.segment_id = segment\.id/i);
+  assert.match(migration, /commit;\s*$/i);
 });
 
 
 test('score-correction reasons flow into result recalculation history', () => {
   assert.match(migration, /create or replace function public\.set_result_change_reason_from_score_audit\(\)/i);
   assert.match(migration, /set_config\('app\.result_change_reason', new\.correction_reason, true\)/i);
+  assert.match(migration, /set_config\('app\.result_change_match_id',[\s\S]*audit_round\.match_id/i);
+  assert.match(migration, /set_config\('app\.result_change_round_id', new\.round_id::text, true\)/i);
   assert.match(migration, /after insert on public\.score_correction_audit/i);
   assert.match(migration, /coalesce\([\s\S]*current_setting\('app\.result_change_reason', true\)/i);
+  assert.match(migration, /new\.format in \('singles', 'fourball'\)[\s\S]*public\.match_segment_players/i);
 });
 
 
@@ -46,12 +55,19 @@ test('result history is readable only by global or exact-tournament administrato
 
 test('administrator data and selected-match UI expose safe result history', () => {
   assert.match(supabaseScript, /from\('match_result_audit'\)/);
-  assert.match(supabaseScript, /profiles!match_result_audit_changed_by_fkey\(display_name\)/);
+  assert.match(supabaseScript, /\.eq\('match_id', matchId\)[\s\S]*\.order\('event_sequence',[\s\S]*\.range\(from, from \+ pageSize - 1\)/);
+  const loadAdminDataBlock = supabaseScript.match(/export async function loadAdminData\(\)[\s\S]*?\n}\r?\n/);
+  assert.ok(loadAdminDataBlock);
+  assert.doesNotMatch(loadAdminDataBlock[0], /from\('match_result_audit'\)/);
   assert.match(adminHtml, /id="resultAuditHistory"/);
   assert.match(adminScript, /function renderResultAuditHistory/);
   assert.match(adminScript, /resultAuditHistory\.replaceChildren/);
   assert.match(adminScript, /textContent/);
   assert.match(adminScript, /adminData\.resultAudits/);
+  assert.match(adminScript, /const selectedResultMatchId = resultMatch\.value/);
+  assert.match(adminScript, /resultMatch\.value = selectedResultMatchId/);
+  assert.match(adminScript, /History refresh failed:/);
+  assert.equal((adminScript.match(/catch \(historyError\)/g) || []).length, 2);
   assert.doesNotMatch(adminScript, /resultAuditHistory\.innerHTML/);
 });
 

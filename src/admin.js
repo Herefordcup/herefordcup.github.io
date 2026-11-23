@@ -808,6 +808,7 @@ function renderTournamentCompletion() {
 }
 
 function populateAdminChoices() {
+  const selectedResultMatchId = resultMatch.value;
   const tournamentSelects = ['#matchTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
   for (const select of tournamentSelects) select.replaceChildren(...adminData.tournaments.map(tournament => new Option(`${tournament.name} · ${tournament.edition_year}`, tournament.id)));
   renderRuleEditor();
@@ -822,7 +823,10 @@ function populateAdminChoices() {
     new Option('Select a match', ''),
     ...adminData.matches.filter(match => ['scheduled', 'live', 'final'].includes(match.status)).map(match => new Option(match.name, match.id)),
   );
-  populateCorrectionRounds('');
+  if ([...resultMatch.options].some(option => option.value === selectedResultMatchId)) {
+    resultMatch.value = selectedResultMatchId;
+  }
+  populateCorrectionRounds(resultMatch.value);
   populateLegacyChoices();
   renderTournamentCompletion();
 }
@@ -910,9 +914,11 @@ function renderResultAuditHistory() {
     const reason = document.createElement('p');
     reason.textContent = audit.change_reason;
     const actor = document.createElement('small');
-    actor.textContent = audit.profiles?.display_name
-      ? `Changed by ${audit.profiles.display_name}`
-      : audit.action === 'baseline' ? 'System baseline' : 'System-authorized update';
+    actor.textContent = audit.actor_display_name
+      ? `Changed by ${audit.actor_display_name}`
+      : audit.changed_by
+        ? 'Changed by an administrator (name unavailable)'
+        : audit.action === 'baseline' ? 'System baseline' : 'System-authorized update';
 
     card.append(heading, transition, reason, actor);
     resultAuditHistory.append(card);
@@ -921,6 +927,7 @@ function renderResultAuditHistory() {
 
 async function refreshResultAuditHistory(matchId) {
   const latest = await loadMatchResultAudits(matchId);
+  if (resultMatch.value !== matchId) return;
   adminData.resultAudits = [
     ...(adminData.resultAudits ?? []).filter(audit => audit.match_id !== matchId),
     ...latest,
@@ -1084,9 +1091,24 @@ matchPlanForm.addEventListener('submit', async event => {
   } catch (error) { setMessage(matchPlanMessage, error.message, true); }
 });
 
-resultMatch.addEventListener('change', () => {
+resultMatch.addEventListener('change', async () => {
   renderResultSegments();
   populateCorrectionRounds(resultMatch.value);
+  const matchId = resultMatch.value;
+  if (!matchId) return;
+  const loading = document.createElement('p');
+  loading.className = 'empty-panel';
+  loading.textContent = 'Loading authoritative result history…';
+  resultAuditHistory.replaceChildren(loading);
+  try {
+    await refreshResultAuditHistory(matchId);
+  } catch (error) {
+    if (resultMatch.value !== matchId) return;
+    const failure = document.createElement('p');
+    failure.className = 'empty-panel';
+    failure.textContent = `History refresh failed: ${error.message}`;
+    resultAuditHistory.replaceChildren(failure);
+  }
 });
 resultFinalizationForm.addEventListener('submit', async event => {
   event.preventDefault();
@@ -1108,9 +1130,19 @@ resultFinalizationForm.addEventListener('submit', async event => {
     await finalizeMatchResults({ matchId, segmentResults });
     const finalized = adminData.matches.find(match => match.id === matchId);
     finalized.status = 'final';
+    for (const savedResult of segmentResults) {
+      const segment = finalized.match_segments?.find(item => item.id === savedResult.segment_id);
+      if (segment) Object.assign(segment, savedResult);
+    }
     populateAdminChoices();
     renderResultSegments();
-    await refreshResultAuditHistory(matchId);
+    let historyWarning = '';
+    try {
+      await refreshResultAuditHistory(matchId);
+    } catch (historyError) {
+      historyWarning = ` History refresh failed: ${historyError.message}`;
+    }
+    const finalizationMessage = text => `${text}${historyWarning}`;
 
     const commentarySettings = adminData.settings.find(item => item.tournament_id === finalized.tournament_id);
     if (commentarySettings?.enabled) {
@@ -1119,16 +1151,16 @@ resultFinalizationForm.addEventListener('submit', async event => {
         const commentary = await generateMatchCommentary(matchId);
         adminData.commentaries = upsertCommentaryById(adminData.commentaries, commentary);
         renderCommentaryApprovals();
-        setMessage(message, commentary.status === 'approved'
+        setMessage(message, finalizationMessage(commentary.status === 'approved'
           ? 'Match finalized. Commentary generated and published.'
-          : 'Match finalized. Commentary generated and awaiting approval.');
+          : 'Match finalized. Commentary generated and awaiting approval.'), Boolean(historyWarning));
       } catch (commentaryError) {
-        setMessage(message, `Match finalized, but automatic commentary failed: ${commentaryError.message}. Use Generate match recap to retry.`, true);
+        setMessage(message, finalizationMessage(`Match finalized, but automatic commentary failed: ${commentaryError.message}. Use Generate match recap to retry.`), true);
       }
       return;
     }
 
-    setMessage(message, 'Match finalized. Cup points and official statistics are now available.');
+    setMessage(message, finalizationMessage('Match finalized. Cup points and official statistics are now available.'), Boolean(historyWarning));
   } catch (error) { setMessage(message, error.message, true); }
 });
 
@@ -1410,6 +1442,7 @@ scoreCorrectionForm.addEventListener('submit', async event => {
     const matchId = resultMatch.value;
     const correctedMatch = adminData.matches.find(match => match.id === matchId);
     let correctionStatus = `Correction saved and audited (${result.audit?.action || (deleteScore ? 'delete' : 'update')}).`;
+    let historyWarning = '';
     if (correctedMatch?.status === 'final') {
       const commentarySettings = adminData.settings.find(item => item.tournament_id === correctedMatch.tournament_id);
       if (commentarySettings?.enabled) {
@@ -1425,12 +1458,17 @@ scoreCorrectionForm.addEventListener('submit', async event => {
         correctionStatus = 'Score corrected and result recalculated.';
       }
       renderResultSegments();
-      await refreshResultAuditHistory(matchId);
+      try {
+        await refreshResultAuditHistory(matchId);
+      } catch (historyError) {
+        historyWarning = ` History refresh failed: ${historyError.message}`;
+      }
     }
-    setMessage(message, correctionStatus);
+    correctionStatus += historyWarning;
+    setMessage(message, correctionStatus, Boolean(historyWarning));
     scoreCorrectionForm.reset();
     document.querySelector('#correctionScore').disabled = false;
-    setMessage(document.querySelector('#resultMessage'), correctionStatus);
+    setMessage(document.querySelector('#resultMessage'), correctionStatus, Boolean(historyWarning));
     closeScoreCorrectionDialog();
   } catch (error) {
     setMessage(message, error.message, true);

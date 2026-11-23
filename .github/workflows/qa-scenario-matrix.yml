@@ -7,7 +7,7 @@ on:
     types: [opened, synchronize, reopened, labeled]
 
 concurrency:
-  group: four-admin-disposable-qa-${{ github.ref }}
+  group: hereford-disposable-supabase
   cancel-in-progress: false
 
 permissions:
