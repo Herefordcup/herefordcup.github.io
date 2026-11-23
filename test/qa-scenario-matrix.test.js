@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 const read = relativePath => readFile(new URL(`../${relativePath}`, import.meta.url), 'utf8').catch(() => '');
 
 const workflow = await read('.github/workflows/qa-scenario-matrix.yml');
+const smokeWorkflow = await read('.github/workflows/disposable-e2e.yml');
 const seedSource = await read('scripts/e2e/seed-scenario-matrix.mjs');
 const browserSource = await read('e2e/four-admin-scenarios.spec.mjs');
 const verificationSource = await read('scripts/e2e/verify-scenario-matrix.mjs');
@@ -36,6 +37,12 @@ test('manual QA workflow is loopback-only, secret-free, and always destroys its 
   assert.match(workflow, /Verify disposable Supabase is stopped/);
   assert.doesNotMatch(workflow, /environment:\s*production|SUPABASE_ACCESS_TOKEN|\$\{\{\s*secrets\.|supabase\.co/);
   assert.doesNotMatch(workflow, new RegExp(productionProjectReference));
+});
+
+test('disposable Supabase workflows share one non-cancelling concurrency lane', () => {
+  const sharedLane = /concurrency:\s*\n\s*group: hereford-disposable-supabase\s*\n\s*cancel-in-progress: false/;
+  assert.match(workflow, sharedLane);
+  assert.match(smokeWorkflow, sharedLane);
 });
 
 test('matrix sources reserve four synthetic players and enumerate every scenario', () => {

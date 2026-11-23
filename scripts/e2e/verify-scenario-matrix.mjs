@@ -140,6 +140,28 @@ equal(Number(correctionAudit.old_gross_score), 5, '[C1] old score');
 equal(Number(correctionAudit.new_gross_score), 4, '[C1] new score');
 equal(correctionAudit.correction_reason, '[C1] deterministic QA correction', '[C1] reason');
 equal(correctionAudit.corrected_by, manifest.admins[0].id, '[C1] correcting administrator');
+
+const c1ResultAudits = await requireOk(request(
+  `/rest/v1/match_result_audit?match_id=eq.${manifest.fixtures.C1.match}&select=action,segment_id,old_status,new_status,old_differential,new_differential,old_holes_played,new_holes_played,change_reason,changed_by&order=changed_at.desc`,
+), '[C1] authoritative result audit readback');
+equal(c1ResultAudits.length, 2, '[C1] authoritative result audit count');
+const c1Recalculation = c1ResultAudits.find(audit => audit.action === 'recalculated');
+const c1Finalization = c1ResultAudits.find(audit => audit.action === 'finalized');
+equal(c1Recalculation?.change_reason, '[C1] deterministic QA correction', '[C1] result recalculation reason');
+equal(c1Recalculation?.changed_by, manifest.admins[0].id, '[C1] result recalculation administrator');
+equal(c1Recalculation?.segment_id, manifest.fixtures.C1.segments[0], '[C1] recalculated segment');
+equal(c1Finalization?.change_reason, 'Completed automatically from verified scorecards.', '[C1] automatic finalization reason');
+equal(c1Finalization?.new_status, 'final', '[C1] finalization status');
+
+const m1ResultAudits = await requireOk(request(
+  `/rest/v1/match_result_audit?match_id=eq.${manifest.fixtures.M1.match}&select=action,segment_id,change_reason,changed_by`,
+), '[M1] authoritative result audit readback');
+equal(m1ResultAudits.length, manifest.fixtures.M1.segments.length, '[M1] authoritative result audit count');
+for (const audit of m1ResultAudits) {
+  equal(audit.action, 'finalized', '[M1] result audit action');
+  equal(audit.change_reason, 'Recorded by an administrator.', '[M1] administrator finalization reason');
+  equal(audit.changed_by, manifest.admins[0].id, '[M1] finalizing administrator');
+}
 // [C1] Score corrected and result recalculated; deletion still fails closed after completion.
 await expectRejected(rpc('correct_hole_score', {
   target_round_id: manifest.fixtures.C1.rounds['0'],

@@ -2,6 +2,7 @@ import { validateSegments } from './formats.js';
 import { applyMemberCardVisibility, createMutationGate, easternDateTimeToIso, filterActiveMemberships, moveFocusFromFilteredCard, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions, tournamentCompletionReadiness } from './admin-helpers.js?v=tournament-completion-1';
 import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
 import { deriveSegmentResult } from './match-results.js?v=automatic-results-2';
+import { formatMatchStatus } from './scoring.js';
 import {
   completeTournamentArchive,
   correctHoleScore,
@@ -13,6 +14,7 @@ import {
   generateMatchCommentary,
   finalizeMatchResults,
   loadAdminData,
+  loadMatchResultAudits,
   loadMembershipRosterData,
   loadPlayerData,
   saveCommentarySettings,
@@ -28,7 +30,7 @@ import {
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=automatic-match-completion-1';
+} from './supabase.js?v=result-audit-layout-1';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -49,6 +51,7 @@ const scoreCorrectionDialog = document.querySelector('#scoreCorrectionDialog');
 const resultFinalizationForm = document.querySelector('#resultFinalizationForm');
 const resultMatch = document.querySelector('#resultMatch');
 const resultSegmentRows = document.querySelector('#resultSegmentRows');
+const resultAuditHistory = document.querySelector('#resultAuditHistory');
 const tournamentCompletionForm = document.querySelector('#tournamentCompletionForm');
 const completionTournament = document.querySelector('#completionTournament');
 const completionReadiness = document.querySelector('#completionReadiness');
@@ -66,6 +69,8 @@ const legacyEditionForm = document.querySelector('#legacyEditionForm');
 const legacyEditionSelect = document.querySelector('#legacyEditionSelect');
 const legacyResultForm = document.querySelector('#legacyResultForm');
 const legacyPhotoForm = document.querySelector('#legacyPhotoForm');
+const legacyTabs = [...document.querySelectorAll('[data-legacy-tab]')];
+const legacyPanels = [...document.querySelectorAll('[data-legacy-panel]')];
 const membershipMutationGate = createMutationGate(membershipManagement);
 const defaultPars = [4, 4, 3, 5, 4, 4, 3, 5, 4, 4, 4, 3, 5, 4, 4, 3, 5, 4];
 
@@ -180,6 +185,19 @@ function rpcSegments(segments) {
     point_value: segment.pointValue,
     players: segment.players.map(player => ({ user_id: player.userId, team: player.team, side: player.side, playing_order: player.playingOrder })),
   }));
+}
+
+function activateLegacyTab(tabName, { focus = false } = {}) {
+  const activeIndex = legacyTabs.findIndex(tab => tab.dataset.legacyTab === tabName);
+  if (activeIndex < 0) return;
+  for (const tab of legacyTabs) {
+    const selected = tab.dataset.legacyTab === tabName;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    tab.classList.toggle('is-active', selected);
+  }
+  for (const panel of legacyPanels) panel.hidden = panel.dataset.legacyPanel !== tabName;
+  if (focus) legacyTabs[activeIndex].focus();
 }
 
 function populateLegacyChoices() {
@@ -790,6 +808,7 @@ function renderTournamentCompletion() {
 }
 
 function populateAdminChoices() {
+  const selectedResultMatchId = resultMatch.value;
   const tournamentSelects = ['#matchTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
   for (const select of tournamentSelects) select.replaceChildren(...adminData.tournaments.map(tournament => new Option(`${tournament.name} · ${tournament.edition_year}`, tournament.id)));
   renderRuleEditor();
@@ -804,7 +823,10 @@ function populateAdminChoices() {
     new Option('Select a match', ''),
     ...adminData.matches.filter(match => ['scheduled', 'live', 'final'].includes(match.status)).map(match => new Option(match.name, match.id)),
   );
-  populateCorrectionRounds('');
+  if ([...resultMatch.options].some(option => option.value === selectedResultMatchId)) {
+    resultMatch.value = selectedResultMatchId;
+  }
+  populateCorrectionRounds(resultMatch.value);
   populateLegacyChoices();
   renderTournamentCompletion();
 }
@@ -831,9 +853,92 @@ function requiresManualTeamResult(match) {
   return match?.match_segments?.some(segment => segment.format === 'foursomes') ?? false;
 }
 
+function resultSnapshotLabel(audit, prefix, segment) {
+  const status = audit[`${prefix}_status`];
+  if (!status) return 'Not previously logged';
+  if (status !== 'final') return status.charAt(0).toUpperCase() + status.slice(1);
+  const differential = Number(audit[`${prefix}_differential`] ?? 0);
+  const holesPlayed = Number(audit[`${prefix}_holes_played`] ?? 0);
+  const totalHoles = segment ? Number(segment.end_hole) - Number(segment.start_hole) + 1 : 18;
+  return formatMatchStatus({ differential, holesPlayed }, totalHoles);
+}
+
+function renderResultAuditHistory() {
+  resultAuditHistory.replaceChildren();
+  const match = adminData.matches.find(item => item.id === resultMatch.value);
+  if (!match) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-panel';
+    empty.textContent = 'Select a match to view its authoritative result history.';
+    resultAuditHistory.append(empty);
+    return;
+  }
+
+  const audits = (adminData.resultAudits ?? []).filter(audit => audit.match_id === match.id);
+  if (!audits.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-panel';
+    empty.textContent = 'No authoritative result changes have been logged for this match.';
+    resultAuditHistory.append(empty);
+    return;
+  }
+
+  const actionLabels = {
+    baseline: 'Audit baseline',
+    finalized: 'Result finalized',
+    recalculated: 'Result recalculated',
+  };
+  for (const audit of audits) {
+    const segment = match.match_segments?.find(item => item.id === audit.segment_id);
+    const card = document.createElement('article');
+    card.className = 'result-audit-entry';
+
+    const heading = document.createElement('div');
+    heading.className = 'result-audit-entry-head';
+    const title = document.createElement('strong');
+    const segmentLabel = segment
+      ? `Holes ${segment.start_hole}–${segment.end_hole} · ${segment.format.replaceAll('_', ' ')}`
+      : 'Archived segment';
+    title.textContent = `${actionLabels[audit.action] ?? 'Result updated'} · ${segmentLabel}`;
+    const timestamp = document.createElement('time');
+    timestamp.dateTime = audit.changed_at;
+    timestamp.textContent = new Date(audit.changed_at).toLocaleString();
+    heading.append(title, timestamp);
+
+    const transition = document.createElement('p');
+    transition.className = 'result-audit-transition';
+    const before = resultSnapshotLabel(audit, 'old', segment);
+    const after = resultSnapshotLabel(audit, 'new', segment);
+    transition.textContent = audit.action === 'baseline' ? after : `${before} → ${after}`;
+
+    const reason = document.createElement('p');
+    reason.textContent = audit.change_reason;
+    const actor = document.createElement('small');
+    actor.textContent = audit.actor_display_name
+      ? `Changed by ${audit.actor_display_name}`
+      : audit.changed_by
+        ? 'Changed by an administrator (name unavailable)'
+        : audit.action === 'baseline' ? 'System baseline' : 'System-authorized update';
+
+    card.append(heading, transition, reason, actor);
+    resultAuditHistory.append(card);
+  }
+}
+
+async function refreshResultAuditHistory(matchId) {
+  const latest = await loadMatchResultAudits(matchId);
+  if (resultMatch.value !== matchId) return;
+  adminData.resultAudits = [
+    ...(adminData.resultAudits ?? []).filter(audit => audit.match_id !== matchId),
+    ...latest,
+  ];
+  renderResultAuditHistory();
+}
+
 function renderResultSegments() {
   resultSegmentRows.replaceChildren();
   const match = adminData.matches.find(item => item.id === resultMatch.value);
+  renderResultAuditHistory();
   let canFinalize = Boolean(match?.match_segments?.length);
   for (const segment of match?.match_segments ?? []) {
     const card = document.createElement('fieldset');
@@ -936,6 +1041,22 @@ function upsertCommentaryById(commentaries, commentary) {
   return [commentary, ...commentaries.filter(item => item.id !== commentary.id)];
 }
 
+for (const tab of legacyTabs) {
+  tab.addEventListener('click', () => activateLegacyTab(tab.dataset.legacyTab));
+  tab.addEventListener('keydown', event => {
+    const currentIndex = legacyTabs.indexOf(tab);
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % legacyTabs.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + legacyTabs.length) % legacyTabs.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = legacyTabs.length - 1;
+    else return;
+    event.preventDefault();
+    activateLegacyTab(legacyTabs[nextIndex].dataset.legacyTab, { focus: true });
+  });
+}
+activateLegacyTab('edition');
+
 courseForm.addEventListener('submit', async event => {
   event.preventDefault();
   setMessage(courseMessage, 'Saving…');
@@ -970,9 +1091,24 @@ matchPlanForm.addEventListener('submit', async event => {
   } catch (error) { setMessage(matchPlanMessage, error.message, true); }
 });
 
-resultMatch.addEventListener('change', () => {
+resultMatch.addEventListener('change', async () => {
   renderResultSegments();
   populateCorrectionRounds(resultMatch.value);
+  const matchId = resultMatch.value;
+  if (!matchId) return;
+  const loading = document.createElement('p');
+  loading.className = 'empty-panel';
+  loading.textContent = 'Loading authoritative result history…';
+  resultAuditHistory.replaceChildren(loading);
+  try {
+    await refreshResultAuditHistory(matchId);
+  } catch (error) {
+    if (resultMatch.value !== matchId) return;
+    const failure = document.createElement('p');
+    failure.className = 'empty-panel';
+    failure.textContent = `History refresh failed: ${error.message}`;
+    resultAuditHistory.replaceChildren(failure);
+  }
 });
 resultFinalizationForm.addEventListener('submit', async event => {
   event.preventDefault();
@@ -994,8 +1130,19 @@ resultFinalizationForm.addEventListener('submit', async event => {
     await finalizeMatchResults({ matchId, segmentResults });
     const finalized = adminData.matches.find(match => match.id === matchId);
     finalized.status = 'final';
+    for (const savedResult of segmentResults) {
+      const segment = finalized.match_segments?.find(item => item.id === savedResult.segment_id);
+      if (segment) Object.assign(segment, savedResult);
+    }
     populateAdminChoices();
     renderResultSegments();
+    let historyWarning = '';
+    try {
+      await refreshResultAuditHistory(matchId);
+    } catch (historyError) {
+      historyWarning = ` History refresh failed: ${historyError.message}`;
+    }
+    const finalizationMessage = text => `${text}${historyWarning}`;
 
     const commentarySettings = adminData.settings.find(item => item.tournament_id === finalized.tournament_id);
     if (commentarySettings?.enabled) {
@@ -1004,16 +1151,16 @@ resultFinalizationForm.addEventListener('submit', async event => {
         const commentary = await generateMatchCommentary(matchId);
         adminData.commentaries = upsertCommentaryById(adminData.commentaries, commentary);
         renderCommentaryApprovals();
-        setMessage(message, commentary.status === 'approved'
+        setMessage(message, finalizationMessage(commentary.status === 'approved'
           ? 'Match finalized. Commentary generated and published.'
-          : 'Match finalized. Commentary generated and awaiting approval.');
+          : 'Match finalized. Commentary generated and awaiting approval.'), Boolean(historyWarning));
       } catch (commentaryError) {
-        setMessage(message, `Match finalized, but automatic commentary failed: ${commentaryError.message}. Use Generate match recap to retry.`, true);
+        setMessage(message, finalizationMessage(`Match finalized, but automatic commentary failed: ${commentaryError.message}. Use Generate match recap to retry.`), true);
       }
       return;
     }
 
-    setMessage(message, 'Match finalized. Cup points and official statistics are now available.');
+    setMessage(message, finalizationMessage('Match finalized. Cup points and official statistics are now available.'), Boolean(historyWarning));
   } catch (error) { setMessage(message, error.message, true); }
 });
 
@@ -1295,6 +1442,7 @@ scoreCorrectionForm.addEventListener('submit', async event => {
     const matchId = resultMatch.value;
     const correctedMatch = adminData.matches.find(match => match.id === matchId);
     let correctionStatus = `Correction saved and audited (${result.audit?.action || (deleteScore ? 'delete' : 'update')}).`;
+    let historyWarning = '';
     if (correctedMatch?.status === 'final') {
       const commentarySettings = adminData.settings.find(item => item.tournament_id === correctedMatch.tournament_id);
       if (commentarySettings?.enabled) {
@@ -1310,11 +1458,17 @@ scoreCorrectionForm.addEventListener('submit', async event => {
         correctionStatus = 'Score corrected and result recalculated.';
       }
       renderResultSegments();
+      try {
+        await refreshResultAuditHistory(matchId);
+      } catch (historyError) {
+        historyWarning = ` History refresh failed: ${historyError.message}`;
+      }
     }
-    setMessage(message, correctionStatus);
+    correctionStatus += historyWarning;
+    setMessage(message, correctionStatus, Boolean(historyWarning));
     scoreCorrectionForm.reset();
     document.querySelector('#correctionScore').disabled = false;
-    setMessage(document.querySelector('#resultMessage'), correctionStatus);
+    setMessage(document.querySelector('#resultMessage'), correctionStatus, Boolean(historyWarning));
     closeScoreCorrectionDialog();
   } catch (error) {
     setMessage(message, error.message, true);

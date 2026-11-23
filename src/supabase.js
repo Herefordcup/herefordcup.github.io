@@ -769,6 +769,22 @@ export async function loadMembershipRosterData() {
   };
 }
 
+export async function loadMatchResultAudits(matchId) {
+  const supabase = await getSupabase();
+  const pageSize = 500;
+  const audits = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase.from('match_result_audit')
+      .select('*')
+      .eq('match_id', matchId)
+      .order('event_sequence', { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    audits.push(...(data ?? []));
+    if ((data?.length ?? 0) < pageSize) return audits;
+  }
+}
+
 export async function loadAdminData() {
   const supabase = await getSupabase();
   const [tournaments, memberships, courses, matches, rules, settings, commentaries, rounds, legacyEditions] = await Promise.all([
@@ -794,6 +810,7 @@ export async function loadAdminData() {
     settings: settings.data ?? [],
     commentaries: commentaries.data ?? [],
     rounds: rounds.data ?? [],
+    resultAudits: [],
     legacyEditions: legacyEditions.data ?? [],
   };
 }

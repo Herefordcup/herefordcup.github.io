@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: disposable-e2e-${{ github.ref }}
-  cancel-in-progress: true
+  group: hereford-disposable-supabase
+  cancel-in-progress: false
 
 permissions:
   contents: read

@@ -92,6 +92,16 @@ test('[A1][A2][R1][R2][R3][C1][S1][S2][F1][F2][M1] pre-completion browser matrix
   await expect(page.locator('#adminContent')).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('#membershipManagement')).toBeVisible();
 
+  await expect(page.locator('#legacyEditionPanel')).toBeVisible();
+  await expect(page.locator('#legacyResultsPanel')).toBeHidden();
+  await page.locator('#legacyResultsTab').click();
+  await expect(page.locator('#legacyResultsPanel')).toBeVisible();
+  await expect(page.locator('#legacyEditionPanel')).toBeHidden();
+  await page.locator('#legacyPhotosTab').click();
+  await expect(page.locator('#legacyPhotosPanel')).toBeVisible();
+  await page.locator('#legacyEditionTab').click();
+  await expect(page.locator('#legacyEditionPanel')).toBeVisible();
+
   await selectMatch(page, 'R1');
   await expect(page.locator('#resultSegmentRows')).toContainText('Waiting for completed scorecards');
   await expect(page.locator('#resultFinalizationForm button[type="submit"]')).toBeHidden();
@@ -106,6 +116,8 @@ test('[A1][A2][R1][R2][R3][C1][S1][S2][F1][F2][M1] pre-completion browser matrix
   await expect(noTeamOption).toContainText('No team');
 
   await selectMatch(page, 'C1');
+  await expect(page.locator('#resultAuditHistory')).toContainText('Result finalized');
+  await expect(page.locator('#resultAuditHistory')).toContainText('Completed automatically from verified scorecards.');
   await page.locator('#openScoreCorrection').click();
   await expect(page.locator('#scoreCorrectionDialog')).toBeVisible();
   await page.locator('#correctionRound').selectOption(manifest.fixtures.C1.rounds['0']);
@@ -114,6 +126,8 @@ test('[A1][A2][R1][R2][R3][C1][S1][S2][F1][F2][M1] pre-completion browser matrix
   await page.locator('#correctionReason').fill('[C1] deterministic QA correction');
   await page.locator('#scoreCorrectionForm button[type="submit"]').click();
   await expect(page.locator('#resultMessage')).toContainText('Score corrected and result recalculated');
+  await expect(page.locator('#resultAuditHistory')).toContainText('Result recalculated');
+  await expect(page.locator('#resultAuditHistory')).toContainText('[C1] deterministic QA correction');
 
   const expectedResults = {
     S1: 'Blue wins 1 Up',
