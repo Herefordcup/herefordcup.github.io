@@ -10,6 +10,12 @@ This branch implements three approved Hereford Cup updates:
 
 ## Database change
 
+Migration `040_march_2027_itinerary.sql` refreshes the shared March 2027
+event records. Both views use Eastern time and show tee-time windows, an
+approximate shuttle time, and a TBD Tobacco Road tee time. The public RPC
+exposes dedicated public details, not member notes. The refresh does not
+change match plans or results or send schedule-change emails.
+
 `supabase/migrations/034_tournament_member_team_assignment.sql` adds `set_tournament_member_team(uuid, uuid, text)`.
 
 The RPC:

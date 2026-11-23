@@ -81,6 +81,15 @@ test('public schedule groups and sorts authoritative items by Eastern calendar d
   ]);
 });
 
+test('both itinerary views can show Eastern tee-time windows, approximate times, and no time for TBD', async () => {
+  const { formatItineraryTime } = await import('../src/home.js');
+  assert.equal(formatItineraryTime('2027-03-19T12:00:00Z', '2027-03-19T12:32:00Z'), '8:00–8:32 AM');
+  assert.equal(formatItineraryTime('2027-03-20T21:20:00Z', '2027-03-20T22:00:00Z', 'exact', true), 'Sat · 5:20–6:00 PM');
+  assert.equal(formatItineraryTime('2027-03-21T17:30:00Z', null, 'approximate'), 'Around 1:30 PM');
+  assert.equal(formatItineraryTime('2027-03-18T17:00:00Z', null, 'tbd', true), 'Thu · Time TBD');
+  assert.equal(formatItineraryTime('2027-03-18T23:00:00Z'), '7:00 PM');
+});
+
 test('public pairing publication uses authoritative segment sides and keeps empty plans pending', async () => {
   const [sql, app] = await Promise.all([publicPreviewMigration(), readFile(appUrl, 'utf8')]);
   const homeModule = await import('../src/home.js');
@@ -157,7 +166,7 @@ test('all entrypoints that reach changed shared modules are cache-busted togethe
   for (const [index, source] of sources.slice(0, 3).entries()) {
     assert.match(source, /supabase\.js\?v=result-audit-layout-1/, `missing shared data cache key in ${cachePaths[index]}`);
   }
-  assert.match(sources[1], /home\.js\?v=home-standings-1/);
+  assert.match(sources[1], /home\.js\?v=itinerary-1/);
   for (const [offset, source] of sources.slice(3).entries()) {
     assert.match(source, /home-standings-1/, `missing public preview cache key in ${cachePaths[offset + 3]}`);
     assert.match(source, /styles\.css\?v=home-standings-1/, 'all shared stylesheet consumers must be cache-busted');

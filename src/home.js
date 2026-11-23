@@ -39,6 +39,17 @@ export function formatHomeDate(value, options = {}) {
   }).format(new Date(normalized));
 }
 
+export function formatItineraryTime(start, end, precision = 'exact', includeDay = false) {
+  const zone = { timeZone: 'America/New_York' };
+  const clock = new Intl.DateTimeFormat('en-US', { ...zone, hour: 'numeric', minute: '2-digit' });
+  const date = new Date(start);
+  const day = includeDay ? `${new Intl.DateTimeFormat('en-US', { ...zone, weekday: 'short' }).format(date)} · ` : '';
+  if (precision === 'tbd') return `${day}Time TBD`;
+  if (precision === 'approximate') return `${day}Around ${clock.format(date)}`;
+  const text = end && start !== end ? clock.formatRange(date, new Date(end)).replace(/\s*–\s*/u, '–') : clock.format(date);
+  return `${day}${text.replace(/\s/gu, ' ')}`;
+}
+
 function easternDateKey(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
