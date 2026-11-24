@@ -126,7 +126,7 @@ test('segment player selection shows tournament teams and derives the scoring si
   assert.equal(segmentPlayerFromMembership(inactive, 4), null);
   assert.doesNotMatch(adminScript, /Match side|data-side-select|Blue side|White side/);
   assert.match(adminScript, /option\.disabled = disabled/);
-  assert.match(html, /src="src\/admin\.js\?v=result-audit-layout-1"/);
+  assert.match(html, /src="src\/admin\.js\?v=texas-scramble-1"/);
   assert.match(adminScript, /from '\.\/admin-helpers\.js\?v=tournament-completion-1'/);
 });
 
@@ -196,7 +196,7 @@ test('tournament administrators can edit an active member handicap through a sco
 
 test('Supabase layer saves match plans atomically through a database RPC', () => {
   assert.match(supabaseScript, /export async function saveMatchPlan/);
-  assert.match(supabaseScript, /rpc\('save_match_plan'/);
+  assert.match(supabaseScript, /rpc\('save_match_plan_with_entry_modes'/);
   assert.match(supabaseScript, /export async function saveTournamentRule/);
   assert.match(supabaseScript, /export async function saveCommentarySettings/);
   assert.match(supabaseScript, /export async function generateMatchCommentary/);

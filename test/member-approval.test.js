@@ -90,12 +90,12 @@ test('administrator portal exposes pending, active, and permanent membership del
   assert.match(adminCss, /@media\(max-width:900px\)[\s\S]*\.active-member-list\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/i);
   assert.match(adminCss, /@media\(max-width:520px\)[\s\S]*\.active-member-list\{grid-template-columns:1fr\}/i);
   assert.match(adminCss, /\.membership-card \.button\{[^}]*min-height:44px/);
-  assert.match(adminHtml, /admin\.css\?v=result-audit-layout-1/);
-  assert.match(adminHtml, /admin\.js\?v=result-audit-layout-1/);
-  assert.match(adminScript, /supabase\.js\?v=result-audit-layout-1/);
-  assert.match(adminScript, /match-results\.js\?v=automatic-results-2/);
-  assert.match(portalHtml, /portal\.js\?v=result-audit-layout-1/);
-  assert.match(portalScript, /supabase\.js\?v=result-audit-layout-1/);
+  assert.match(adminHtml, /admin\.css\?v=texas-scramble-1/);
+  assert.match(adminHtml, /admin\.js\?v=texas-scramble-1/);
+  assert.match(adminScript, /supabase\.js\?v=texas-scramble-1/);
+  assert.match(adminScript, /match-results\.js\?v=texas-scramble-1/);
+  assert.match(portalHtml, /portal\.js\?v=texas-scramble-1/);
+  assert.match(portalScript, /supabase\.js\?v=texas-scramble-1/);
   assert.match(portalScript, /member\.js\?v=member-role-1/);
   assert.match(supabaseScript, /export async function setTournamentMembershipStatus/);
   assert.match(supabaseScript, /rpc\('set_tournament_membership_status'/);
@@ -234,7 +234,7 @@ test('administrators manage tournament-specific Player and Admin roles from Acti
   assert.match(adminScript, /membership\.user_id === session\.user\.id[\s\S]*membership\.role === 'admin'/);
   assert.match(adminScript, /membership\.profiles\?\.role === 'admin'/);
   assert.match(adminScript, /membership\.role = saved\.role[\s\S]*renderMemberships\(\)/);
-  assert.match(adminHtml, /admin\.js\?v=result-audit-layout-1/);
+  assert.match(adminHtml, /admin\.js\?v=texas-scramble-1/);
 });
 
 test('an authenticated user requests missing tournament membership before portal data loads', () => {

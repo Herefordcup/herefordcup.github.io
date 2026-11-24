@@ -174,3 +174,54 @@ test('keeps a manual authoritative result for team-score formats', () => {
     reason: 'This team-score format still requires an administrator-entered match-play result.',
   });
 });
+
+test('renders the persisted authoritative Texas Scramble points instead of offering manual finalization', () => {
+  const data = fixture([], []);
+  Object.assign(data.segment, {
+    format: 'scramble',
+    status: 'final',
+    differential: -1,
+    holes_played: 18,
+    point_value: 4,
+  });
+  assert.deepEqual(deriveSegmentResult(data), {
+    mode: 'automatic',
+    differential: -1,
+    holes_played: 18,
+    label: 'White earns 4 Cup points',
+  });
+});
+
+test('waits for the shared Texas Scramble scorecard when the squad is not final', () => {
+  const data = fixture([], []);
+  Object.assign(data.segment, { format: 'scramble', status: 'live', point_value: 0 });
+  assert.deepEqual(deriveSegmentResult(data), {
+    mode: 'waiting',
+    reason: 'Waiting for the shared Texas Scramble scorecard and tee-shot requirements.',
+  });
+});
+
+test('renders a persisted outcome-only result without requiring individual rounds', () => {
+  const data = fixture([], []);
+  Object.assign(data.segment, {
+    entry_mode: 'hole_outcomes',
+    status: 'final',
+    differential: 3,
+    holes_played: 16,
+  });
+  assert.deepEqual(deriveSegmentResult(data), {
+    mode: 'automatic',
+    differential: 3,
+    holes_played: 16,
+    label: 'Blue wins 3 & 2',
+  });
+});
+
+test('waits for outcome-only hole winners when the segment is not final', () => {
+  const data = fixture([], []);
+  Object.assign(data.segment, { entry_mode: 'hole_outcomes', status: 'live' });
+  assert.deepEqual(deriveSegmentResult(data), {
+    mode: 'waiting',
+    reason: 'Waiting for the assigned players to record the required hole outcomes.',
+  });
+});

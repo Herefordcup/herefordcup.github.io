@@ -275,12 +275,14 @@ export async function loadPlayerData(userId) {
       commentaries: [],
       rounds: [],
       players: [],
+      scrambleSquads: [],
+      holeOutcomes: [],
       profilePhotoUrls: {},
       notificationPreferences: null,
     };
   }
 
-  const [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult, playersResult, notificationPreferencesResult] = await Promise.all([
+  const [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult, playersResult, notificationPreferencesResult, scrambleSquadsResult, holeOutcomesResult] = await Promise.all([
     supabase.from('match_players')
       .select('team, matches!inner(*, courses(name)), profiles(display_name)')
       .eq('user_id', userId)
@@ -318,8 +320,16 @@ export async function loadPlayerData(userId) {
       .eq('tournament_id', tournament.id)
       .eq('user_id', userId)
       .maybeSingle(),
+    supabase.from('texas_scramble_squads')
+      .select('*, texas_scramble_sessions!inner(*), texas_scramble_squad_players(*, profiles(display_name)), texas_scramble_hole_scores(*)')
+      .eq('texas_scramble_sessions.tournament_id', tournament.id)
+      .order('squad_number'),
+    supabase.from('match_hole_outcomes')
+      .select('*, match_segments!inner(match_id, matches!inner(tournament_id))')
+      .eq('match_segments.matches.tournament_id', tournament.id)
+      .order('hole_number'),
   ]);
-  for (const result of [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult, playersResult]) {
+  for (const result of [assignmentsResult, tournamentMatchesResult, eventsResult, segmentsResult, rulesResult, statisticsResult, commentaryResult, roundsResult, playersResult, scrambleSquadsResult, holeOutcomesResult]) {
     if (result.error) throw result.error;
   }
   const notificationPreferences = notificationPreferencesOrNull(notificationPreferencesResult);
@@ -351,6 +361,8 @@ export async function loadPlayerData(userId) {
     commentaries: commentaryResult.data ?? [],
     rounds: roundsResult.data ?? [],
     players: playersResult.data ?? [],
+    scrambleSquads: scrambleSquadsResult.data ?? [],
+    holeOutcomes: holeOutcomesResult.data ?? [],
     profilePhotoUrls,
     notificationPreferences: notificationPreferences ?? {
       reminders_enabled: true,
@@ -471,9 +483,67 @@ export async function saveCourseWithTee({ course, tee, holes, userId }) {
 
 export async function saveMatchPlan({ match, segments }) {
   const supabase = await getSupabase();
-  const { data, error } = await supabase.rpc('save_match_plan', {
+  const { data, error } = await supabase.rpc('save_match_plan_with_entry_modes', {
     match_payload: match,
     segment_payload: segments,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function saveTexasScramblePlan({ session, squads }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('save_texas_scramble_plan', {
+    session_payload: session,
+    squad_payload: squads,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function selectTexasScrambleCourseTee({ sessionId, courseId, teeId }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('select_texas_scramble_course_tee', {
+    target_session_id: sessionId,
+    target_course_id: courseId,
+    target_tee_id: teeId,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function submitTexasScrambleHole({ squadId, holeNumber, grossScore, teeShotPlayerId }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('submit_texas_scramble_hole', {
+    target_squad_id: squadId,
+    target_hole_number: Number(holeNumber),
+    target_gross_score: Number(grossScore),
+    target_tee_shot_player_id: teeShotPlayerId,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function submitMatchHoleOutcome({ segmentId, holeNumber, winner }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('submit_match_hole_outcome', {
+    target_segment_id: segmentId,
+    target_hole_number: Number(holeNumber),
+    target_winner: winner,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function correctTeamScoreEntry({ targetType, targetId, reason, grossScore = null, teeShotPlayerId = null, winner = null }) {
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.rpc('correct_team_score_entry', {
+    target_type: targetType,
+    target_id: targetId,
+    target_reason: reason?.trim(),
+    replacement_gross_score: grossScore === null ? null : Number(grossScore),
+    replacement_tee_shot_player_id: teeShotPlayerId,
+    replacement_winner: winner,
   });
   if (error) throw error;
   return data;
@@ -787,18 +857,19 @@ export async function loadMatchResultAudits(matchId) {
 
 export async function loadAdminData() {
   const supabase = await getSupabase();
-  const [tournaments, memberships, courses, matches, rules, settings, commentaries, rounds, legacyEditions] = await Promise.all([
+  const [tournaments, memberships, courses, matches, rules, settings, commentaries, rounds, legacyEditions, scrambleSessions] = await Promise.all([
     supabase.from('tournaments').select('*').order('edition_year', { ascending: false }),
     supabase.from('tournament_memberships').select('*, profiles!tournament_memberships_user_id_fkey(id, display_name, handicap_index, role)').order('created_at'),
-    supabase.from('courses').select('id, name').eq('active', true).order('name'),
+    supabase.from('courses').select('id, name, tees(id, name, rating_category, rating, slope, par, rating_par, yardage)').eq('active', true).order('name'),
     supabase.from('matches').select('*, match_segments(*, match_segment_players(*))').order('starts_at'),
     supabase.from('tournament_rules').select('*').eq('active', true).order('sort_order').order('created_at').order('id'),
     supabase.from('commentary_settings').select('*'),
     supabase.from('match_commentaries').select('*, matches(name)').order('created_at', { ascending: false }),
     supabase.from('rounds').select('*, profiles(display_name), courses(name), tees(name, holes(hole_number, stroke_index)), scores!scores_round_id_fkey(*)').order('created_at', { ascending: false }),
     supabase.from('legacy_editions').select('*, legacy_results(*), legacy_photos(*)').order('edition_year', { ascending: true }),
+    supabase.from('texas_scramble_sessions').select('*, texas_scramble_squads(*, texas_scramble_squad_players(*, profiles(display_name)), texas_scramble_hole_scores(*))').order('starts_at'),
   ]);
-  for (const result of [tournaments, memberships, courses, matches, rules, settings, commentaries, rounds, legacyEditions]) {
+  for (const result of [tournaments, memberships, courses, matches, rules, settings, commentaries, rounds, legacyEditions, scrambleSessions]) {
     if (result.error) throw result.error;
   }
   return {
@@ -812,6 +883,7 @@ export async function loadAdminData() {
     rounds: rounds.data ?? [],
     resultAudits: [],
     legacyEditions: legacyEditions.data ?? [],
+    scrambleSessions: scrambleSessions.data ?? [],
   };
 }
 

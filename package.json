@@ -10,6 +10,7 @@
     "serve": "npx --yes serve ."
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.6.0",
     "@playwright/test": "1.65.1"
   }
 }

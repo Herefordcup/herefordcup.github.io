@@ -1,7 +1,7 @@
 import { validateSegments } from './formats.js';
 import { applyMemberCardVisibility, createMutationGate, easternDateTimeToIso, filterActiveMemberships, moveFocusFromFilteredCard, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions, tournamentCompletionReadiness } from './admin-helpers.js?v=tournament-completion-1';
 import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
-import { deriveSegmentResult } from './match-results.js?v=automatic-results-2';
+import { deriveSegmentResult } from './match-results.js?v=texas-scramble-1';
 import { formatMatchStatus } from './scoring.js';
 import {
   completeTournamentArchive,
@@ -22,6 +22,7 @@ import {
   saveLegacyEdition,
   saveLegacyResult,
   saveMatchPlan,
+  saveTexasScramblePlan,
   saveTournamentRule,
   setTournamentMemberHandicap,
   setTournamentMemberRole,
@@ -30,7 +31,7 @@ import {
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=result-audit-layout-1';
+} from './supabase.js?v=texas-scramble-1';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
@@ -39,6 +40,12 @@ const matchPlanForm = document.querySelector('#matchPlanForm');
 const matchPlanMessage = document.querySelector('#matchPlanMessage');
 const segmentRows = document.querySelector('#segmentRows');
 const segmentTemplate = document.querySelector('#segmentTemplate');
+const texasScrambleForm = document.querySelector('#texasScrambleForm');
+const texasScrambleTournament = document.querySelector('#texasScrambleTournament');
+const texasScrambleCourse = document.querySelector('#texasScrambleCourse');
+const texasScrambleTee = document.querySelector('#texasScrambleTee');
+const texasScrambleSquads = document.querySelector('#texasScrambleSquads');
+const texasScrambleMessage = document.querySelector('#texasScrambleMessage');
 const ruleForm = document.querySelector('#ruleForm');
 const ruleExisting = document.querySelector('#ruleExisting');
 const ruleSortOrder = document.querySelector('#ruleSortOrder');
@@ -134,12 +141,13 @@ function renumberSegments() {
   });
 }
 
-function addSegment({ startHole = 1, endHole = 18, format = 'fourball', scoringMode = 'net', pointValue = 1 } = {}) {
+function addSegment({ startHole = 1, endHole = 18, format = 'fourball', scoringMode = 'net', entryMode = 'individual_scores', pointValue = 1 } = {}) {
   const card = segmentTemplate.content.firstElementChild.cloneNode(true);
   card.querySelector('[name="startHole"]').value = startHole;
   card.querySelector('[name="endHole"]').value = endHole;
   card.querySelector('[name="format"]').value = format;
   card.querySelector('[name="scoringMode"]').value = scoringMode;
+  card.querySelector('[name="entryMode"]').value = entryMode;
   card.querySelector('[name="pointValue"]').value = pointValue;
   const playerGrid = card.querySelector('.segment-player-grid');
   for (let slot = 1; slot <= 4; slot += 1) playerGrid.append(createPlayerSlot(slot));
@@ -166,6 +174,7 @@ function collectSegments() {
       endHole: Number(card.querySelector('[name="endHole"]').value),
       format: card.querySelector('[name="format"]').value,
       scoringMode: card.querySelector('[name="scoringMode"]').value,
+      entryMode: card.querySelector('[name="entryMode"]').value,
       handicapAllowance: card.querySelector('[name="scoringMode"]').value === 'net' ? Number(card.querySelector('[name="handicapAllowance"]').value) : null,
       pointValue: Number(card.querySelector('[name="pointValue"]').value),
       players,
@@ -181,10 +190,79 @@ function rpcSegments(segments) {
     end_hole: segment.endHole,
     format: segment.format,
     scoring_mode: segment.scoringMode,
+    entry_mode: segment.entryMode,
     handicap_allowance: segment.handicapAllowance,
     point_value: segment.pointValue,
     players: segment.players.map(player => ({ user_id: player.userId, team: player.team, side: player.side, playing_order: player.playingOrder })),
   }));
+}
+
+const texasScramblePreset = [
+  { label: 'Blue A', side: 'cardinal', squadNumber: 1 },
+  { label: 'Blue B', side: 'cardinal', squadNumber: 2 },
+  { label: 'White A', side: 'silver', squadNumber: 1 },
+  { label: 'White B', side: 'silver', squadNumber: 2 },
+];
+
+function refreshTexasScramblePlayerChoices() {
+  const selects = [...texasScrambleSquads.querySelectorAll('[data-scramble-player]')];
+  const chosen = new Set(selects.map(select => select.value).filter(Boolean));
+  for (const select of selects) {
+    const selected = select.value;
+    const side = select.closest('[data-squad-side]').dataset.squadSide;
+    const options = membersForTournament(texasScrambleTournament.value)
+      .filter(membership => membership.team === side)
+      .map(membership => {
+        const option = new Option(membership.profiles?.display_name || 'Player', membership.user_id);
+        option.disabled = chosen.has(membership.user_id) && membership.user_id !== selected;
+        return option;
+      });
+    select.replaceChildren(new Option('Select player', ''), ...options);
+    select.value = selected;
+  }
+}
+
+function renderTexasScrambleSquads() {
+  texasScrambleSquads.replaceChildren();
+  for (const preset of texasScramblePreset) {
+    const card = document.createElement('fieldset');
+    card.className = 'segment-card scramble-squad-card';
+    card.dataset.squadSide = preset.side;
+    card.dataset.squadNumber = String(preset.squadNumber);
+    const legend = document.createElement('legend');
+    legend.textContent = preset.label;
+    const grid = document.createElement('div');
+    grid.className = 'segment-player-grid';
+    for (let slot = 1; slot <= 4; slot += 1) {
+      const label = document.createElement('label');
+      label.textContent = `Player ${slot}`;
+      const select = document.createElement('select');
+      select.required = true;
+      select.dataset.scramblePlayer = 'true';
+      select.addEventListener('change', refreshTexasScramblePlayerChoices);
+      label.append(select);
+      grid.append(label);
+    }
+    card.append(legend, grid);
+    texasScrambleSquads.append(card);
+  }
+  refreshTexasScramblePlayerChoices();
+}
+
+function collectTexasScrambleSquads() {
+  return [...texasScrambleSquads.querySelectorAll('[data-squad-side]')].map(card => ({
+    label: card.querySelector('legend').textContent,
+    side: card.dataset.squadSide,
+    squad_number: Number(card.dataset.squadNumber),
+    player_ids: [...card.querySelectorAll('[data-scramble-player]')].map(select => select.value),
+  }));
+}
+
+function populateTexasScrambleTees() {
+  const course = adminData.courses.find(item => item.id === texasScrambleCourse.value);
+  const tees = (course?.tees ?? []).filter(tee => tee.rating_category !== 'F');
+  texasScrambleTee.replaceChildren(new Option('Players select tee', ''), ...tees.map(tee => new Option(`${tee.name}${tee.rating === null || tee.slope === null ? ' · Rating pending' : ''}`, tee.id)));
+  texasScrambleTee.disabled = !course;
 }
 
 function activateLegacyTab(tabName, { focus = false } = {}) {
@@ -809,11 +887,14 @@ function renderTournamentCompletion() {
 
 function populateAdminChoices() {
   const selectedResultMatchId = resultMatch.value;
-  const tournamentSelects = ['#matchTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
+  const tournamentSelects = ['#matchTournament', '#texasScrambleTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
   for (const select of tournamentSelects) select.replaceChildren(...adminData.tournaments.map(tournament => new Option(`${tournament.name} · ${tournament.edition_year}`, tournament.id)));
   renderRuleEditor();
   const courseSelect = document.querySelector('#matchCourse');
   courseSelect.replaceChildren(new Option('Course TBA', ''), ...adminData.courses.map(course => new Option(course.name, course.id)));
+  texasScrambleCourse.replaceChildren(new Option('Players select course', ''), ...adminData.courses.map(course => new Option(course.name, course.id)));
+  populateTexasScrambleTees();
+  renderTexasScrambleSquads();
   const commentaryMatch = document.querySelector('#commentaryMatch');
   commentaryMatch.replaceChildren(
     new Option('Select a finalized match', ''),
@@ -1089,6 +1170,43 @@ matchPlanForm.addEventListener('submit', async event => {
     await saveMatchPlan({ match: { name: data.get('matchName'), session: data.get('session'), starts_at: easternDateTimeToIso(data.get('startsAt')), course_id: data.get('courseId') || null, tournament_id: data.get('tournamentId'), status: 'scheduled' }, segments: rpcSegments(segments) });
     setMessage(matchPlanMessage, 'Match plan saved.');
   } catch (error) { setMessage(matchPlanMessage, error.message, true); }
+});
+
+texasScrambleCourse.addEventListener('change', populateTexasScrambleTees);
+texasScrambleTournament.addEventListener('change', renderTexasScrambleSquads);
+texasScrambleForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    const data = new FormData(texasScrambleForm);
+    const squads = collectTexasScrambleSquads();
+    const playerIds = squads.flatMap(squad => squad.player_ids);
+    if (playerIds.some(id => !id)) throw new Error('Select all 16 Texas Scramble players.');
+    if (new Set(playerIds).size !== playerIds.length) throw new Error('A player can appear in only one Texas Scramble squad.');
+    if (squads.some(squad => squad.player_ids.length !== 4)) throw new Error('The 16-player preset requires four players in each squad.');
+    const courseId = data.get('courseId') || null;
+    const teeId = data.get('teeId') || null;
+    if (Boolean(courseId) !== Boolean(teeId)) throw new Error('Choose both course and tee or leave both for the players.');
+    setMessage(texasScrambleMessage, 'Saving…');
+    await saveTexasScramblePlan({
+      session: {
+        tournament_id: data.get('tournamentId'),
+        name: data.get('name'),
+        session_label: data.get('sessionLabel'),
+        starts_at: easternDateTimeToIso(data.get('startsAt')),
+        start_hole: 1,
+        end_hole: 18,
+        required_tee_shots: Number(data.get('requiredTeeShots')),
+        course_id: courseId,
+        tee_id: teeId,
+      },
+      squads,
+    });
+    adminData = await loadAdminData();
+    populateAdminChoices();
+    setMessage(texasScrambleMessage, 'Texas Scramble plan saved. Players will see their assigned squad in Play.');
+  } catch (error) {
+    setMessage(texasScrambleMessage, error.message, true);
+  }
 });
 
 resultMatch.addEventListener('change', async () => {

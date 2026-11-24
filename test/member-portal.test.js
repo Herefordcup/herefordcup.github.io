@@ -132,7 +132,7 @@ test('More includes a tournament player directory without private contact data',
   assert.match(html, /id="playersList"/);
   assert.match(html, />Players</);
   assert.match(supabaseScript, /profiles!tournament_memberships_user_id_fkey\(display_name, handicap_index, profile_photo_path\)/);
-  assert.match(portalScript, /from '\.\/supabase\.js\?v=result-audit-layout-1'/);
+  assert.match(portalScript, /from '\.\/supabase\.js\?v=texas-scramble-1'/);
   assert.match(portalScript, /function renderPlayers\(/);
   assert.doesNotMatch(portalScript, /player\.email|profiles\(email/);
 });
@@ -203,7 +203,7 @@ test('scorecard explains standalone gross play and assigned mixed segment scorin
 });
 
 test('mixed segment summaries stack at phone widths', () => {
-  assert.match(html, /href="portal\.css\?v=handicap-scoring-1"/);
+  assert.match(html, /href="portal\.css\?v=texas-scramble-1"/);
   assert.match(portalCss, /@media\(max-width:820px\)[\s\S]*#segmentSummaries\{grid-template-columns:1fr\}/);
 });
 
@@ -269,12 +269,12 @@ test('scorecard setup includes an 18-hole, front-nine, and back-nine selector', 
   assert.match(html, /<option value="front9">Front 9 \(holes 1–9\)<\/option>/);
   assert.match(html, /<option value="back9">Back 9 \(holes 10–18\)<\/option>/);
   assert.match(portalScript, /holeNumbersForRound\(holeRangeSelect\.value, selectedMatchSegments\(\)\)/);
-  assert.match(html, /src="src\/portal\.js\?v=result-audit-layout-1"/);
+  assert.match(html, /src="src\/portal\.js\?v=texas-scramble-1"/);
   assert.match(portalScript, /from '\.\/round-entry\.js\?v=round-holes-1'/);
 });
 
 test('round score embeds name the intended foreign key after integrity hardening adds a second relationship', () => {
-  const embeds = [...supabaseScript.matchAll(/scores(?:![a-z0-9_]+)?\(\*\)/g)].map(match => match[0]);
+  const embeds = [...supabaseScript.matchAll(/(?<![a-z_])scores(?:![a-z0-9_]+)?\(\*\)/g)].map(match => match[0]);
   assert.equal(embeds.length, 4);
   assert.deepEqual(new Set(embeds), new Set(['scores!scores_round_id_fkey(*)']));
 });
@@ -282,8 +282,8 @@ test('round score embeds name the intended foreign key after integrity hardening
 test('score entry loads owned rounds and scores, excludes final matches, and binds course to assignment', () => {
   assert.match(supabaseScript, /from\('rounds'\)[\s\S]*scores!scores_round_id_fkey\(\*\)/);
   assert.match(portalScript, /match\.status === 'final'/);
-  assert.match(portalScript, /courseSelect\.disabled = Boolean\(match\)/);
-  assert.match(portalScript, /teeSelect\.disabled = !course \|\| Boolean\(existingRound\)/);
+  assert.match(portalScript, /courseSelect\.disabled = Boolean\(match && !squad\) \|\| Boolean\(sharedCourseId\)/);
+  assert.match(portalScript, /teeSelect\.disabled = Boolean\(sharedTeeId\)[\s\S]*Boolean\(existingRound\)/);
   assert.match(portalScript, /if \(matchSelect\.value\) teeSelect\.disabled = true/);
   assert.match(portalScript, /unsavedScoreRows/);
   assert.match(portalScript, /Submitted holes are locked\. Continue with the remaining holes\./);

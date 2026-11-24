@@ -1,4 +1,4 @@
-import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js?v=result-audit-layout-1';
+import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js?v=texas-scramble-1';
 import { renderLegacyArchive } from './legacy.js?v=pimentel-correction-1';
 
 const target = {
