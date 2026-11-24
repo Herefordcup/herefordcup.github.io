@@ -36,7 +36,8 @@ test('runtime config generation keeps the browser on the validated disposable pr
 });
 
 test('disposable browser workflow is local-only, secret-free, and never targets production', () => {
-  assert.match(workflow, /pull_request:/);
+  assert.match(workflow, /pull_request:\s*[\s\S]*types: \[opened, synchronize, reopened, ready_for_review\]/);
+  assert.match(workflow, /smoke:\s*[\s\S]*if: github\.event_name == 'workflow_dispatch' \|\| github\.event\.pull_request\.draft == false/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /permissions:\s*[\s\S]*contents: read/);
   assert.match(workflow, /supabase start/);
