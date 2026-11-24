@@ -37,6 +37,8 @@ node --check src/match-results.js
 
 `npm test` includes the isolated PGlite migration/runtime fixture through `test/team-scoring-database.test.js`.
 
+The disposable browser workflow also runs the `@scramble` Playwright test. It signs in all 16 ordinary players, submits 72 holes through the four shared cards, verifies every stored score, tee-shot contributor and submitter, and checks the final Cup totals. On desktop and phone it checks that inactive scoring controls are hidden and that switching back to individual play restores its Save round button. For a draft, dispatch `gh workflow run disposable-e2e.yml --ref feat/texas-scramble-team-scoring` and verify that the run's head SHA matches the PR head and the final teardown check passes. Do not use production accounts.
+
 ## Checkout and continuation
 
 ```text

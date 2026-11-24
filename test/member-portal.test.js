@@ -203,7 +203,7 @@ test('scorecard explains standalone gross play and assigned mixed segment scorin
 });
 
 test('mixed segment summaries stack at phone widths', () => {
-  assert.match(html, /href="portal\.css\?v=texas-scramble-1"/);
+  assert.match(html, /href="portal\.css\?v=shared-scorecard-visibility-1"/);
   assert.match(portalCss, /@media\(max-width:820px\)[\s\S]*#segmentSummaries\{grid-template-columns:1fr\}/);
 });
 

@@ -52,9 +52,18 @@ test('Texas Scramble: four shared cards, teammate resume and final Cup points', 
           await expect(page.locator('#teeSelect')).toBeDisabled();
           await expect(page.locator('#teamScorecard')).toBeVisible();
           if (si === 0 && pi < 2) {
-            for (const id of ['holeOutcomeScorecard', 'saveRound']) {
-              if (await page.locator(`#${id}`).isVisible()) wrongModeControls.push(`${pi ? 'phone' : 'desktop'}: ${id}`);
+            const viewport = pi ? 'phone' : 'desktop';
+            for (const id of ['holeOutcomeScorecard', 'saveRound', 'emptyScorecard', 'scorecard']) {
+              if (await page.locator(`#${id}`).isVisible()) wrongModeControls.push(`${viewport}: ${id}`);
             }
+            // The fix must not also hide the legitimate individual Save round control.
+            await page.locator('#matchSelect').selectOption('');
+            await expect(page.locator('#saveRound')).toBeVisible();
+            await expect(page.locator('#emptyScorecard')).toBeVisible();
+            await expect(page.locator('#teamScorecard')).toBeHidden();
+            await expect(page.locator('#holeOutcomeScorecard')).toBeHidden();
+            await page.locator('#matchSelect').selectOption(squad.matchId);
+            await expect(page.locator('#teamScorecard')).toBeVisible();
           }
           const card = page.locator(rows);
           await expect(card).toHaveCount(18);
