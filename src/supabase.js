@@ -867,7 +867,7 @@ export async function loadAdminData() {
     supabase.from('match_commentaries').select('*, matches(name)').order('created_at', { ascending: false }),
     supabase.from('rounds').select('*, profiles(display_name), courses(name), tees(name, holes(hole_number, stroke_index)), scores!scores_round_id_fkey(*)').order('created_at', { ascending: false }),
     supabase.from('legacy_editions').select('*, legacy_results(*), legacy_photos(*)').order('edition_year', { ascending: true }),
-    supabase.from('texas_scramble_sessions').select('*, texas_scramble_squads(*, texas_scramble_squad_players(*, profiles(display_name)), texas_scramble_hole_scores(*))').order('starts_at'),
+    supabase.from('texas_scramble_sessions').select('*, texas_scramble_squads(*, texas_scramble_squad_players!texas_scramble_squad_players_squad_id_fkey(*, profiles(display_name)), texas_scramble_hole_scores(*))').order('starts_at'),
   ]);
   for (const result of [tournaments, memberships, courses, matches, rules, settings, commentaries, rounds, legacyEditions, scrambleSessions]) {
     if (result.error) throw result.error;
