@@ -3,7 +3,7 @@ import { matchPoints } from './scoring.js';
 import { assignedRoundScoringMode, formatSegmentLabel, individualEntryBlockReason, segmentHoleCount } from './formats.js?v=handicap-scoring-1';
 import { summarizeLeagueStats, summarizePlayerStats } from './stats.js';
 import { assertRoundAssignment, holeNumbersForRound, mergePersistedScores, unsavedScoreRows } from './round-entry.js?v=round-holes-1';
-import { commentaryForMatch, formatHomeDate, formatHomeDateRange, formatMatchupPlayers, orderHomeMatches } from './home.js?v=home-standings-1';
+import { commentaryForMatch, formatHomeDate, formatHomeDateRange, formatItineraryTime, formatMatchupPlayers, orderHomeMatches } from './home.js?v=itinerary-1';
 import { avatarInitials, normalizeProfileInput, playerDisplayName, profileAvatarUrl, validateProfilePhoto } from './profile.js?v=player-name-1';
 import {
   assignedSegmentsForPlayer,
@@ -233,20 +233,16 @@ function renderSchedule() {
     container.append(element('p', 'empty-panel', 'The itinerary has not been published yet.'));
     return;
   }
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    weekday: 'short',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
   for (const event of playerData.events) {
     const row = element('article', 'schedule-item');
-    const time = element('time', '', formatter.format(new Date(event.starts_at)));
-    time.dateTime = event.starts_at;
+    const time = element(event.time_precision === 'tbd' ? 'span' : 'time', '',
+      formatItineraryTime(event.starts_at, event.ends_at, event.time_precision, true));
+    if (time.tagName === 'TIME') time.dateTime = event.starts_at;
     row.append(time);
     const details = element('div');
     details.append(element('strong', '', event.title));
-    if (event.notes) details.append(element('span', '', event.notes));
+    if (event.public_details) details.append(element('span', '', event.public_details));
+    if (event.notes && event.notes !== event.public_details) details.append(element('span', '', event.notes));
     row.append(details);
     row.append(element('em', '', event.is_competitive ? 'CUP' : event.event_type.toUpperCase()));
     container.append(row);

@@ -1,5 +1,5 @@
 -- Shared Texas Scramble scorecards and outcome-only match-play entry.
--- Apply after 039_match_result_audit.sql.
+-- Apply after 040_march_2027_itinerary.sql.
 
 alter table public.match_segments
   add column if not exists entry_mode text not null default 'individual_scores';

@@ -15,12 +15,12 @@ This branch adds the first shared team-score workflow for a 16-player Hereford C
 
 ## Architecture
 
-- `supabase/migrations/040_texas_scramble_team_scoring.sql` owns schema, RLS, RPC authorization, shared-card writes, outcome writes, corrections, result updates, and archive generation.
+- `supabase/migrations/041_texas_scramble_team_scoring.sql` owns schema, RLS, RPC authorization, shared-card writes, outcome writes, corrections, result updates, and archive generation.
 - `src/team-scoring.js` contains pure WHS, net-score, point, contribution, and outcome helpers.
 - `src/supabase.js` contains browser RPC wrappers and member-data loading.
 - `src/admin.js` and `admin.html` contain the 16-player planner.
 - `src/portal.js` and `portal.html` contain assignment selection and shared scoring.
-- `scripts/e2e/verify-team-scoring-pglite.mjs` applies migrations 001–040 to an isolated PGlite database and exercises the 16-player database workflow.
+- `scripts/e2e/verify-team-scoring-pglite.mjs` applies migrations 001–041 to an isolated PGlite database and exercises the 16-player database workflow.
 
 ## Verification
 

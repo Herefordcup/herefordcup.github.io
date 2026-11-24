@@ -1,5 +1,5 @@
 import { formatMatchStatus } from './scoring.js';
-import { formatHomeDate, formatPublicPoints, groupPublicSchedule, hasPublishedPublicPairings } from './home.js?v=home-standings-1';
+import { formatHomeDate, formatItineraryTime, formatPublicPoints, groupPublicSchedule, hasPublishedPublicPairings } from './home.js?v=itinerary-1';
 import { loadLegacyArchive, loadPublicTournamentPreview } from './supabase.js?v=texas-scramble-1';
 import { renderLegacyWinners } from './legacy.js?v=pimentel-correction-1';
 
@@ -89,11 +89,12 @@ function matchCard(match, index) {
 
 function itineraryCard(event) {
   const card = element('article', 'itinerary-card');
-  const time = element('div', 'itinerary-time', formatTime(event.startsAt));
+  const time = element('div', 'itinerary-time', formatItineraryTime(event.startsAt, event.endsAt, event.timePrecision));
   const details = element('div', 'itinerary-details');
   details.append(element('strong', '', event.title));
   const context = [formatName(event.eventType), event.course].filter(Boolean).join(' · ');
   if (context) details.append(element('span', '', context));
+  if (event.publicDetails) details.append(element('span', '', event.publicDetails));
   const badge = element('span', event.isCompetitive ? 'event-badge competitive' : 'event-badge',
     event.isCompetitive ? 'Cup event' : 'Itinerary');
   card.append(time, details, badge);

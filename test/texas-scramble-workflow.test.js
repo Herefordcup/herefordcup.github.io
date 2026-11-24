@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8').catch(() => '');
-const migration = await read('supabase/migrations/040_texas_scramble_team_scoring.sql');
+const migration = await read('supabase/migrations/041_texas_scramble_team_scoring.sql');
 const adminHtml = await read('admin.html');
 const adminScript = await read('src/admin.js');
 const portalHtml = await read('portal.html');
 const portalScript = await read('src/portal.js');
 const supabaseScript = await read('src/supabase.js');
 
-test('migration 040 adds server-authoritative Texas Scramble sessions and shared scorecards', () => {
+test('migration 041 adds server-authoritative Texas Scramble sessions and shared scorecards', () => {
   for (const table of [
     'texas_scramble_sessions',
     'texas_scramble_squads',
