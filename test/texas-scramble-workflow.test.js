@@ -73,6 +73,7 @@ test('Play auto-selects an assignment and exposes shared course, tee, team score
   assert.match(portalScript, /function renderHoleOutcomeScorecard/);
   assert.match(portalScript, /Tee shot used/);
   assert.match(supabaseScript, /export async function submitTexasScrambleHole/);
+  assert.match(supabaseScript, /texas_scramble_squad_players!texas_scramble_squad_players_squad_id_fkey/);
   assert.match(supabaseScript, /export async function submitMatchHoleOutcome/);
 });
 

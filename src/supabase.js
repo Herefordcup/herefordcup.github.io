@@ -321,7 +321,7 @@ export async function loadPlayerData(userId) {
       .eq('user_id', userId)
       .maybeSingle(),
     supabase.from('texas_scramble_squads')
-      .select('*, texas_scramble_sessions!inner(*), texas_scramble_squad_players(*, profiles(display_name)), texas_scramble_hole_scores(*)')
+      .select('*, texas_scramble_sessions!inner(*), texas_scramble_squad_players!texas_scramble_squad_players_squad_id_fkey(*, profiles(display_name)), texas_scramble_hole_scores(*)')
       .eq('texas_scramble_sessions.tournament_id', tournament.id)
       .order('squad_number'),
     supabase.from('match_hole_outcomes')
