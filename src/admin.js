@@ -1,6 +1,6 @@
 import { validateSegments } from './formats.js';
 import { scrambleLocalStart, scrambleLockReason } from './texas-scramble-planner.js?v=organizer-scoring-2';
-import { applyMemberCardVisibility, createMutationGate, easternDateTimeInput, easternDateTimeToIso, filterActiveMemberships, moveFocusFromFilteredCard, optionalNumber, renameMatchPlanPayload, segmentPlayerFromMembership, segmentPlayerOptions, tournamentCompletionReadiness, tournamentTeamLabel } from './admin-helpers.js?v=tournament-completion-1';
+import { applyMemberCardVisibility, createMutationGate, easternDateTimeInput, easternDateTimeToIso, filterActiveMemberships, moveFocusFromFilteredCard, optionalNumber, renameMatchPlanPayload, segmentPlayerFromMembership, segmentPlayerOptions, tournamentCompletionReadiness, tournamentTeamLabel } from './admin-helpers.js?v=organizer-scoring-2';
 import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
 import { deriveSegmentResult } from './match-results.js?v=organizer-scoring-2';
 import { formatMatchStatus } from './scoring.js';

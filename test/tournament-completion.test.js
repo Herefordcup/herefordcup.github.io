@@ -135,7 +135,7 @@ test('administrator completion requires an exact typed confirmation and refreshe
   assert.match(adminScript, /submitButton\.disabled = true/);
   assert.match(adminScript, /finally[\s\S]*submitButton\.disabled = false/);
   assert.match(html, /src\/admin\.js\?v=organizer-scoring-2/);
-  assert.match(adminScript, /admin-helpers\.js\?v=tournament-completion-1/);
+  assert.match(adminScript, /admin-helpers\.js\?v=organizer-scoring-2/);
   assert.match(adminScript, /supabase\.js\?v=organizer-scoring-2/);
 });
 

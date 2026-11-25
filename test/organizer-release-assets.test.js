@@ -13,7 +13,7 @@ test('public entries and organizer scoring imports use the same release cache ke
     assert.ok(js.includes(`from './supabase.js?v=${key}'`), `${entry} loads this release's data client`);
   }
   const admin = await text('src/admin.js');
-  for (const name of ['team-correction-editor', 'texas-scramble-planner', 'match-results']) {
+  for (const name of ['admin-helpers', 'team-correction-editor', 'texas-scramble-planner', 'match-results']) {
     assert.ok(admin.includes(`from './${name}.js?v=${key}'`), `Admin loads this release's ${name}`);
   }
 });
