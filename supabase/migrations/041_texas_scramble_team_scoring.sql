@@ -1,6 +1,9 @@
 -- Shared Texas Scramble scorecards and outcome-only match-play entry.
 -- Apply after 040_march_2027_itinerary.sql.
 
+-- Publish the score tables, both planner entry points, and their grants together.
+begin;
+
 alter table public.match_segments
   add column if not exists entry_mode text not null default 'individual_scores';
 
@@ -305,6 +308,47 @@ begin
 end;
 $$;
 
+-- Plan edits and archive publication share the tournament lock. A SHARE row lock
+-- freezes its status without blocking foreign-key checks during score submission.
+create function public.lock_editable_plan_tournament(target_tournament_id uuid, allow_tournament_admin boolean)
+returns void language plpgsql set search_path = pg_catalog, public as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended(target_tournament_id::text, 0));
+  -- Tournament-role mutations use this same lock. Authorize before looking
+  -- up the edition and keep each planner's existing permission boundary.
+  if (public.is_admin() or (allow_tournament_admin and public.is_tournament_admin(target_tournament_id))) is not true then
+    raise exception 'Administrator access required';
+  end if;
+  perform 1 from public.tournaments
+  where id = target_tournament_id and status in ('setup', 'open', 'live') for share;
+  if not found or exists (select 1 from public.legacy_editions where source_tournament_id = target_tournament_id) then
+    raise exception 'Plans require a current, unarchived tournament';
+  end if;
+end;
+$$;
+revoke all on function public.lock_editable_plan_tournament(uuid, boolean) from public, anon, authenticated, service_role;
+
+-- Call with the match already locked (and, for Scramble, its session first).
+-- A score inserted into an existing individual round also takes an FK lock on
+-- that round. Wait for that writer before deciding whether a rebuild is safe.
+create function public.match_plan_has_recorded_play(target_match_id uuid)
+returns boolean language plpgsql set search_path = pg_catalog, public as $$
+begin
+  perform 1 from public.rounds where match_id = target_match_id order by id for update;
+  return exists (select 1 from public.rounds r join public.scores s on s.round_id = r.id where r.match_id = target_match_id)
+    or exists (select 1 from public.match_segments s join public.match_hole_outcomes o on o.segment_id = s.id where s.match_id = target_match_id)
+    or exists (select 1 from public.texas_scramble_squads q join public.texas_scramble_hole_scores h on h.squad_id = q.id where q.match_id = target_match_id)
+    or exists (select 1 from public.match_segments where match_id = target_match_id and (status = 'final' or holes_played <> 0 or differential <> 0))
+    -- Selecting a Scramble tee logs scheduled -> live with zero holes. That
+    -- setup event is not play; a prior final or nonzero result still is.
+    or exists (select 1 from public.match_result_audit where match_id = target_match_id
+               and (old_status = 'final' or new_status = 'final' or old_holes_played <> 0 or new_holes_played <> 0
+                    or old_differential <> 0 or new_differential <> 0))
+    or exists (select 1 from public.team_score_correction_audit where match_id = target_match_id);
+end;
+$$;
+revoke all on function public.match_plan_has_recorded_play(uuid) from public, anon, authenticated, service_role;
+
 create or replace function public.save_texas_scramble_plan(
   session_payload jsonb,
   squad_payload jsonb
@@ -318,6 +362,9 @@ declare
   saved_session_id uuid;
   tournament_id_value uuid := (session_payload ->> 'tournament_id')::uuid;
   existing_session_id uuid := nullif(session_payload ->> 'id', '')::uuid;
+  existing_session public.texas_scramble_sessions%rowtype;
+  course_id_value uuid := nullif(session_payload ->> 'course_id', '')::uuid;
+  tee_id_value uuid := nullif(session_payload ->> 'tee_id', '')::uuid;
   squad_record jsonb;
   saved_match_id uuid;
   saved_segment_id uuid;
@@ -328,11 +375,8 @@ declare
   expected_players integer := 0;
   assigned_players integer;
 begin
-  if not (public.is_admin() or public.is_tournament_admin(tournament_id_value)) then
-    raise exception 'Only a tournament administrator can save a Texas Scramble plan';
-  end if;
-  perform pg_advisory_xact_lock(hashtextextended(tournament_id_value::text, 0));
-  if jsonb_typeof(squad_payload) <> 'array' or jsonb_array_length(squad_payload) < 1 then
+  perform public.lock_editable_plan_tournament(tournament_id_value, allow_tournament_admin => true);
+  if jsonb_typeof(squad_payload) is distinct from 'array' or jsonb_array_length(squad_payload) < 1 then
     raise exception 'Add at least one Texas Scramble squad';
   end if;
   if coalesce((session_payload ->> 'required_tee_shots')::integer, 0) < 0 then
@@ -351,9 +395,27 @@ begin
       coalesce((session_payload ->> 'required_tee_shots')::integer, 3), auth.uid()
     ) returning id into saved_session_id;
   else
-    select id into saved_session_id from public.texas_scramble_sessions
-    where id = existing_session_id and tournament_id = tournament_id_value and status = 'scheduled' for update;
-    if saved_session_id is null then raise exception 'Only a scheduled Texas Scramble plan can be replaced'; end if;
+    -- Course selection alone marks a session live. The first submitted hole,
+    -- not that label, freezes every lineup. Use the submitter's session ->
+    -- match -> squad lock order and read play only after acquiring the locks.
+    select * into existing_session from public.texas_scramble_sessions
+    where id = existing_session_id and tournament_id = tournament_id_value for update;
+    if not found then raise exception 'Texas Scramble session not found in this tournament'; end if;
+    saved_session_id := existing_session.id;
+    perform m.id from public.matches m join public.texas_scramble_squads q on q.match_id = m.id
+    where q.session_id = saved_session_id order by m.id for update of m;
+    perform id from public.texas_scramble_squads where session_id = saved_session_id order by id for update;
+    if existing_session.status = 'final' or exists (
+      select 1 from public.texas_scramble_squads q join public.matches m on m.id = q.match_id
+      where q.session_id = saved_session_id and (m.tournament_id is distinct from tournament_id_value
+        or q.status = 'final' or m.status not in ('scheduled', 'live') or public.match_plan_has_recorded_play(m.id))
+    ) then raise exception 'Only an unplayed, nonfinal Texas Scramble lineup can be replaced'; end if;
+    if not (session_payload ? 'course_id' or session_payload ? 'tee_id') then
+      course_id_value := existing_session.course_id;
+      tee_id_value := existing_session.tee_id;
+    end if;
+    -- Delete the old match roots, not just their squads: the FK cascades
+    -- retire their unscored segments and both sets of assignments together.
     delete from public.matches where id in (
       select match_id from public.texas_scramble_squads where session_id = saved_session_id
     );
@@ -364,7 +426,7 @@ begin
       start_hole = coalesce((session_payload ->> 'start_hole')::integer, 1),
       end_hole = coalesce((session_payload ->> 'end_hole')::integer, 18),
       required_tee_shots = coalesce((session_payload ->> 'required_tee_shots')::integer, 3),
-      course_id = null, tee_id = null, updated_at = now()
+      course_id = null, tee_id = null, status = 'scheduled', updated_at = now()
     where id = saved_session_id;
   end if;
 
@@ -427,16 +489,11 @@ begin
   where squad.session_id = saved_session_id;
   if assigned_players <> expected_players then raise exception 'Texas Scramble assignments are incomplete'; end if;
 
-  if nullif(session_payload ->> 'course_id', '') is not null
-     or nullif(session_payload ->> 'tee_id', '') is not null then
-    if nullif(session_payload ->> 'course_id', '') is null or nullif(session_payload ->> 'tee_id', '') is null then
+  if course_id_value is not null or tee_id_value is not null then
+    if course_id_value is null or tee_id_value is null then
       raise exception 'Choose both course and tee or leave both open for the players';
     end if;
-    perform public.select_texas_scramble_course_tee(
-      saved_session_id,
-      (session_payload ->> 'course_id')::uuid,
-      (session_payload ->> 'tee_id')::uuid
-    );
+    perform public.select_texas_scramble_course_tee(saved_session_id, course_id_value, tee_id_value);
   end if;
   return saved_session_id;
 end;
@@ -710,25 +767,90 @@ begin
 end;
 $$;
 
+-- Keep 003's lineup validation for unplayed plans, but make its destructive
+-- implementation private. Both generations of the client enter the same guard.
+revoke all on function public.save_match_plan(jsonb, jsonb) from public, anon, authenticated, service_role;
+alter function public.save_match_plan(jsonb, jsonb) rename to rebuild_unplayed_match_plan;
+
 create or replace function public.save_match_plan_with_entry_modes(match_payload jsonb, segment_payload jsonb)
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = pg_catalog, public
 as $$
 declare
-  saved_match_id uuid;
-  segment_record jsonb;
+  saved_match_id uuid := nullif(match_payload ->> 'id', '')::uuid;
+  tournament_id_value uuid := (match_payload ->> 'tournament_id')::uuid;
+  existing_match public.matches%rowtype;
+  same_segments boolean;
 begin
-  saved_match_id := public.save_match_plan(match_payload, segment_payload);
-  for segment_record in select value from jsonb_array_elements(segment_payload)
-  loop
-    update public.match_segments set entry_mode = coalesce(segment_record ->> 'entry_mode', 'individual_scores')
-    where match_id = saved_match_id and segment_number = (segment_record ->> 'segment_number')::integer;
-  end loop;
+  perform public.lock_editable_plan_tournament(tournament_id_value, allow_tournament_admin => false);
+  if jsonb_typeof(segment_payload) is distinct from 'array' or jsonb_array_length(segment_payload) = 0 then
+    raise exception 'At least one segment is required';
+  end if;
+
+  if saved_match_id is not null then
+    select * into existing_match from public.matches
+    where id = saved_match_id and tournament_id = tournament_id_value for update;
+    if not found then raise exception 'Match not found in this tournament'; end if;
+    if existing_match.status = 'final' then raise exception 'Finalized matches cannot be edited'; end if;
+    if exists (select 1 from public.texas_scramble_squads where match_id = saved_match_id) then
+      raise exception 'Use the Texas Scramble session planner for a shared scorecard';
+    end if;
+
+    -- Compare typed definitions and ordered assignments, not JSON key/array
+    -- order, result fields, or just the number of segments. Check cardinality
+    -- as well as missing/extra keys so duplicate segment numbers cannot match.
+    select jsonb_array_length(segment_payload) = (select count(*) from public.match_segments where match_id = saved_match_id)
+      and not exists (
+        select 1 from (select * from public.match_segments where match_id = saved_match_id) s
+        full join jsonb_to_recordset(segment_payload) as p(id uuid, segment_number int, start_hole int, end_hole int,
+          format text, scoring_mode text, handicap_allowance text, point_value numeric, entry_mode text, players jsonb)
+          on p.segment_number = s.segment_number
+        where s.id is null or p.segment_number is null or (p.id is not null and p.id <> s.id)
+          or (s.start_hole, s.end_hole, s.format, s.scoring_mode, s.handicap_allowance, s.point_value, s.entry_mode)
+             is distinct from (p.start_hole, p.end_hole, p.format, p.scoring_mode, nullif(p.handicap_allowance, '')::numeric,
+                               p.point_value, coalesce(p.entry_mode, 'individual_scores'))
+          or (select jsonb_agg(jsonb_build_array(a.user_id, a.team, a.side, a.playing_order) order by a.playing_order)
+              from public.match_segment_players a where a.segment_id = s.id)
+             is distinct from
+             (select jsonb_agg(jsonb_build_array(a.user_id, a.team, a.side, a.playing_order) order by a.playing_order)
+              from jsonb_to_recordset(p.players) as a(user_id uuid, team text, side text, playing_order int))
+      ) into same_segments;
+
+    if same_segments
+       and (existing_match.session, existing_match.starts_at, existing_match.course_id)
+           is not distinct from (btrim(match_payload ->> 'session'), nullif(match_payload ->> 'starts_at', '')::timestamptz,
+                                 nullif(match_payload ->> 'course_id', '')::uuid)
+       and coalesce(match_payload ->> 'format', existing_match.format) = existing_match.format
+       and coalesce(match_payload ->> 'scoring_mode', existing_match.scoring_mode) = existing_match.scoring_mode
+       and coalesce(match_payload ->> 'status', 'scheduled') in ('scheduled', existing_match.status) then
+      -- Status is scoring-owned; even a stale planner sending 'scheduled' may
+      -- rename a live match without touching its state or any child row.
+      update public.matches set name = btrim(match_payload ->> 'name')
+      where id = saved_match_id and name is distinct from btrim(match_payload ->> 'name');
+      return saved_match_id;
+    end if;
+    if public.match_plan_has_recorded_play(saved_match_id) then
+      raise exception 'Only the match name can be changed after play is recorded';
+    end if;
+  end if;
+
+  saved_match_id := public.rebuild_unplayed_match_plan(match_payload, segment_payload);
+  update public.match_segments s set entry_mode = coalesce(p.entry_mode, 'individual_scores')
+  from jsonb_to_recordset(segment_payload) as p(segment_number int, entry_mode text)
+  where s.match_id = saved_match_id and s.segment_number = p.segment_number
+    and s.entry_mode is distinct from coalesce(p.entry_mode, 'individual_scores');
   return saved_match_id;
 end;
 $$;
+
+create function public.save_match_plan(match_payload jsonb, segment_payload jsonb)
+returns uuid language sql set search_path = pg_catalog, public as $$
+  select public.save_match_plan_with_entry_modes(match_payload, segment_payload);
+$$;
+revoke all on function public.save_match_plan(jsonb, jsonb) from public, anon, authenticated;
+grant execute on function public.save_match_plan(jsonb, jsonb) to authenticated;
 
 revoke all on function public.is_texas_scramble_squad_member(uuid) from public, anon;
 revoke all on function public.can_administer_scramble_session(uuid) from public, anon;
@@ -1167,3 +1289,5 @@ $$;
 
 revoke all on function public.complete_tournament_archive(uuid) from public, anon, authenticated;
 grant execute on function public.complete_tournament_archive(uuid) to authenticated;
+
+commit;
