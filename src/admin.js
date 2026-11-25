@@ -329,6 +329,7 @@ const texasScramblePreset = [
 let savingTexasScramble = false;
 let scrambleDraftDirty = false;
 let scrambleDraftVersion;
+let hydratedScrambleTee;
 const unverifiedScrambleIds = new Set();
 
 function holdUnverifiedScramble(id) {
@@ -438,6 +439,7 @@ function collectTexasScramblePlan(tournamentId, session) {
   }
   const courseId = texasScrambleCourse.value || null;
   const teeId = texasScrambleTee.value || null;
+  const writeTee = !session || courseId !== hydratedScrambleTee.courseId || teeId !== hydratedScrambleTee.teeId;
   if (Boolean(courseId) !== Boolean(teeId)) throw new Error('Choose both course and tee or leave both for the players.');
   if (courseId && !adminData.courses.find(c => c.id === courseId)?.tees.some(t => t.id === teeId && ['M', 'U'].includes(t.rating_category))) {
     throw new Error('The saved course or tee is unavailable. Choose an available pair or leave both open.');
@@ -450,7 +452,8 @@ function collectTexasScramblePlan(tournamentId, session) {
       ...(session ? { id: session.id } : {}), tournament_id: tournamentId,
       name: data.get('name'), session_label: data.get('sessionLabel'), starts_at: startsAt,
       start_hole: session?.start_hole ?? 1, end_hole: session?.end_hole ?? 18,
-      required_tee_shots: Number(data.get('requiredTeeShots')), course_id: courseId, tee_id: teeId,
+      required_tee_shots: Number(data.get('requiredTeeShots')),
+      ...(writeTee ? { course_id: courseId, tee_id: teeId } : {}),
     },
     squads,
   };
@@ -490,6 +493,8 @@ function hydrateTexasScramblePlanner() {
   fields.requiredTeeShots.value = session?.required_tee_shots ?? (isNew ? fields.requiredTeeShots.defaultValue : '');
   document.querySelector('#texasScrambleHoleRange').textContent = session || isNew ? `Holes ${start}–${end}.` : 'Hole range unavailable.';
   populateScrambleCourseChoices(session?.course_id, session?.tee_id);
+  // A readback can refresh adminData without replacing this open draft.
+  hydratedScrambleTee = { courseId: texasScrambleCourse.value || null, teeId: texasScrambleTee.value || null };
   renderTexasScrambleSquads(session);
   const reason = syncTexasScrambleControls();
   setMessage(texasScrambleMessage, reason);
@@ -1146,8 +1151,22 @@ function renderTournamentCompletion() {
   submitButton.disabled = !readiness.ready || completionConfirmation.value.trim() !== (tournament ? completionPhrase(tournament) : '');
 }
 
-function populateAdminChoices() {
+function populateResultMatchChoices() {
   const selectedResultMatchId = resultMatch.value;
+  resultMatch.replaceChildren(
+    new Option('Select a match', ''),
+    ...adminData.matches.filter(match => ['scheduled', 'live', 'final'].includes(match.status)).map(match => new Option(match.name, match.id)),
+  );
+  if ([...resultMatch.options].some(option => option.value === selectedResultMatchId)) {
+    resultMatch.value = selectedResultMatchId;
+    return; // Keep the surviving match's result and correction drafts mounted.
+  }
+  if (scoreCorrectionDialog.hasAttribute('open') && correctionEditor.matchId === selectedResultMatchId) closeScoreCorrectionDialog();
+  resultMatch.dispatchEvent(new Event('change'));
+  setMessage(document.querySelector('#resultMessage'), 'The selected match is no longer available. Select another match for results or corrections.');
+}
+
+function populateAdminChoices() {
   const planTournamentId = activeTournamentId();
   const tournamentSelects = ['#matchTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
   for (const select of tournamentSelects) select.replaceChildren(...adminData.tournaments.map(tournament => new Option(`${tournament.name} · ${tournament.edition_year}`, tournament.id)));
@@ -1163,14 +1182,8 @@ function populateAdminChoices() {
     new Option('Select a finalized match', ''),
     ...adminData.matches.filter(match => match.status === 'final').map(match => new Option(match.name, match.id)),
   );
-  resultMatch.replaceChildren(
-    new Option('Select a match', ''),
-    ...adminData.matches.filter(match => ['scheduled', 'live', 'final'].includes(match.status)).map(match => new Option(match.name, match.id)),
-  );
-  if ([...resultMatch.options].some(option => option.value === selectedResultMatchId)) {
-    resultMatch.value = selectedResultMatchId;
-  }
   updateCorrectionAccess(adminData.matches.find(match => match.id === resultMatch.value));
+  populateResultMatchChoices();
   populateLegacyChoices();
   renderTournamentCompletion();
 }
@@ -1537,6 +1550,7 @@ texasScrambleForm.addEventListener('submit', async event => {
     savedId = await saveTexasScramblePlan(plan);
     await reloadTexasScrambleData();
     populateTexasScramblePlanner({ tournamentId, sessionId: savedId });
+    populateResultMatchChoices();
     setMessage(texasScrambleMessage, `Texas Scramble plan saved. ${texasScrambleLock() || 'Players will see their assigned squad in Play.'}`);
   } catch (error) {
     if (savedId) {
