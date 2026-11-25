@@ -116,6 +116,9 @@ test('shared score writes lock session before match, squad, and score rows', () 
   assert.ok(sessionLock >= 0 && matchLock > sessionLock && squadLock > matchLock);
 });
 
-test('administrator Texas Scramble times use the tournament timezone conversion', () => {
-  assert.match(adminScript, /starts_at: easternDateTimeToIso\(data\.get\('startsAt'\)\)/);
+test('the Texas Scramble payload keeps an unchanged instant or converts the organizer’s new Eastern start time', () => {
+  const collect = adminScript.split('function collectTexasScramblePlan(')[1]?.split('\nfunction ')[0] ?? '';
+  assert.match(collect, /const localStart = data\.get\('startsAt'\)/);
+  assert.match(collect, /localStart === scrambleLocalStart\(session\.starts_at\) \? session\.starts_at : easternDateTimeToIso\(localStart\)/);
+  assert.match(collect, /starts_at: startsAt[,\s]/);
 });
