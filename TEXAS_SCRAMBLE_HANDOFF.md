@@ -49,10 +49,12 @@ npm ci
 npm test
 ```
 
-The production deployment workflow applies migrations before publishing browser assets. Required protected configuration names remain unchanged: `SUPABASE_ACCESS_TOKEN` in the GitHub `production` environment and `SUPABASE_PROJECT_REF` as a repository variable.
+The production deployment workflow installs the locked test dependencies before running the suite, then applies and verifies migrations before publishing browser assets. Protected configuration names remain unchanged: `SUPABASE_ACCESS_TOKEN` in the GitHub `production` environment and `SUPABASE_PROJECT_ID` as the project-reference variable.
 
 ## Release status and remaining gate
 
 This branch has not been deployed to production and has not modified production tournament data. PGlite verifies PostgreSQL migration/runtime behavior, but it does not replace JWT-backed RLS, PostgREST, or browser verification against a real disposable Supabase stack. The exact pushed head must pass GitHub CI, including disposable authenticated browser checks, before merge.
 
 Do not test destructive completion, corrections, or cleanup against real members or the live tournament. Use synthetic identities in disposable Supabase and destroy the stack afterward.
+
+The organizer regression extends the same `@scramble` run. It checks that reopening a lineup updates the same session, a match rename preserves posted holes, and a structural change after play does not erase history. It drives live and final corrections from Admin, checks both writes from two organizer tabs, compares stored scores and audits, then publishes and replays only the disposable archive. Initial fixture standings (Blue 7, White 6) and corrected fixture standings (Blue 5, White 7) are deliberately different; neither represents the production tournament. Treat the release hold as resolved only after a passing run on the final PR revision.

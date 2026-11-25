@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Check out the exact release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install locked test dependencies
+        run: npm ci --include=dev --ignore-scripts
       - name: Run the complete test suite
         run: npm test
 

@@ -28,6 +28,12 @@ test('production deploy runs only on main and strictly gates build and Pages dep
   assert.match(workflow, /deploy:\s*[\s\S]*needs: build[\s\S]*pages: write[\s\S]*id-token: write[\s\S]*deploy-pages/);
 });
 
+test('a clean production test job installs the locked test dependencies before running the suite', () => {
+  const testJob = /^  test:\s*\r?\n([\s\S]*?)(?=^  migrate:)/m.exec(workflow)?.[1] ?? '';
+  const steps = [...testJob.matchAll(/^\s*run:\s*(.+?)\s*$/gm)].map(match => match[1].trim());
+  assert.deepEqual(steps.slice(0, 2), ['npm ci --include=dev --ignore-scripts', 'npm test']);
+});
+
 test('production mutation paths are serialized, exact-project-scoped, and use step-scoped secrets', () => {
   assert.match(workflow, /concurrency:\s*[\s\S]*group: production-database/);
   assert.match(bootstrap, /concurrency:\s*[\s\S]*group: production-database/);

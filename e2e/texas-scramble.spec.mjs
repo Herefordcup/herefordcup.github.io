@@ -1,6 +1,11 @@
-import { expect, test } from '@playwright/test';
+import { expect, test as base } from '@playwright/test';
 import { seedScramble } from '../scripts/e2e/texas-browser-fixture.mjs';
+import { editUnplayedLineup, verifyOrganizerCorrections } from './helpers/organizer-score-checks.mjs';
 
+// Both tests use the same 16 accounts, but never edit the same tournament plan.
+const test = base.extend({
+  plans: [async ({}, use) => use(await seedScramble()), { scope: 'worker', timeout: 120_000 }],
+});
 test.describe.configure({ retries: 0 }); // Stateful; rerun in a fresh disposable database.
 const play = '#memberNav [data-member-view="score"]';
 const rows = '#teamScorecardRows .team-hole-row';
@@ -23,10 +28,25 @@ async function locked(row, strokes, contributorId) {
   await expect(row.locator('select')).toHaveValue(contributorId);
 }
 
-// The only source of hole scores is the ordinary player's Save hole button.
-test('Texas Scramble: four shared cards, teammate resume and final Cup points', { tag: '@scramble' }, async ({ browser, baseURL }) => {
-  test.setTimeout(300000);
-  const f = await seedScramble();
+test('Texas Scramble: an organizer reopens and edits only the unplayed 2098 lineup', { tag: '@scramble' }, async ({ browser, baseURL, plans }) => {
+  const original = plans.scoring;
+  const before = await original.organizer.lineup();
+  expect(before.tournament).toMatchObject({ id: original.organizer.tournamentId, edition_year: 2027, status: 'live' });
+  const editable = await plans.createLineupFixture();
+  expect(editable.organizer.tournamentId).not.toBe(original.organizer.tournamentId);
+  expect(editable.organizer.sessionId).not.toBe(original.organizer.sessionId);
+  const playerIds = fixture => fixture.squads.map(s => s.players.map(p => p.id));
+  expect(playerIds(editable)).toEqual(playerIds(original));
+  await editUnplayedLineup({ browser, baseURL, signIn, fixture: editable });
+  expect(await original.organizer.lineup()).toEqual(before);
+  expect(await original.readSession()).toEqual({ status: 'scheduled', course_id: null, tee_id: null });
+  expect(await original.readHoles()).toEqual([]);
+});
+
+// Score the 2027 plan exactly as created: no organizer re-save or injected holes.
+test('Texas Scramble: four shared cards, teammate resume and final Cup points', { tag: '@scramble' }, async ({ browser, baseURL, plans }) => {
+  test.setTimeout(360000);
+  const f = plans.scoring;
   const pageErrors = [];
   const wrongModeControls = [];
   for (const [si, squad] of f.squads.entries()) {
@@ -128,4 +148,5 @@ test('Texas Scramble: four shared cards, teammate resume and final Cup points', 
   console.log('Verified 16 player logins, 4 independent cards, 72 saved and locked holes, all tee shots and submitters; Blue 7, White 6; 0 individual rounds.');
   // Surface a presentation failure after (not instead of) verifying every persisted scoring result.
   expect(wrongModeControls, 'Only the Texas Scramble entry controls should be visible').toEqual([]);
+  await verifyOrganizerCorrections({ browser, baseURL, signIn, fixture: f });
 });

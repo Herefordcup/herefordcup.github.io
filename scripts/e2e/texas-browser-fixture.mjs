@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { assertDisposableSupabaseUrl } from './safety.mjs';
+import { organizerCheckData } from './organizer-check-data.mjs';
 
 // Node-side setup and independent GET readback only. No hole is seeded.
 export const cases = [
@@ -42,54 +43,68 @@ export async function seedScramble(env = process.env) {
     key: publicKey, method: 'POST', body: { email: adminEmail, password },
   });
   assert.ok(admin.user?.id && admin.access_token, 'Disposable planner must be signed in');
-  const [tournament] = await insert('tournaments', {
-    name: `Disposable Scramble ${tag}`, slug: `disposable-scramble-${tag}`, edition_year: 2027,
-    status: 'live', starts_on: '2027-03-18', ends_on: '2027-03-21', created_by: admin.user.id,
-  });
+  const rpc = (name, body) => call(`/rest/v1/rpc/${name}`, { key: publicKey, bearer: admin.access_token, method: 'POST', body });
+  async function createTournament(year, status) {
+    const [tournament] = await insert('tournaments', {
+      name: `Disposable Scramble ${year} ${tag}`, slug: `disposable-scramble-${year}-${tag}`, edition_year: year,
+      status, starts_on: `${year}-03-18`, ends_on: `${year}-03-21`, created_by: admin.user.id,
+    });
+    return tournament;
+  }
+  const scoringTournament = await createTournament(2027, 'live');
   const [course] = await insert('courses', { name: `Disposable Scramble Links ${tag}`, location: 'Loopback', active: true, created_by: admin.user.id });
   const [tee] = await insert('tees', { course_id: course.id, name: 'Scramble QA', rating_category: 'M', rating: 72, slope: 113, rating_par: 72, par: 72, yardage: 6300 });
   await insert('holes', Array.from({ length: 18 }, (_, i) => ({ tee_id: tee.id, hole_number: i + 1, par: 4, stroke_index: i + 1, yardage: 350 })));
-  const squads = [];
+  const roster = [];
   for (const item of cases) {
     const players = [];
     for (const [index, handicap] of [8, 0, 12, 4].entries()) {
       const name = `${item.label} Player ${index + 1}`;
-      const email = `scramble-${tag}-${squads.length}-${index}@local.test`;
+      const email = `scramble-${tag}-${roster.length}-${index}@local.test`;
       const user = await call('/auth/v1/admin/users', { method: 'POST', body: { email, password, email_confirm: true, user_metadata: { display_name: name } } });
       const [profile] = await call(`/rest/v1/profiles?id=eq.${user.id}`, { method: 'PATCH', body: { display_name: name, handicap_index: handicap, role: 'player' }, prefer: 'return=representation' });
       assert.equal(profile.role, 'player');
       players.push({ id: user.id, name, email });
     }
-    squads.push({ ...item, players });
+    roster.push({ ...item, players });
   }
-  const members = await call('/rest/v1/tournament_memberships?on_conflict=tournament_id,user_id', {
-    method: 'POST', prefer: 'resolution=merge-duplicates,return=representation',
-    body: squads.flatMap(s => s.players.map(p => ({ tournament_id: tournament.id, user_id: p.id, status: 'active', role: 'player', team: s.side, joined_at: new Date().toISOString() }))),
-  });
-  assert.equal(members.length, 16);
-  assert.ok(members.every(m => m.status === 'active' && m.role === 'player'));
-  const sessionId = await call('/rest/v1/rpc/save_texas_scramble_plan', {
-    key: publicKey, bearer: admin.access_token, method: 'POST', body: {
-      session_payload: { tournament_id: tournament.id, name: 'Texas Scramble', session_label: 'Browser QA', starts_at: '2027-03-19T13:00:00Z', start_hole: 1, end_hole: 18, required_tee_shots: 3 },
-      squad_payload: squads.map(s => ({ label: s.label, side: s.side, squad_number: s.number, player_ids: s.players.map(p => p.id) })),
-    },
-  });
-  const readSquads = () => call(`/rest/v1/texas_scramble_squads?session_id=eq.${sessionId}&select=id,match_id,segment_id,label,side,status,gross_total,net_score,playing_handicap,par_total,points`);
-  const saved = await readSquads();
-  assert.equal(saved.length, 4);
-  for (const s of squads) {
-    const row = saved.find(r => r.label === s.label && r.side === s.side);
-    assert.ok(row && row.status === 'scheduled');
-    Object.assign(s, { id: row.id, matchId: row.match_id, segmentId: row.segment_id });
+  async function seedPlan(tournament) {
+    const memberships = roster.flatMap(s => s.players.map(p => ({
+      tournament_id: tournament.id, user_id: p.id, status: 'active', role: 'player', team: s.side, joined_at: new Date().toISOString(),
+    })));
+    const members = await call('/rest/v1/tournament_memberships?on_conflict=tournament_id,user_id', {
+      method: 'POST', prefer: 'resolution=merge-duplicates,return=representation', body: memberships,
+    });
+    assert.equal(members.length, 16);
+    for (const { user_id, team } of memberships) {
+      assert.ok(members.some(m => m.tournament_id === tournament.id && m.user_id === user_id && m.team === team && m.status === 'active' && m.role === 'player'));
+    }
+    const sessionId = await rpc('save_texas_scramble_plan', {
+      session_payload: { tournament_id: tournament.id, name: 'Texas Scramble', session_label: 'Browser QA', starts_at: `${tournament.edition_year}-03-19T13:00:00Z`, start_hole: 1, end_hole: 18, required_tee_shots: 3 },
+      squad_payload: roster.map(s => ({ label: s.label, side: s.side, squad_number: s.number, player_ids: s.players.map(p => p.id) })),
+    });
+    const readSquads = () => call(`/rest/v1/texas_scramble_squads?session_id=eq.${sessionId}&select=id,match_id,segment_id,label,side,status,gross_total,net_score,playing_handicap,par_total,points&order=id`);
+    const saved = await readSquads();
+    assert.equal(saved.length, 4);
+    const squads = roster.map(s => {
+      const row = saved.find(r => r.label === s.label && r.side === s.side);
+      assert.ok(row && row.status === 'scheduled');
+      return { ...s, players: [...s.players], id: row.id, matchId: row.match_id, segmentId: row.segment_id };
+    });
+    const squadIds = squads.map(s => s.id).join(',');
+    const matchIds = squads.map(s => s.matchId).join(',');
+    const playerIds = memberships.map(m => m.user_id).join(',');
+    const readHoles = () => call(`/rest/v1/texas_scramble_hole_scores?squad_id=in.(${squadIds})&select=squad_id,hole_number,gross_score,tee_shot_player_id,submitted_by&order=squad_id,hole_number`);
+    const readSession = async () => (await call(`/rest/v1/texas_scramble_sessions?id=eq.${sessionId}&select=status,course_id,tee_id`))[0];
+    const readSegments = () => call(`/rest/v1/match_segments?match_id=in.(${matchIds})&select=id,status,holes_played,point_value,differential&order=id`);
+    const readRounds = () => call(`/rest/v1/rounds?or=(match_id.in.(${matchIds}),user_id.in.(${playerIds}))&select=id`);
+    assert.deepEqual(await readHoles(), []);
+    assert.deepEqual(await readSession(), { status: 'scheduled', course_id: null, tee_id: null });
+    const organizer = organizerCheckData({ call, rpc, tournamentId: tournament.id, sessionId, courseId: course.id, squads, adminId: admin.user.id });
+    return { squads, courseId: course.id, teeId: tee.id, readSquads, readHoles, readSession, readSegments, readRounds, organizer };
   }
-  const squadIds = squads.map(s => s.id).join(',');
-  const matchIds = squads.map(s => s.matchId).join(',');
-  const playerIds = squads.flatMap(s => s.players.map(p => p.id)).join(',');
-  const readHoles = () => call(`/rest/v1/texas_scramble_hole_scores?squad_id=in.(${squadIds})&select=squad_id,hole_number,gross_score,tee_shot_player_id,submitted_by&order=hole_number`);
-  const readSession = async () => (await call(`/rest/v1/texas_scramble_sessions?id=eq.${sessionId}&select=status,course_id,tee_id`))[0];
-  const readSegments = () => call(`/rest/v1/match_segments?match_id=in.(${matchIds})&select=id,status,holes_played,point_value,differential`);
-  const readRounds = () => call(`/rest/v1/rounds?or=(match_id.in.(${matchIds}),user_id.in.(${playerIds}))&select=id`);
-  assert.deepEqual(await readHoles(), []);
-  assert.deepEqual(await readSession(), { status: 'scheduled', course_id: null, tee_id: null });
-  return { squads, courseId: course.id, teeId: tee.id, readSquads, readHoles, readSession, readSegments, readRounds };
+  return {
+    scoring: await seedPlan(scoringTournament),
+    createLineupFixture: async () => seedPlan(await createTournament(2098, 'setup')),
+  };
 }
