@@ -75,6 +75,19 @@ export function segmentPlayerFromMembership(membership, playingOrder) {
   };
 }
 
+// Disabled inputs are only a display of the saved plan: do not round-trip their string values.
+export function renameMatchPlanPayload(match, name) {
+  const pick = (row, keys) => Object.fromEntries(keys.map(key => [key, row[key]]));
+  return {
+    match: { ...pick(match, ['id', 'session', 'starts_at', 'course_id', 'tournament_id', 'status']), name },
+    segments: [...match.match_segments].sort((a, b) => a.segment_number - b.segment_number).map(segment => ({
+      ...pick(segment, ['segment_number', 'start_hole', 'end_hole', 'format', 'scoring_mode', 'entry_mode', 'handicap_allowance', 'point_value']),
+      players: [...segment.match_segment_players].sort((a, b) => a.playing_order - b.playing_order)
+        .map(player => pick(player, ['user_id', 'team', 'side', 'playing_order'])),
+    })),
+  };
+}
+
 export function optionalNumber(value) {
   const normalized = String(value ?? '').trim();
   return normalized === '' ? null : Number(normalized);
@@ -126,6 +139,13 @@ function easternParts(date) {
   return Object.fromEntries(easternFormatter.formatToParts(date)
     .filter(part => part.type !== 'literal')
     .map(part => [part.type, Number(part.value)]));
+}
+
+export function easternDateTimeInput(value) {
+  if (!value) return '';
+  const { year, month, day, hour, minute } = easternParts(new Date(value));
+  const pad = part => String(part).padStart(2, '0');
+  return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}`;
 }
 
 export function easternDateTimeToIso(value) {

@@ -1,6 +1,6 @@
 import { validateSegments } from './formats.js';
 import { scrambleLocalStart, scrambleLockReason } from './texas-scramble-planner.js?v=organizer-scoring-2';
-import { applyMemberCardVisibility, createMutationGate, easternDateTimeToIso, filterActiveMemberships, moveFocusFromFilteredCard, optionalNumber, segmentPlayerFromMembership, segmentPlayerOptions, tournamentCompletionReadiness } from './admin-helpers.js?v=tournament-completion-1';
+import { applyMemberCardVisibility, createMutationGate, easternDateTimeInput, easternDateTimeToIso, filterActiveMemberships, moveFocusFromFilteredCard, optionalNumber, renameMatchPlanPayload, segmentPlayerFromMembership, segmentPlayerOptions, tournamentCompletionReadiness, tournamentTeamLabel } from './admin-helpers.js?v=tournament-completion-1';
 import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
 import { deriveSegmentResult } from './match-results.js?v=organizer-scoring-2';
 import { formatMatchStatus } from './scoring.js';
@@ -18,6 +18,7 @@ import {
   finalizeMatchResults,
   loadAdminData,
   loadCorrectionMatch,
+  loadTournamentMatchPlans,
   loadMatchResultAudits,
   loadTeamCorrectionAudits,
   loadMembershipRosterData,
@@ -42,6 +43,9 @@ const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
 const courseMessage = document.querySelector('#adminMessage');
 const matchPlanForm = document.querySelector('#matchPlanForm');
+const matchPlanExisting = document.querySelector('#matchPlanExisting');
+const matchPlanState = document.querySelector('#matchPlanState');
+const matchPlanSubmit = matchPlanForm.querySelector('button[type="submit"]');
 const matchPlanMessage = document.querySelector('#matchPlanMessage');
 const segmentRows = document.querySelector('#segmentRows');
 const segmentTemplate = document.querySelector('#segmentTemplate');
@@ -92,6 +96,12 @@ const defaultPars = [4, 4, 3, 5, 4, 4, 3, 5, 4, 4, 4, 3, 5, 4, 4, 3, 5, 4];
 
 let session;
 let adminData;
+let editingMatch = null;
+let nameOnlyAtOpen = false;
+let matchPlanSaving = false;
+let matchPlanNeedsReload = false;
+const savedAssignments = new WeakMap();
+const savedSegments = new WeakMap();
 let membershipRosterRefreshPromise;
 let correctionDialogTrigger;
 let correctionOpenRequest = 0;
@@ -127,6 +137,15 @@ function populateSegmentPlayerSelect(playerSelect, selectedUserId = playerSelect
     return option;
   }));
   playerSelect.value = state.selectedUserId;
+  const saved = savedAssignments.get(playerSelect);
+  if (saved && selectedUserId === saved.user_id) {
+    // A saved side can differ from the player's current tournament team.
+    const member = adminData.memberships.find(row => row.tournament_id === activeTournamentId() && row.user_id === saved.user_id);
+    const option = [...playerSelect.options].find(item => item.value === selectedUserId) ?? new Option('', selectedUserId);
+    option.textContent = `${member?.profiles?.display_name || saved.profiles?.display_name || 'Saved player'} · ${tournamentTeamLabel(saved.side)} (saved lineup)`;
+    if (!option.parentNode) { option.disabled = true; playerSelect.add(option); }
+    playerSelect.value = selectedUserId;
+  }
 }
 
 function refreshSegmentPlayerOptions() {
@@ -135,35 +154,51 @@ function refreshSegmentPlayerOptions() {
   }
 }
 
-function createPlayerSlot(slotNumber) {
+function createPlayerSlot(slotNumber, saved) {
   const wrapper = document.createElement('div');
   wrapper.className = 'player-slot';
   const playerLabel = document.createElement('label');
   playerLabel.textContent = `Player ${slotNumber}`;
   const playerSelect = document.createElement('select');
   playerSelect.dataset.playerSelect = 'true';
-  populateSegmentPlayerSelect(playerSelect, '');
+  if (saved) savedAssignments.set(playerSelect, saved);
+  populateSegmentPlayerSelect(playerSelect, saved?.user_id ?? '');
   playerLabel.append(playerSelect);
   wrapper.append(playerLabel);
   return wrapper;
 }
 
 function renumberSegments() {
-  [...segmentRows.querySelectorAll('.segment-card')].forEach((card, index) => {
-    card.querySelector('.segment-head strong').textContent = `Segment ${index + 1}`;
+  const cards = [...segmentRows.querySelectorAll('.segment-card')];
+  const keepNumbers = cards.length === editingMatch?.match_segments.length && cards.every(card => savedSegments.has(card));
+  cards.forEach((card, index) => {
+    card.dataset.segmentNumber = keepNumbers ? savedSegments.get(card).segment_number : index + 1;
+    card.querySelector('.segment-head strong').textContent = `Segment ${card.dataset.segmentNumber}`;
   });
 }
 
-function addSegment({ startHole = 1, endHole = 18, format = 'fourball', scoringMode = 'net', entryMode = 'individual_scores', pointValue = 1 } = {}) {
+function addSegment(segment = {}) {
   const card = segmentTemplate.content.firstElementChild.cloneNode(true);
-  card.querySelector('[name="startHole"]').value = startHole;
-  card.querySelector('[name="endHole"]').value = endHole;
-  card.querySelector('[name="format"]').value = format;
-  card.querySelector('[name="scoringMode"]').value = scoringMode;
-  card.querySelector('[name="entryMode"]').value = entryMode;
-  card.querySelector('[name="pointValue"]').value = pointValue;
+  if (segment.id) savedSegments.set(card, segment);
+  card.querySelector('[name="startHole"]').value = segment.start_hole ?? 1;
+  card.querySelector('[name="endHole"]').value = segment.end_hole ?? 18;
+  const format = card.querySelector('[name="format"]');
+  if (segment.id && ![...format.options].some(option => option.value === segment.format)) {
+    const historical = new Option(`${segment.format} (saved format)`, segment.format);
+    historical.disabled = true;
+    format.add(historical);
+  }
+  format.value = segment.format ?? 'fourball';
+  card.querySelector('[name="scoringMode"]').value = segment.scoring_mode ?? 'net';
+  card.querySelector('[name="entryMode"]').value = segment.entry_mode ?? 'individual_scores';
+  if ('handicap_allowance' in segment) card.querySelector('[name="handicapAllowance"]').value = segment.handicap_allowance ?? '';
+  const points = card.querySelector('[name="pointValue"]');
+  if (segment.id) points.min = points.step = '0.01'; // Existing plans can contain hundredths, not just quarter points.
+  points.value = segment.point_value ?? 1;
   const playerGrid = card.querySelector('.segment-player-grid');
-  for (let slot = 1; slot <= 4; slot += 1) playerGrid.append(createPlayerSlot(slot));
+  for (let slot = 1; slot <= 4; slot += 1) {
+    playerGrid.append(createPlayerSlot(slot, segment.match_segment_players?.find(player => player.playing_order === slot)));
+  }
   card.querySelector('.remove-segment').addEventListener('click', () => {
     card.remove();
     renumberSegments();
@@ -172,23 +207,98 @@ function addSegment({ startHole = 1, endHole = 18, format = 'fourball', scoringM
   renumberSegments();
 }
 
+function tournamentMatchPlans() {
+  const squadIds = new Set(adminData.scrambleSessions.flatMap(session => session.texas_scramble_squads.map(squad => squad.match_id)));
+  return adminData.matches.filter(match => match.tournament_id === activeTournamentId() && match.format !== 'scramble' && !squadIds.has(match.id));
+}
+
+function populateMatchPlanOptions(selectedId = '') {
+  matchPlanExisting.replaceChildren(new Option('New match plan', ''),
+    ...tournamentMatchPlans().map(match => new Option(`${match.name} · ${match.status}`, match.id)));
+  matchPlanExisting.value = selectedId;
+}
+
+function openMatchPlan({ keepNewDetails = false } = {}) {
+  editingMatch = tournamentMatchPlans().find(match => match.id === matchPlanExisting.value) ?? null;
+  // Never turn a stale, editable draft into a rename-only payload when a score arrives elsewhere.
+  nameOnlyAtOpen = matchHasSavedHoles(editingMatch);
+  const fields = matchPlanForm.elements;
+  fields.startsAt.required = !editingMatch;
+  if (!keepNewDetails) {
+    fields.matchName.value = editingMatch?.name ?? '';
+    fields.session.value = editingMatch?.session ?? '';
+    fields.startsAt.value = easternDateTimeInput(editingMatch?.starts_at);
+    fields.courseId.replaceChildren(new Option('Course TBA', ''), ...adminData.courses.map(course => new Option(course.name, course.id)));
+    if (editingMatch?.course_id && !adminData.courses.some(course => course.id === editingMatch.course_id)) {
+      fields.courseId.add(new Option(editingMatch.courses?.name || 'Saved course', editingMatch.course_id));
+    }
+    fields.courseId.value = editingMatch?.course_id ?? '';
+  }
+  segmentRows.replaceChildren();
+  if (editingMatch) {
+    [...editingMatch.match_segments].sort((a, b) => a.segment_number - b.segment_number).forEach(addSegment);
+  } else {
+    addSegment({ start_hole: 1, end_hole: 9, format: 'fourball', point_value: 0.5 });
+    addSegment({ start_hole: 10, end_hole: 18, format: 'foursomes', point_value: 0.5 });
+  }
+  setMessage(matchPlanMessage, '');
+  renderMatchPlanAccess();
+}
+
+function matchHasSavedHoles(match) {
+  if (!match) return false;
+  const rounds = match.rounds ?? adminData.rounds.filter(round => round.match_id === match.id);
+  return rounds.some(round => round.scores?.length)
+    || match.match_segments.some(segment => segment.match_hole_outcomes?.length || segment.holes_played > 0);
+}
+
+function matchPlanReadOnlyReason() {
+  if (matchPlanNeedsReload) return 'Reload this page before editing the saved match again.';
+  const tournament = adminData.tournaments.find(row => row.id === activeTournamentId());
+  if (!tournament || !['setup', 'open', 'live'].includes(tournament.status)) return 'This tournament is closed. Match plans are read-only.';
+  if (editingMatch) {
+    const current = adminData.matches.find(row => row.id === editingMatch.id && row.tournament_id === tournament.id);
+    if (!current) return 'This match is no longer available. Select another match plan.';
+    if (!['scheduled', 'live'].includes(current.status)) return 'This match is closed. Its plan is read-only.';
+  }
+  return '';
+}
+
+function renderMatchPlanAccess() {
+  const reason = matchPlanReadOnlyReason();
+  const locked = Boolean(reason) || nameOnlyAtOpen;
+  const fields = matchPlanForm.elements;
+  fields.tournamentId.disabled = matchPlanExisting.disabled = matchPlanSaving || matchPlanNeedsReload;
+  fields.matchName.disabled = matchPlanSubmit.disabled = Boolean(reason) || matchPlanSaving;
+  for (const control of [fields.session, fields.startsAt, fields.courseId, document.querySelector('#addSegment'), ...segmentRows.children]) {
+    control.disabled = locked || matchPlanSaving;
+  }
+  matchPlanState.textContent = reason || (locked
+    ? 'Only the match name can be changed after play is recorded.' : '');
+}
+
 function collectSegments() {
-  return [...segmentRows.querySelectorAll('.segment-card')].map((card, index) => {
-    const players = [...card.querySelectorAll('.player-slot')].flatMap((slot, playingIndex) => {
-      const userId = slot.querySelector('[data-player-select]').value;
+  return [...segmentRows.querySelectorAll('.segment-card')].map(card => {
+    const players = [...card.querySelectorAll('[data-player-select]')].flatMap((select, playingIndex) => {
+      const userId = select.value;
       if (!userId) return [];
+      const saved = savedAssignments.get(select);
+      if (saved?.user_id === userId) return [{ userId, team: saved.team, side: saved.side, playingOrder: saved.playing_order }];
       const membership = adminData.memberships.find(item => item.user_id === userId && item.tournament_id === activeTournamentId());
       const player = segmentPlayerFromMembership(membership, playingIndex + 1);
-      return player ? [player] : [];
+      if (!player) throw new Error('Every new assignment requires an active player on Blue or White.');
+      return [player];
     });
+    const scoringMode = card.querySelector('[name="scoringMode"]').value;
     return {
-      segmentNumber: index + 1,
+      segmentNumber: Number(card.dataset.segmentNumber),
       startHole: Number(card.querySelector('[name="startHole"]').value),
       endHole: Number(card.querySelector('[name="endHole"]').value),
       format: card.querySelector('[name="format"]').value,
-      scoringMode: card.querySelector('[name="scoringMode"]').value,
+      scoringMode,
       entryMode: card.querySelector('[name="entryMode"]').value,
-      handicapAllowance: card.querySelector('[name="scoringMode"]').value === 'net' ? Number(card.querySelector('[name="handicapAllowance"]').value) : null,
+      handicapAllowance: scoringMode === 'net' || savedSegments.get(card)?.scoring_mode === 'gross'
+        ? optionalNumber(card.querySelector('[name="handicapAllowance"]').value) : null,
       pointValue: Number(card.querySelector('[name="pointValue"]').value),
       players,
     };
@@ -1038,11 +1148,15 @@ function renderTournamentCompletion() {
 
 function populateAdminChoices() {
   const selectedResultMatchId = resultMatch.value;
+  const planTournamentId = activeTournamentId();
   const tournamentSelects = ['#matchTournament', '#ruleTournament', '#commentaryTournament'].map(selector => document.querySelector(selector));
   for (const select of tournamentSelects) select.replaceChildren(...adminData.tournaments.map(tournament => new Option(`${tournament.name} · ${tournament.edition_year}`, tournament.id)));
+  if (planTournamentId) matchPlanForm.elements.tournamentId.value = planTournamentId;
+  if (!matchPlanSaving && !matchPlanNeedsReload) {
+    populateMatchPlanOptions(matchPlanExisting.value);
+    renderMatchPlanAccess();
+  }
   renderRuleEditor();
-  const courseSelect = document.querySelector('#matchCourse');
-  courseSelect.replaceChildren(new Option('Course TBA', ''), ...adminData.courses.map(course => new Option(course.name, course.id)));
   populateTexasScramblePlanner({ preserveDraft: true });
   const commentaryMatch = document.querySelector('#commentaryMatch');
   commentaryMatch.replaceChildren(
@@ -1342,24 +1456,63 @@ courseForm.addEventListener('submit', async event => {
 });
 
 document.querySelector('#addSegment').addEventListener('click', () => addSegment());
+matchPlanExisting.addEventListener('change', openMatchPlan);
 document.querySelector('#matchTournament').addEventListener('change', () => {
-  segmentRows.replaceChildren();
-  addSegment({ startHole: 1, endHole: 9, format: 'fourball', pointValue: 0.5 });
-  addSegment({ startHole: 10, endHole: 18, format: 'foursomes', pointValue: 0.5 });
+  const keepNewDetails = !editingMatch && !matchPlanExisting.value;
+  populateMatchPlanOptions();
+  openMatchPlan({ keepNewDetails });
 });
+
+function editableMatchPlanPayload() {
+  const fields = matchPlanForm.elements;
+  const segments = collectSegments();
+  const errors = validateSegments(segments);
+  if (errors.length) throw new Error(errors[0]);
+  const startsAt = fields.startsAt.value;
+  return { match: {
+    ...(editingMatch && { id: editingMatch.id }), name: fields.matchName.value, session: fields.session.value,
+    starts_at: editingMatch && startsAt === easternDateTimeInput(editingMatch.starts_at)
+      ? editingMatch.starts_at : (startsAt ? easternDateTimeToIso(startsAt) : null),
+    course_id: fields.courseId.value || null, tournament_id: activeTournamentId(), status: editingMatch?.status ?? 'scheduled',
+  }, segments: rpcSegments(segments) };
+}
 
 matchPlanForm.addEventListener('submit', async event => {
   event.preventDefault();
+  if (matchPlanSaving || matchPlanNeedsReload) return;
+  matchPlanSaving = true;
+  renderMatchPlanAccess();
   try {
-    const data = new FormData(matchPlanForm);
-    const segments = collectSegments();
-    const errors = validateSegments(segments);
-    if (errors.length) throw new Error(errors[0]);
-    if (segments.some(segment => segment.players.some(player => !player.team))) throw new Error('Every assigned player must belong to Blue or White.');
+    const fields = matchPlanForm.elements;
+    const tournamentId = activeTournamentId();
+    const readOnlyReason = matchPlanReadOnlyReason();
+    if (readOnlyReason) throw new Error(readOnlyReason);
+    if (matchPlanExisting.value !== (editingMatch?.id ?? '') || (editingMatch && editingMatch.tournament_id !== tournamentId)) {
+      throw new Error('Select the match plan again before saving.');
+    }
+    const payload = nameOnlyAtOpen ? renameMatchPlanPayload(editingMatch, fields.matchName.value) : editableMatchPlanPayload();
     setMessage(matchPlanMessage, 'Saving…');
-    await saveMatchPlan({ match: { name: data.get('matchName'), session: data.get('session'), starts_at: easternDateTimeToIso(data.get('startsAt')), course_id: data.get('courseId') || null, tournament_id: data.get('tournamentId'), status: 'scheduled' }, segments: rpcSegments(segments) });
+    const savedId = await saveMatchPlan(payload);
+    // The write has committed. A failed readback must never leave an insert-ready form behind.
+    matchPlanNeedsReload = true;
+    if (!savedId || (editingMatch && savedId !== editingMatch.id)) throw new Error('The server did not return the expected match ID.');
+    if (!editingMatch) {
+      matchPlanExisting.add(new Option(fields.matchName.value, savedId));
+      matchPlanExisting.value = savedId;
+    }
+    const refreshed = await loadTournamentMatchPlans(tournamentId);
+    adminData.matches = [...adminData.matches.filter(match => match.tournament_id !== tournamentId), ...refreshed];
+    if (!tournamentMatchPlans().some(match => match.id === savedId)) throw new Error('The saved match is not in the refreshed plans.');
+    populateMatchPlanOptions(savedId);
+    openMatchPlan();
+    matchPlanNeedsReload = false;
     setMessage(matchPlanMessage, 'Match plan saved.');
-  } catch (error) { setMessage(matchPlanMessage, error.message, true); }
+  } catch (error) {
+    setMessage(matchPlanMessage, matchPlanNeedsReload ? `Match plan saved, but it could not be reloaded: ${error.message}` : error.message, true);
+  } finally {
+    matchPlanSaving = false;
+    renderMatchPlanAccess();
+  }
 });
 
 texasScrambleCourse.addEventListener('change', () => populateTexasScrambleTees());
@@ -1907,8 +2060,7 @@ async function start() {
     renderMemberships();
     hydrateLegacyEdition();
     hydrateCommentarySettings();
-    addSegment({ startHole: 1, endHole: 9, format: 'fourball', pointValue: 0.5 });
-    addSegment({ startHole: 10, endHole: 18, format: 'foursomes', pointValue: 0.5 });
+    openMatchPlan();
     renderCommentaryApprovals();
     adminContent.hidden = false;
   } catch (error) {
