@@ -1,6 +1,6 @@
 import { formatMatchStatus } from './scoring.js';
 import { formatHomeDate, formatItineraryTime, formatPublicPoints, groupPublicSchedule, hasPublishedPublicPairings } from './home.js?v=itinerary-1';
-import { loadLegacyArchive, loadPublicTournamentPreview } from './supabase.js?v=texas-scramble-1';
+import { loadLegacyArchive, loadPublicTournamentPreview } from './supabase.js?v=organizer-scoring-2';
 import { renderLegacyWinners } from './legacy.js?v=pimentel-correction-1';
 
 const previewStatus = document.querySelector('#previewStatus');

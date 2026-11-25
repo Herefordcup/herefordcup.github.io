@@ -16,7 +16,7 @@ test('public visitors cannot reset scores', async () => {
   assert.doesNotMatch(html, /id=["']resetScores["']/i);
   assert.doesNotMatch(html, /Scores saved on this device/i);
   assert.doesNotMatch(script, /resetScores|Reset every Hereford Cup match score/i);
-  assert.match(html, /src\/app\.js\?v=texas-scramble-1/i);
+  assert.match(html, /src\/app\.js\?v=organizer-scoring-2/i);
 });
 
 test('score deletion remains an audited administrator-only operation', async () => {
