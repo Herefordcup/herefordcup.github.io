@@ -255,7 +255,7 @@ test('a committed hole winner still reports success and the returned value when 
   const { page, calls } = await openAdmin(t, data, {
     loadCorrectionMatch: () => { if (saved) throw new Error('Scores offline'); return { ...match, correctionSquads: [] }; },
     loadTeamCorrectionAudits: () => { if (saved) throw new Error('Log offline'); return []; },
-    correctTeamScoreEntry: () => { saved = true; return { ...match.match_segments[0].match_hole_outcomes[0], winner: 'halved' }; },
+    correctTeamScoreEntry: () => { saved = true; return { ...match.match_segments[0].match_hole_outcomes[0], winner: 'halved', completion_warning: 'Tee stroke indexes disagree' }; },
   });
   await editMatch(page, 'winner');
   await page.locator('#teamCorrectionWinner').selectOption('halved');
@@ -264,6 +264,7 @@ test('a committed hole winner still reports success and the returned value when 
   await expect(page.locator('#resultMessage')).toContainText('Team correction saved and audited.');
   await expect(page.locator('#resultMessage')).toContainText('Halved');
   await expect(page.locator('#resultMessage')).not.toContainText('White');
+  await expect(page.locator('#resultMessage')).toContainText('Individual scorecards need review: Tee stroke indexes disagree');
   await expect(page.locator('#resultMessage')).toContainText('Score/result refresh failed: Scores offline');
   await expect(page.locator('#resultMessage')).toContainText('Team correction history refresh failed: Log offline');
   await expect(page.locator('#teamCorrectionHistory')).toContainText('Log offline');

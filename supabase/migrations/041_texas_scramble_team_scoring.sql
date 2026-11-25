@@ -676,6 +676,26 @@ end;
 $$;
 revoke all on function public.individual_scorecard_gap(public.match_segments, uuid) from public, anon, authenticated;
 
+-- Same readiness rule for a player's last entry and an organizer's deciding edit.
+-- This private read-only helper never confers authority to finalize a match.
+create function public.pending_auto_result_reason(target_match public.matches)
+returns text language plpgsql stable set search_path = pg_catalog, public as $$
+declare s public.match_segments%rowtype;
+begin
+  for s in select * from public.match_segments where match_id = target_match.id order by segment_number, id loop
+    if s.entry_mode = 'hole_outcomes' then
+      if s.status <> 'final' then return 'incomplete_outcomes'; end if;
+    elsif s.format not in ('singles', 'fourball') then
+      return 'team_score_required';
+    elsif public.individual_scorecard_gap(s, target_match.course_id) is not null then
+      return 'incomplete_scores';
+    end if;
+  end loop;
+  return null;
+end;
+$$;
+revoke all on function public.pending_auto_result_reason(public.matches) from public, anon, authenticated, service_role;
+
 -- Preserve 038's authorization, lock order, score calculation and correction path.
 create or replace function public.finalize_match_results(target_match_id uuid, segment_results jsonb)
 returns uuid
@@ -991,7 +1011,6 @@ set search_path = public
 as $$
 declare
   match_record public.matches%rowtype;
-  segment_record public.match_segments%rowtype;
   automatic_results jsonb;
   waiting_reason text;
   commentary_eligible boolean := false;
@@ -1041,24 +1060,11 @@ begin
     raise exception 'Match has no scoring segments';
   end if;
 
-  for segment_record in
-    select segment.* from public.match_segments segment
-    where segment.match_id = target_match_id
-    order by segment.segment_number, segment.id
-  loop
-    if segment_record.entry_mode = 'hole_outcomes' then
-      if segment_record.status = 'final' then continue; end if;
-      waiting_reason := 'incomplete_outcomes';
-    elsif segment_record.format not in ('singles', 'fourball') then
-      waiting_reason := 'team_score_required';
-    elsif public.individual_scorecard_gap(segment_record, match_record.course_id) is not null then
-      waiting_reason := 'incomplete_scores';
-    else
-      continue;
-    end if;
+  waiting_reason := public.pending_auto_result_reason(match_record);
+  if waiting_reason is not null then
     return jsonb_build_object('finalized', false, 'already_final', false,
       'reason', waiting_reason, 'commentary_eligible', commentary_eligible);
-  end loop;
+  end if;
 
   select jsonb_agg(
     jsonb_build_object('segment_id', segment.id, 'status', 'final')
@@ -1181,6 +1187,8 @@ declare
   differential_value integer;
   remaining_value integer;
   total_holes_value integer;
+  settled_results jsonb;
+  completion_warning text;
 begin
   if nullif(btrim(target_reason), '') is null then raise exception 'A correction reason is required'; end if;
 
@@ -1281,12 +1289,29 @@ begin
       update public.matches set status = 'final'
       where id = match_record.id and status <> 'final'
         and not exists (select 1 from public.match_segments where match_id = match_record.id and status <> 'final');
+      if not found and match_record.status <> 'final' and public.pending_auto_result_reason(match_record) is null then
+        -- The last input can be a correction to a winner, after individual cards
+        -- have all been saved. Use the normal, role-checked organizer finalizer;
+        -- provide no client scores, manual differential, or participant identity.
+        select jsonb_agg(jsonb_build_object('segment_id', s.id, 'status', 'final') order by s.segment_number, s.id)
+          into settled_results from public.match_segments s where s.match_id = match_record.id;
+        begin
+          perform public.finalize_match_results(match_record.id, settled_results);
+        exception when sqlstate 'HC041' then
+          -- As for a player's last winner, keep this independently valid change
+          -- and report a scoring-data problem in the other segment only.
+          completion_warning := sqlerrm;
+        end;
+      end if;
     elsif segment_record.status = 'final' then
       raise exception 'Correction would reopen the finalized segment; its result must remain mathematically decided';
     end if;
   end if;
   insert into public.team_score_correction_audit(target_type, target_id, match_id, before_value, after_value, reason, corrected_by)
   values (target_type, target_id, match_record.id, before_value, after_value, btrim(target_reason), auth.uid());
+  if completion_warning is not null then
+    return after_value || jsonb_build_object('completion_warning', completion_warning);
+  end if;
   return after_value;
 end;
 $$;

@@ -161,9 +161,10 @@ test('Record Foursomes result is available only for a genuine manual Foursomes s
   const page = await browser.newPage({ serviceWorkers: 'block' });
   await localAssets(page, `export * from './supabase.js?fixture-original';
     export const getCurrentSession = async () => ({user: {id: ${JSON.stringify(f.admin)}}}),
-      loadPlayerData = async () => ({profile: {role:'admin'}, memberships: []}), loadMatchResultAudits = async () => [],
-      loadAdminData = async () => ({matches:${JSON.stringify(matches)},tournaments:[],memberships:[],courses:[],rules:[],settings:[],rounds:[],legacyEditions:[],commentaries:[]});`);
+      loadPlayerData = async () => ({profile: {role:'admin'}, memberships: []}), loadMatchResultAudits = async () => [], loadTeamCorrectionAudits = async () => [],
+      loadAdminData = async () => ({matches:${JSON.stringify(matches)},tournaments:[],memberships:[],courses:[],rules:[],settings:[],rounds:[],scrambleSessions:[],legacyEditions:[],commentaries:[]});`);
   await page.goto(`${origin}/admin.html`);
+  await expect(page.locator('#adminContent')).toBeVisible();
   const button = page.locator('#resultFinalizationForm button[type="submit"]');
   await page.locator('#resultMatch').selectOption(manual.id);
   await expect(button).toBeVisible();

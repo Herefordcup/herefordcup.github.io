@@ -1794,8 +1794,9 @@ scoreCorrectionForm.addEventListener('submit', async event => {
   try {
     if (team) {
       let entry = correctionEditor.entry;
-      const saved = await correctTeamScoreEntry(correctionEditor.payload());
+      const { completion_warning: completionWarning, ...saved } = await correctTeamScoreEntry(correctionEditor.payload());
       status = 'Team correction saved and audited.';
+      if (completionWarning) warnings.push(`Individual scorecards need review: ${completionWarning}`);
       Object.assign(entry.row, saved);
       try {
         const latest = await loadCorrectionMatch(matchId);

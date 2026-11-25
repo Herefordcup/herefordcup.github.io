@@ -67,6 +67,38 @@ test('a settled hole winner survives incompatible individual net tees without cl
   await assert.rejects(f.complete(f.blue, id), /matching tee stroke indexes/i);
 });
 
+for (const incompatible of [false, true]) {
+  test(`organizer's deciding correction keeps its audit and ${incompatible ? 'flags incompatible net tees' : 'closes a fully scored mixed match'}`, async () => {
+    const { id, individual, outcome } = await f.plan({ outcomeFormat: 'singles', frontScoring: incompatible ? 'net' : 'gross' });
+    await f.saveScores(f.blue, await f.openRound(f.blue, id), frontNine(3));
+    await f.saveScores(f.white, await f.openRound(f.white, id, incompatible ? f.alternate.id : f.tee.id), frontNine(4));
+    assert.equal((await f.complete(f.white, id)).reason, 'incomplete_outcomes');
+    let last;
+    for (let hole = 10; hole <= 14; hole++) last = await f.saveOutcome(f.blue, outcome.id, hole, hole === 14 ? 'halved' : 'cardinal');
+    assert.equal(last.finalized, false);
+    const reason = 'Organizer confirmed the deciding hole';
+    const [{ saved }] = await f.as(f.admin, 'select public.correct_team_score_entry($1,$2,$3,null,null,$4) as saved',
+      ['match_hole_outcome', last.outcome.id, reason, 'cardinal']);
+    assert.equal(saved.id, last.outcome.id);
+    const segments = (await f.db.query('select id,status,differential,holes_played from public.match_segments where match_id=$1 order by segment_number', [id])).rows;
+    assert.deepEqual(segments[1], {id:outcome.id,status:'final',differential:5,holes_played:5});
+    if (incompatible) {
+      assert.match(saved.completion_warning, /matching tee stroke indexes/i);
+      assert.notEqual(segments[0].status, 'final');
+      assert.notEqual(await status(id), 'final');
+    } else {
+      assert.equal(saved.completion_warning, undefined);
+      assert.deepEqual(segments[0], {id:individual.id,status:'final',differential:5,holes_played:5});
+      assert.equal(await status(id), 'final');
+    }
+    const audit = (await f.db.query('select reason,corrected_by,before_value,after_value from public.team_score_correction_audit where target_id=$1', [last.outcome.id])).rows;
+    assert.equal(audit.length,1); assert.equal(audit[0].corrected_by,f.admin); assert.equal(audit[0].reason,reason);
+    assert.equal(audit[0].before_value.winner,'halved'); assert.equal(audit[0].after_value.winner,'cardinal');
+    assert.equal(audit[0].after_value.completion_warning, undefined);
+    assert.equal((await f.db.query('select count(*)::int n from public.scores s join public.rounds r on r.id=s.round_id where r.match_id=$1 and s.hole_number>=10',[id])).rows[0].n,0);
+  });
+}
+
 for (const last of ['individual scores', 'hole winner']) {
   test(`both authoritative segments finish when ${last} is the last entry`, async () => {
     const { id, individual, outcome } = await f.plan();
