@@ -40,8 +40,8 @@ test('hidden automatic-format controls stay visually hidden despite button displ
 test('portal attempts completion and initial recap after an assigned score save', () => {
   assert.match(supabase, /export async function completeMatchIfReady/);
   assert.match(supabase, /rpc\('complete_match_if_ready'/);
-  assert.match(portal, /await completeMatchIfReady\(matchSelect\.value\)/);
-  assert.match(portal, /generateMatchCommentary\(matchSelect\.value\)/);
+  assert.match(portal, /await completeMatchIfReady\(match\.id\)/);
+  assert.match(portal, /generateMatchCommentary\(match\.id\)/);
   assert.match(portal, /Match complete\./);
 });
 

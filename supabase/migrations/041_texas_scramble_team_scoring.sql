@@ -590,6 +590,497 @@ exception when unique_violation then
 end;
 $$;
 
+-- A winner and a gross score are different authorities for the same hole. Keep
+-- match-wide individual entry unchanged elsewhere (including standalone play).
+create function public.check_score_entry_mode() returns trigger
+language plpgsql security definer set search_path = pg_catalog, public as $$
+declare
+  target_match_id uuid;
+begin
+  select m.id into target_match_id from public.rounds r join public.matches m on m.id = r.match_id
+  where r.id = new.round_id for share of m;
+  if exists (select 1 from public.match_segments s where s.match_id = target_match_id
+             and s.entry_mode = 'hole_outcomes' and new.hole_number between s.start_hole and s.end_hole) then
+    raise exception 'Hole winner entry does not accept individual gross scores';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.check_score_entry_mode() from public, anon, authenticated;
+create trigger check_score_entry_mode before insert or update on public.scores
+for each row execute function public.check_score_entry_mode();
+
+-- Count every expected *individual* hole exactly once. Missing tee geometry or
+-- scores still disqualify the round; outcome-only partners never need rounds.
+create or replace view public.official_round_statistics with (security_invoker = true) as
+with expected as (
+  select distinct s.match_id, p.user_id, n.hole_number
+  from public.match_segments s join public.match_segment_players p on p.segment_id = s.id
+  cross join lateral generate_series(s.start_hole, s.end_hole) n(hole_number)
+  where s.entry_mode = 'individual_scores' and s.format in ('singles', 'fourball', 'shamble')
+)
+select r.id as round_id, r.user_id, m.tournament_id, m.id as match_id,
+  count(score.id)::integer as holes_played, sum(score.gross_score)::integer as gross_total,
+  sum(h.par)::integer as par_total, (sum(score.gross_score) - sum(h.par))::integer as to_par
+from public.rounds r join public.matches m on m.id = r.match_id
+join public.tees t on t.id = r.tee_id and t.course_id = r.course_id and t.course_id = m.course_id
+join expected e on e.match_id = r.match_id and e.user_id = r.user_id
+left join public.scores score on score.round_id = r.id and score.hole_number = e.hole_number
+left join public.holes h on h.tee_id = r.tee_id and h.hole_number = e.hole_number
+where m.status = 'final'
+group by r.id, r.user_id, m.tournament_id, m.id
+having count(*) = count(score.id) and count(*) = count(h.hole_number);
+
+-- The parent match owns the lock. Check individual scorecard completeness both
+-- before automatic completion and again under the finalizer's row locks.
+create function public.individual_scorecard_gap(segment_record public.match_segments, match_course_id uuid)
+returns text language plpgsql stable set search_path = pg_catalog, public as $$
+begin
+  if exists (
+    select 1
+    from public.match_segment_players assignment
+    where assignment.segment_id = segment_record.id
+      and (select count(*)
+           from public.rounds round_record
+           join public.tees tee_record on tee_record.id = round_record.tee_id
+           where round_record.match_id = segment_record.match_id
+             and round_record.user_id = assignment.user_id
+             and round_record.course_id = match_course_id
+             and tee_record.course_id = match_course_id) <> 1
+  ) then
+    return 'Automatic result requires one valid persisted round per assigned player';
+  end if;
+  if exists (
+    select 1
+    from public.match_segment_players assignment
+    cross join lateral generate_series(segment_record.start_hole, segment_record.end_hole) expected_hole(hole_number)
+    where assignment.segment_id = segment_record.id
+      and not exists (
+        select 1
+        from public.rounds round_record
+        join public.scores score_record
+          on score_record.round_id = round_record.id
+         and score_record.hole_number = expected_hole.hole_number
+        join public.holes hole_record
+          on hole_record.tee_id = round_record.tee_id
+         and hole_record.hole_number = expected_hole.hole_number
+        where round_record.match_id = segment_record.match_id
+          and round_record.user_id = assignment.user_id
+          and round_record.course_id = match_course_id
+      )
+  ) then
+    return 'Automatic result requires complete persisted hole scores and tee stroke indexes';
+  end if;
+  return null;
+end;
+$$;
+revoke all on function public.individual_scorecard_gap(public.match_segments, uuid) from public, anon, authenticated;
+
+-- Preserve 038's authorization, lock order, score calculation and correction path.
+create or replace function public.finalize_match_results(target_match_id uuid, segment_results jsonb)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  match_record public.matches%rowtype;
+  segment_record public.match_segments%rowtype;
+  result_record jsonb;
+  scorecard_gap text;
+  result_count integer;
+  unique_result_count integer;
+  expected_per_team integer;
+  assignment_count integer;
+  cardinal_count integer;
+  silver_count integer;
+  total_holes integer;
+  current_hole_number integer;
+  derived_differential integer;
+  derived_holes_played integer;
+  cardinal_score integer;
+  silver_score integer;
+  baseline_handicap integer;
+  automatic_call boolean;
+  correction_recompute boolean;
+begin
+  automatic_call := coalesce(current_setting('app.auto_finalize_match_id', true), '') = target_match_id::text;
+  correction_recompute := coalesce(current_setting('app.correcting_final_match_id', true), '') = target_match_id::text;
+  if jsonb_typeof(coalesce(segment_results, '[]'::jsonb)) <> 'array' then
+    raise exception 'Every segment must have one authoritative final result';
+  end if;
+
+  -- Lock in the same root-to-leaf order used by score correction: match, rounds,
+  -- then scores. Segment plan rows are locked between match and round rows.
+  select source_match.* into match_record
+  from public.matches source_match
+  where source_match.id = target_match_id
+  for update;
+  if match_record.id is null then raise exception 'Match not found'; end if;
+  if automatic_call then
+    if not exists (
+      select 1
+      from public.match_segment_players assigned
+      join public.match_segments assigned_segment on assigned_segment.id = assigned.segment_id
+      join public.tournament_memberships membership
+        on membership.tournament_id = match_record.tournament_id
+       and membership.user_id = auth.uid()
+       and membership.status = 'active'
+      where assigned_segment.match_id = target_match_id
+        and assigned.user_id = auth.uid()
+    ) then
+      raise exception 'Assigned active player access required';
+    end if;
+  elsif not (public.is_admin() or public.is_tournament_admin(match_record.tournament_id)) then
+    raise exception 'Administrator access required';
+  end if;
+  if match_record.status = 'final' and automatic_call and not correction_recompute then
+    return target_match_id;
+  end if;
+  if match_record.status not in ('scheduled', 'live')
+     and not (match_record.status = 'final' and correction_recompute) then
+    raise exception 'Only scheduled or live matches can be finalized';
+  end if;
+  if match_record.course_id is null then raise exception 'A match course is required before finalization'; end if;
+
+  perform locked_segment.id
+  from public.match_segments locked_segment
+  where locked_segment.match_id = target_match_id
+  order by locked_segment.id
+  for update;
+
+  perform locked_assignment.segment_id
+  from public.match_segment_players locked_assignment
+  join public.match_segments locked_segment on locked_segment.id = locked_assignment.segment_id
+  where locked_segment.match_id = target_match_id
+  order by locked_assignment.segment_id, locked_assignment.user_id
+  for update of locked_assignment;
+
+  perform locked_round.id
+  from public.rounds locked_round
+  where locked_round.match_id = target_match_id
+  order by locked_round.id
+  for update;
+
+  perform locked_score.id
+  from public.scores locked_score
+  join public.rounds locked_round on locked_round.id = locked_score.round_id
+  where locked_round.match_id = target_match_id
+  order by locked_score.round_id, locked_score.hole_number
+  for update of locked_score;
+
+  -- Tee stroke indexes participate in net scoring, so freeze the read until commit.
+  perform locked_hole.tee_id
+  from public.holes locked_hole
+  join public.rounds locked_round on locked_round.tee_id = locked_hole.tee_id
+  where locked_round.match_id = target_match_id
+  order by locked_hole.tee_id, locked_hole.hole_number
+  for share of locked_hole;
+
+  select count(*), count(distinct (result ->> 'segment_id')::uuid)
+    into result_count, unique_result_count
+  from jsonb_array_elements(segment_results) results(result);
+  if result_count <> (select count(*) from public.match_segments where match_id = target_match_id)
+     or unique_result_count <> result_count then
+    raise exception 'Every segment must have one authoritative final result';
+  end if;
+
+  for segment_record in
+    select segment.*
+    from public.match_segments segment
+    where segment.match_id = target_match_id
+    order by segment.segment_number, segment.id
+  loop
+    select result into result_record
+    from jsonb_array_elements(segment_results) results(result)
+    where (result ->> 'segment_id')::uuid = segment_record.id;
+    if result_record is null or result_record ->> 'status' is distinct from 'final' then
+      raise exception 'Every segment must have one authoritative final result';
+    end if;
+
+    -- Outcome entry has its own immutable, audited finalizer. Never recalculate
+    -- it from rounds, replace it with a Foursomes fallback, or touch its audit.
+    if segment_record.entry_mode = 'hole_outcomes' then
+      if segment_record.status <> 'final' then raise exception 'Waiting for hole outcomes'; end if;
+      if (result_record ? 'differential' and (result_record ->> 'differential')::integer is distinct from segment_record.differential)
+         or (result_record ? 'holes_played' and (result_record ->> 'holes_played')::integer is distinct from segment_record.holes_played) then
+        raise exception 'Client result does not match the settled hole outcomes';
+      end if;
+      continue;
+    end if;
+
+    if segment_record.format in ('singles', 'fourball') then
+      expected_per_team := case when segment_record.format = 'singles' then 1 else 2 end;
+      select count(*),
+             count(*) filter (where assignment.side = 'cardinal'),
+             count(*) filter (where assignment.side = 'silver')
+        into assignment_count, cardinal_count, silver_count
+      from public.match_segment_players assignment
+      where assignment.segment_id = segment_record.id;
+      if assignment_count <> expected_per_team * 2
+         or cardinal_count <> expected_per_team
+         or silver_count <> expected_per_team then
+        raise exception 'Automatic result requires the complete format lineup' using errcode = 'HC041';
+      end if;
+
+      scorecard_gap := public.individual_scorecard_gap(segment_record, match_record.course_id);
+      if scorecard_gap is not null then raise exception '%', scorecard_gap using errcode = 'HC041'; end if;
+
+      if segment_record.scoring_mode = 'net' and (
+        segment_record.handicap_allowance is null
+        or exists (
+          select 1
+          from public.match_segment_players assignment
+          join public.rounds round_record
+            on round_record.match_id = target_match_id
+           and round_record.user_id = assignment.user_id
+          where assignment.segment_id = segment_record.id
+            and round_record.course_handicap is null
+        )
+      ) then
+        raise exception 'Net automatic result requires complete handicap data' using errcode = 'HC041';
+      end if;
+
+      if segment_record.scoring_mode = 'net' and exists (
+        select 1
+        from public.match_segment_players assignment
+        join public.rounds round_record
+          on round_record.match_id = target_match_id
+         and round_record.user_id = assignment.user_id
+        join public.holes hole_record
+          on hole_record.tee_id = round_record.tee_id
+         and hole_record.hole_number between segment_record.start_hole and segment_record.end_hole
+        where assignment.segment_id = segment_record.id
+          and (hole_record.stroke_index is null
+               or hole_record.stroke_index not between 1 and 18)
+      ) then
+        raise exception 'Net automatic result requires valid tee stroke indexes' using errcode = 'HC041';
+      end if;
+
+      if segment_record.scoring_mode = 'net' and exists (
+        select 1
+        from generate_series(segment_record.start_hole, segment_record.end_hole) expected_hole(hole_number)
+        where (select count(distinct hole_record.stroke_index)
+               from public.match_segment_players assignment
+               join public.rounds round_record
+                 on round_record.match_id = target_match_id
+                and round_record.user_id = assignment.user_id
+               join public.holes hole_record
+                 on hole_record.tee_id = round_record.tee_id
+                and hole_record.hole_number = expected_hole.hole_number
+               where assignment.segment_id = segment_record.id) <> 1
+      ) then
+        raise exception 'Net automatic result requires matching tee stroke indexes' using errcode = 'HC041';
+      end if;
+
+      if segment_record.scoring_mode = 'net' then
+        select min(floor(round_record.course_handicap * segment_record.handicap_allowance / 100.0 + 0.5)::integer)
+          into baseline_handicap
+        from public.match_segment_players assignment
+        join public.rounds round_record
+          on round_record.match_id = target_match_id
+         and round_record.user_id = assignment.user_id
+        where assignment.segment_id = segment_record.id;
+      else
+        baseline_handicap := 0;
+      end if;
+
+      total_holes := segment_record.end_hole - segment_record.start_hole + 1;
+      derived_differential := 0;
+      derived_holes_played := 0;
+      for current_hole_number in segment_record.start_hole..segment_record.end_hole loop
+        select
+          min(case when assignment.side = 'cardinal' then
+            score_record.gross_score - case when segment_record.scoring_mode = 'net' then
+              floor(greatest(
+                0,
+                floor(round_record.course_handicap * segment_record.handicap_allowance / 100.0 + 0.5)::integer - baseline_handicap
+              ) / 18.0)::integer
+              + case when hole_record.stroke_index <= mod(greatest(
+                  0,
+                  floor(round_record.course_handicap * segment_record.handicap_allowance / 100.0 + 0.5)::integer - baseline_handicap
+                ), 18) then 1 else 0 end
+            else 0 end
+          end),
+          min(case when assignment.side = 'silver' then
+            score_record.gross_score - case when segment_record.scoring_mode = 'net' then
+              floor(greatest(
+                0,
+                floor(round_record.course_handicap * segment_record.handicap_allowance / 100.0 + 0.5)::integer - baseline_handicap
+              ) / 18.0)::integer
+              + case when hole_record.stroke_index <= mod(greatest(
+                  0,
+                  floor(round_record.course_handicap * segment_record.handicap_allowance / 100.0 + 0.5)::integer - baseline_handicap
+                ), 18) then 1 else 0 end
+            else 0 end
+          end)
+          into cardinal_score, silver_score
+        from public.match_segment_players assignment
+        join public.rounds round_record
+          on round_record.match_id = target_match_id
+         and round_record.user_id = assignment.user_id
+        join public.scores score_record
+          on score_record.round_id = round_record.id
+         and score_record.hole_number = current_hole_number
+        join public.holes hole_record
+          on hole_record.tee_id = round_record.tee_id
+         and hole_record.hole_number = current_hole_number
+        where assignment.segment_id = segment_record.id;
+
+        derived_differential := derived_differential
+          + case when cardinal_score < silver_score then 1
+                 when silver_score < cardinal_score then -1
+                 else 0 end;
+        derived_holes_played := derived_holes_played + 1;
+        exit when derived_holes_played >= total_holes
+          or abs(derived_differential) > total_holes - derived_holes_played;
+      end loop;
+
+      -- The server is authoritative. A stale or altered browser payload cannot
+      -- finalize a different automatic result than the locked persisted scores.
+      if (result_record ? 'differential'
+          and (result_record ->> 'differential')::integer is distinct from derived_differential)
+         or (result_record ? 'holes_played'
+          and (result_record ->> 'holes_played')::integer is distinct from derived_holes_played) then
+        raise exception 'Client automatic result does not match persisted scores';
+      end if;
+    elsif segment_record.format = 'foursomes' and not automatic_call then
+      -- Foursomes remains an explicit administrator fallback until side-score
+      -- scorecards exist. Only this branch accepts a client-authored result.
+      derived_differential := (result_record ->> 'differential')::integer;
+      derived_holes_played := (result_record ->> 'holes_played')::integer;
+      total_holes := segment_record.end_hole - segment_record.start_hole + 1;
+    else
+      raise exception 'Unsupported format cannot be finalized';
+    end if;
+
+    if derived_holes_played < 1
+       or derived_holes_played > total_holes
+       or abs(derived_differential) > derived_holes_played
+       or (derived_differential = 0 and derived_holes_played <> total_holes)
+       or (derived_differential <> 0
+           and derived_holes_played < total_holes
+           and abs(derived_differential) <= total_holes - derived_holes_played) then
+      raise exception 'Segment result is not a valid completed match-play result';
+    end if;
+
+    update public.match_segments set
+      differential = derived_differential,
+      holes_played = derived_holes_played,
+      status = 'final',
+      updated_at = now()
+    where id = segment_record.id;
+  end loop;
+
+  update public.matches
+  set status = 'final'
+  where id = target_match_id
+    and status <> 'final';
+  return target_match_id;
+end;
+$$;
+
+revoke all on function public.finalize_match_results(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.finalize_match_results(uuid, jsonb) to authenticated;
+
+create or replace function public.complete_match_if_ready(target_match_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  match_record public.matches%rowtype;
+  segment_record public.match_segments%rowtype;
+  automatic_results jsonb;
+  waiting_reason text;
+  commentary_eligible boolean := false;
+begin
+  select source_match.* into match_record
+  from public.matches source_match
+  where source_match.id = target_match_id
+  for update;
+  if match_record.id is null then raise exception 'Match not found'; end if;
+
+  if not exists (
+    select 1
+    from public.match_segment_players assigned
+    join public.match_segments assigned_segment on assigned_segment.id = assigned.segment_id
+    join public.tournament_memberships membership
+      on membership.tournament_id = match_record.tournament_id
+     and membership.user_id = auth.uid()
+     and membership.status = 'active'
+    where assigned_segment.match_id = target_match_id
+      and assigned.user_id = auth.uid()
+  ) then
+    raise exception 'Assigned active player access required';
+  end if;
+
+  select count(*) = 1
+         and bool_and(segment.entry_mode = 'individual_scores' and segment.format in ('singles', 'fourball'))
+         and coalesce((
+           select settings.enabled
+           from public.commentary_settings settings
+           where settings.tournament_id = match_record.tournament_id
+         ), false)
+    into commentary_eligible
+  from public.match_segments segment
+  where segment.match_id = target_match_id;
+
+  if match_record.status = 'final' then
+    return jsonb_build_object(
+      'finalized', true,
+      'already_final', true,
+      'commentary_eligible', commentary_eligible
+    );
+  end if;
+  if match_record.status not in ('scheduled', 'live') then
+    raise exception 'Only scheduled or live matches can be completed';
+  end if;
+  if not exists (select 1 from public.match_segments segment where segment.match_id = target_match_id) then
+    raise exception 'Match has no scoring segments';
+  end if;
+
+  for segment_record in
+    select segment.* from public.match_segments segment
+    where segment.match_id = target_match_id
+    order by segment.segment_number, segment.id
+  loop
+    if segment_record.entry_mode = 'hole_outcomes' then
+      if segment_record.status = 'final' then continue; end if;
+      waiting_reason := 'incomplete_outcomes';
+    elsif segment_record.format not in ('singles', 'fourball') then
+      waiting_reason := 'team_score_required';
+    elsif public.individual_scorecard_gap(segment_record, match_record.course_id) is not null then
+      waiting_reason := 'incomplete_scores';
+    else
+      continue;
+    end if;
+    return jsonb_build_object('finalized', false, 'already_final', false,
+      'reason', waiting_reason, 'commentary_eligible', commentary_eligible);
+  end loop;
+
+  select jsonb_agg(
+    jsonb_build_object('segment_id', segment.id, 'status', 'final')
+    order by segment.segment_number, segment.id
+  ) into automatic_results
+  from public.match_segments segment
+  where segment.match_id = target_match_id;
+
+  perform set_config('app.auto_finalize_match_id', target_match_id::text, true);
+  perform public.finalize_match_results(target_match_id, automatic_results);
+
+  return jsonb_build_object(
+    'finalized', true,
+    'already_final', false,
+    'commentary_eligible', commentary_eligible
+  );
+end;
+$$;
+
+revoke all on function public.complete_match_if_ready(uuid) from public, anon, authenticated;
+grant execute on function public.complete_match_if_ready(uuid) to authenticated;
+
 create or replace function public.submit_match_hole_outcome(
   target_segment_id uuid,
   target_hole_number integer,
@@ -608,6 +1099,8 @@ declare
   played integer;
   differential_value integer;
   remaining integer;
+  match_finalized boolean := false;
+  completion_warning text;
 begin
   select * into segment_record from public.match_segments where id = target_segment_id;
   if segment_record.id is null then raise exception 'Match segment not found'; end if;
@@ -633,15 +1126,27 @@ begin
   total_holes := segment_record.end_hole - segment_record.start_hole + 1;
   remaining := total_holes - played;
   if played = total_holes or abs(differential_value) > remaining then
-    perform set_config('app.automatic_completion_match_id', match_record.id::text, true);
+    perform set_config('app.auto_finalize_match_id', match_record.id::text, true);
     update public.match_segments set status = 'final', differential = differential_value,
       holes_played = played, updated_at = now() where id = target_segment_id;
     if not exists (select 1 from public.match_segments where match_id = match_record.id and status <> 'final') then
       update public.matches set status = 'final' where id = match_record.id;
+      match_finalized := true;
+    elsif exists (select 1 from public.match_segments where match_id = match_record.id and entry_mode = 'individual_scores') then
+      -- This winner may be the last input after all individual cards were saved.
+      begin
+        match_finalized := (public.complete_match_if_ready(match_record.id) ->> 'finalized')::boolean;
+      exception when sqlstate 'HC041' then
+        -- Roll back only the individual finalization attempt. A missing lineup
+        -- or unusable net tee cannot invalidate an independently earned winner.
+        -- Authorization, integrity and unexpected errors still abort the write.
+        completion_warning := sqlerrm;
+      end;
     end if;
   end if;
   return jsonb_build_object('outcome', to_jsonb(saved_outcome), 'differential', differential_value,
-    'holes_played', played, 'finalized', played = total_holes or abs(differential_value) > remaining);
+    'holes_played', played, 'finalized', played = total_holes or abs(differential_value) > remaining,
+    'match_finalized', match_finalized, 'completion_warning', completion_warning);
 exception when unique_violation then
   raise exception 'That hole outcome is already submitted and locked';
 end;

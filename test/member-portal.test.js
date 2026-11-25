@@ -215,7 +215,7 @@ test('course handicap display is calculated independently of gross or net segmen
 
 test('scorecard blocking and segment display use only the signed-in players assigned segments', () => {
   assert.match(portalScript, /return assignedSegmentsForPlayer\(matchSegments, session\.user\.id\)/);
-  assert.match(portalScript, /individualEntryBlockReason\(selectedMatchSegments\(\)\)/);
+  assert.match(portalScript, /individualEntryBlockReason\(selectedIndividualSegments\(\)\)/);
 });
 
 test('player score saving is insert-only and explains immutable conflicts', () => {
@@ -268,7 +268,7 @@ test('scorecard setup includes an 18-hole, front-nine, and back-nine selector', 
   assert.match(html, /<option value="18">18 holes<\/option>/);
   assert.match(html, /<option value="front9">Front 9 \(holes 1–9\)<\/option>/);
   assert.match(html, /<option value="back9">Back 9 \(holes 10–18\)<\/option>/);
-  assert.match(portalScript, /holeNumbersForRound\(holeRangeSelect\.value, selectedMatchSegments\(\)\)/);
+  assert.match(portalScript, /holeNumbersForRound\(holeRangeSelect\.value, segments\)/);
   assert.match(html, /src="src\/portal\.js\?v=organizer-scoring-2"/);
   assert.match(portalScript, /from '\.\/round-entry\.js\?v=round-holes-1'/);
 });
