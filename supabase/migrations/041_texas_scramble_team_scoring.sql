@@ -661,16 +661,16 @@ security definer
 set search_path = public
 as $$
 declare
-  match_id_value uuid;
-  session_id_value uuid;
+  target_scope record;
+  tournament_record public.tournaments%rowtype;
+  session_record public.texas_scramble_sessions%rowtype;
+  match_record public.matches%rowtype;
+  segment_record public.match_segments%rowtype;
+  squad_record public.texas_scramble_squads%rowtype;
   before_value jsonb;
   after_value jsonb;
-  segment_id_value uuid;
-  squad_id_value uuid;
-  required_tee_shots_value integer;
   gross_total_value integer;
   net_score_value integer;
-  par_total_value integer;
   points_value numeric(5,2);
   played_value integer;
   differential_value integer;
@@ -678,69 +678,86 @@ declare
   total_holes_value integer;
 begin
   if nullif(btrim(target_reason), '') is null then raise exception 'A correction reason is required'; end if;
+
+  -- Discover IDs only. Do not hold a hole lock while waiting for archive or player submissions.
   if target_type = 'texas_scramble_hole' then
-    select squad.match_id, squad.session_id, to_jsonb(score), squad.segment_id, squad.id, session_record.required_tee_shots
-    into match_id_value, session_id_value, before_value, segment_id_value, squad_id_value, required_tee_shots_value
+    select m.tournament_id, squad.session_id, squad.match_id, squad.segment_id, squad.id as squad_id into target_scope
     from public.texas_scramble_hole_scores score
     join public.texas_scramble_squads squad on squad.id = score.squad_id
-    join public.texas_scramble_sessions session_record on session_record.id = squad.session_id
-    where score.id = target_id for update of score;
+    join public.matches m on m.id = squad.match_id
+    where score.id = target_id;
   elsif target_type = 'match_hole_outcome' then
-    select segment.match_id, null, to_jsonb(outcome), segment.id
-    into match_id_value, session_id_value, before_value, segment_id_value
+    select m.tournament_id, null::uuid as session_id, segment.match_id, segment.id as segment_id, null::uuid as squad_id into target_scope
     from public.match_hole_outcomes outcome
     join public.match_segments segment on segment.id = outcome.segment_id
-    where outcome.id = target_id for update of outcome;
+    join public.matches m on m.id = segment.match_id
+    where outcome.id = target_id;
   else raise exception 'Unsupported team score correction type'; end if;
-  if match_id_value is null then raise exception 'Team score entry not found'; end if;
-  if not (public.is_admin() or exists (
-    select 1 from public.matches match_record where match_record.id = match_id_value
-      and public.is_tournament_admin(match_record.tournament_id)
-  )) then raise exception 'Only a tournament administrator can correct team scoring'; end if;
+  if not found or target_scope.tournament_id is null then raise exception 'Team score entry not found'; end if;
 
-  perform set_config('app.correcting_final_match_id', match_id_value::text, true);
-  perform set_config('app.result_change_match_id', match_id_value::text, true);
+  -- Archive and role changes share this tournament lock. Submissions share the session/match locks.
+  perform pg_advisory_xact_lock(hashtextextended(target_scope.tournament_id::text, 0));
+  select * into tournament_record from public.tournaments where id = target_scope.tournament_id for update;
+  if target_scope.session_id is not null then
+    select * into session_record from public.texas_scramble_sessions
+    where id = target_scope.session_id and tournament_id = tournament_record.id for update;
+  end if;
+  select * into match_record from public.matches
+  where id = target_scope.match_id and tournament_id = tournament_record.id for update;
+  select * into segment_record from public.match_segments
+  where id = target_scope.segment_id and match_id = match_record.id for update;
+  -- Bind each child to its locked parent; a stale or missing link cannot yield a before-image.
+  if target_type = 'texas_scramble_hole' then
+    select * into squad_record from public.texas_scramble_squads
+    where id = target_scope.squad_id and session_id = session_record.id
+      and match_id = match_record.id and segment_id = segment_record.id for update;
+    select to_jsonb(score) into before_value from public.texas_scramble_hole_scores score
+    where score.id = target_id and score.squad_id = squad_record.id for update;
+  else
+    select to_jsonb(outcome) into before_value from public.match_hole_outcomes outcome
+    where outcome.id = target_id and outcome.segment_id = segment_record.id and segment_record.entry_mode = 'hole_outcomes' for update;
+  end if;
+  if not found then raise exception 'Team score entry changed or no longer exists'; end if;
+  if not (public.is_admin() or public.is_tournament_admin(tournament_record.id)) then
+    raise exception 'Only a tournament administrator can correct team scoring';
+  end if;
+  if tournament_record.status not in ('setup', 'open', 'live') then
+    raise exception 'Cannot correct team scores for a completed or archived tournament';
+  end if;
+
+  perform set_config('app.correcting_final_match_id', match_record.id::text, true);
+  perform set_config('app.result_change_match_id', match_record.id::text, true);
   perform set_config('app.result_change_reason', btrim(target_reason), true);
   if target_type = 'texas_scramble_hole' then
     if replacement_gross_score not between 1 and 30 then raise exception 'Enter a valid replacement team score'; end if;
     if not exists (
-      select 1 from public.texas_scramble_hole_scores score
-      join public.texas_scramble_squad_players player
-        on player.squad_id = score.squad_id and player.user_id = replacement_tee_shot_player_id
-      where score.id = target_id
+      select 1 from public.texas_scramble_squad_players player
+      where player.squad_id = squad_record.id and player.user_id = replacement_tee_shot_player_id
     ) then raise exception 'The selected tee shot must belong to the exact squad'; end if;
     update public.texas_scramble_hole_scores set gross_score = replacement_gross_score,
       tee_shot_player_id = replacement_tee_shot_player_id, updated_at = now() where id = target_id
     returning to_jsonb(texas_scramble_hole_scores.*) into after_value;
 
-    if exists (select 1 from public.texas_scramble_squads where id = squad_id_value and status = 'final') then
+    if squad_record.status = 'final' then
       if exists (
         select 1
         from public.texas_scramble_squad_players player
-        where player.squad_id = squad_id_value
+        where player.squad_id = squad_record.id
           and (select count(*) from public.texas_scramble_hole_scores score
-               where score.squad_id = squad_id_value and score.tee_shot_player_id = player.user_id) < required_tee_shots_value
+               where score.squad_id = squad_record.id and score.tee_shot_player_id = player.user_id) < session_record.required_tee_shots
       ) then raise exception 'Correction would violate the required tee shot minimum'; end if;
-      select sum(score.gross_score), squad.par_total
-      into gross_total_value, par_total_value
-      from public.texas_scramble_hole_scores score
-      join public.texas_scramble_squads squad on squad.id = score.squad_id
-      where score.squad_id = squad_id_value
-      group by squad.par_total;
-      select gross_total_value - playing_handicap into net_score_value
-      from public.texas_scramble_squads where id = squad_id_value;
-      points_value := greatest(0, par_total_value - net_score_value);
+      select sum(gross_score) into gross_total_value from public.texas_scramble_hole_scores where squad_id = squad_record.id;
+      net_score_value := gross_total_value - squad_record.playing_handicap;
+      points_value := greatest(0, squad_record.par_total - net_score_value);
       update public.texas_scramble_squads
       set gross_total = gross_total_value, net_score = net_score_value,
           points = points_value, updated_at = now()
-      where id = squad_id_value;
+      where id = squad_record.id;
       update public.match_segments
       set point_value = points_value,
-          differential = case when side = 'cardinal' then 1 else -1 end,
+          differential = case when squad_record.side = 'cardinal' then 1 else -1 end,
           updated_at = now()
-      from public.texas_scramble_squads squad
-      where match_segments.id = segment_id_value and squad.id = squad_id_value;
-
+      where id = segment_record.id;
     end if;
   else
     if replacement_winner not in ('cardinal', 'silver', 'halved') then raise exception 'Choose Blue, Halved, or White'; end if;
@@ -748,21 +765,23 @@ begin
     returning to_jsonb(match_hole_outcomes.*) into after_value;
     select count(*), coalesce(sum(case winner when 'cardinal' then 1 when 'silver' then -1 else 0 end), 0)
     into played_value, differential_value
-    from public.match_hole_outcomes where segment_id = segment_id_value;
-    select end_hole - start_hole + 1 into total_holes_value
-    from public.match_segments where id = segment_id_value;
+    from public.match_hole_outcomes where segment_id = segment_record.id;
+    total_holes_value := segment_record.end_hole - segment_record.start_hole + 1;
     remaining_value := total_holes_value - played_value;
-    if played_value < total_holes_value and abs(differential_value) <= remaining_value then
-      raise exception 'Correction would reopen the finalized match; record the remaining holes first';
+    if played_value = total_holes_value or abs(differential_value) > remaining_value then
+      update public.match_segments
+      set status = 'final', differential = differential_value,
+          holes_played = played_value, updated_at = now()
+      where id = segment_record.id;
+      update public.matches set status = 'final'
+      where id = match_record.id and status <> 'final'
+        and not exists (select 1 from public.match_segments where match_id = match_record.id and status <> 'final');
+    elsif segment_record.status = 'final' then
+      raise exception 'Correction would reopen the finalized segment; its result must remain mathematically decided';
     end if;
-    update public.match_segments
-    set status = 'final', differential = differential_value,
-        holes_played = played_value, updated_at = now()
-    where id = segment_id_value;
-
   end if;
   insert into public.team_score_correction_audit(target_type, target_id, match_id, before_value, after_value, reason, corrected_by)
-  values (target_type, target_id, match_id_value, before_value, after_value, btrim(target_reason), auth.uid());
+  values (target_type, target_id, match_record.id, before_value, after_value, btrim(target_reason), auth.uid());
   return after_value;
 end;
 $$;

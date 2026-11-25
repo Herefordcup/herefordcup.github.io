@@ -1,7 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { readdir, readFile } from 'node:fs/promises';
 
-export async function createTeamScoringFixture() {
+export async function createTeamScoringFixture({ live = false } = {}) {
   const root = new URL('../../supabase/migrations/', import.meta.url);
   const db = new PGlite();
   await db.exec(`
@@ -40,8 +40,9 @@ export async function createTeamScoringFixture() {
   await db.query("update public.profiles set role = 'admin' where id = $1", [ids[0]]);
   await db.query("select set_config('request.jwt.claim.sub', $1, false), set_config('request.jwt.claim.role', 'authenticated', false)", [ids[0]]);
   const tournamentId = '10000000-0000-4000-8000-000000000001';
-  await db.query(`insert into public.tournaments(id, name, slug, edition_year, status, created_by)
-    values ($1, 'Disposable Texas Scramble', 'disposable-texas-scramble', 2099, 'open', $2)`, [tournamentId, ids[0]]);
+  await db.query(`insert into public.tournaments(id, name, slug, edition_year, starts_on, ends_on, status, created_by)
+    values ($1, 'Disposable Texas Scramble', 'disposable-texas-scramble', 2099, $2, $3, $4, $5)`,
+    [tournamentId, live ? '2099-04-17' : null, live ? '2099-04-18' : null, live ? 'live' : 'open', ids[0]]);
   await db.query(`update public.tournament_memberships
     set status = 'active', role = 'admin', team = 'cardinal', joined_at = now()
     where tournament_id = $1 and user_id = $2`, [tournamentId, ids[0]]);
