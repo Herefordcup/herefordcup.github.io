@@ -60,6 +60,14 @@ test('disposable browser workflow is local-only, secret-free, and never targets 
   assert.match(prepareSource, /`begin;\\n\\n\$\{migration\.trim\(\)\}\\n\\ncommit;\\n`/);
 });
 
+test('the disposable Ubuntu runner exercises the full locked suite before starting Supabase', () => {
+  const commands = [...workflow.matchAll(/^\s*run:\s*(.+?)\s*$/gm)].map(hit => hit[1].trim());
+  const install = commands.indexOf('npm ci --include=dev --ignore-scripts');
+  const suite = commands.indexOf('npm test');
+  const start = commands.findIndex(command => command.startsWith('supabase start '));
+  assert.ok(install >= 0 && suite > install && start > suite, 'install dependencies, run npm test, then start the disposable project');
+});
+
 test('controlled account seed and browser smoke cover authenticated player and administrator paths', () => {
   assert.match(seedSource, /\/auth\/v1\/admin\/users/);
   assert.match(seedSource, /email_confirm/);

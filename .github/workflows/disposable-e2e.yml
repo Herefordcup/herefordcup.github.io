@@ -22,7 +22,9 @@ jobs:
       - name: Check out the exact test commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Node dependencies
-        run: npm ci
+        run: npm ci --include=dev --ignore-scripts
+      - name: Run the full suite on the clean Linux runner
+        run: npm test
       - name: Install the reviewed Supabase CLI
         uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13
         with:
