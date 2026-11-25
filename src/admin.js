@@ -3,9 +3,11 @@ import { applyMemberCardVisibility, createMutationGate, easternDateTimeToIso, fi
 import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
 import { deriveSegmentResult } from './match-results.js?v=texas-scramble-1';
 import { formatMatchStatus } from './scoring.js';
+import { createCorrectionEditor, isSharedSegment, renderTeamCorrectionAudits, teamValue } from './team-correction-editor.js';
 import {
   completeTournamentArchive,
   correctHoleScore,
+  correctTeamScoreEntry,
   denyTournamentMembership,
   deleteTournamentMembership,
   deleteLegacyPhoto,
@@ -14,7 +16,9 @@ import {
   generateMatchCommentary,
   finalizeMatchResults,
   loadAdminData,
+  loadCorrectionMatch,
   loadMatchResultAudits,
+  loadTeamCorrectionAudits,
   loadMembershipRosterData,
   loadPlayerData,
   saveCommentarySettings,
@@ -53,12 +57,15 @@ const rulePublishedList = document.querySelector('#rulePublishedList');
 const commentarySettingsForm = document.querySelector('#commentarySettingsForm');
 const commentaryTournament = document.querySelector('#commentaryTournament');
 const scoreCorrectionForm = document.querySelector('#scoreCorrectionForm');
+const correctionEditor = createCorrectionEditor(scoreCorrectionForm);
 const correctionRound = document.querySelector('#correctionRound');
 const scoreCorrectionDialog = document.querySelector('#scoreCorrectionDialog');
+const openScoreCorrection = document.querySelector('#openScoreCorrection');
 const resultFinalizationForm = document.querySelector('#resultFinalizationForm');
 const resultMatch = document.querySelector('#resultMatch');
 const resultSegmentRows = document.querySelector('#resultSegmentRows');
-const resultAuditHistory = document.querySelector('#resultAuditHistory');
+const resultAuditHistory = document.querySelector('#resultTransitions');
+const teamCorrectionHistory = document.querySelector('#teamCorrectionHistory');
 const tournamentCompletionForm = document.querySelector('#tournamentCompletionForm');
 const completionTournament = document.querySelector('#completionTournament');
 const completionReadiness = document.querySelector('#completionReadiness');
@@ -85,6 +92,10 @@ let session;
 let adminData;
 let membershipRosterRefreshPromise;
 let correctionDialogTrigger;
+let correctionOpenRequest = 0;
+let teamHistoryRequest = 0;
+let savingCorrection = false;
+let globalAdministrator = false;
 
 function setMessage(target, text, isError = false) {
   target.textContent = text;
@@ -907,19 +918,45 @@ function populateAdminChoices() {
   if ([...resultMatch.options].some(option => option.value === selectedResultMatchId)) {
     resultMatch.value = selectedResultMatchId;
   }
-  populateCorrectionRounds(resultMatch.value);
+  updateCorrectionAccess(adminData.matches.find(match => match.id === resultMatch.value));
   populateLegacyChoices();
   renderTournamentCompletion();
 }
 
+function canAdministerMatch(match) {
+  return match && (globalAdministrator || adminData.memberships.some(member => member.tournament_id === match.tournament_id
+    && member.user_id === session.user.id && member.status === 'active' && member.role === 'admin'));
+}
+
+function correctionRestriction(match) {
+  if (!match) return '';
+  if (!canAdministerMatch(match)) return 'Only an administrator of this tournament can correct its scores.';
+  if (!match.tournament_id) return ''; // A global administrator can still correct a pre-edition match.
+  const status = match.tournaments?.status ?? adminData.tournaments.find(item => item.id === match.tournament_id)?.status;
+  if (!['setup', 'open', 'live'].includes(status)
+    || adminData.legacyEditions.some(edition => edition.source_tournament_id === match.tournament_id)) {
+    return 'This tournament is closed to corrections. Submitted scores are read-only.';
+  }
+  return '';
+}
+
+function updateCorrectionAccess(match) {
+  const reason = correctionRestriction(match);
+  openScoreCorrection.disabled = Boolean(reason);
+  setMessage(document.querySelector('#resultMessage'), reason);
+  return reason;
+}
+
 function populateCorrectionRounds(matchId) {
+  const rounds = adminData.rounds.filter(round => round.match_id === matchId);
   correctionRound.replaceChildren(
     new Option('Select a player round', ''),
-    ...adminData.rounds.filter(round => round.match_id === matchId).map(round => new Option(
+    ...rounds.map(round => new Option(
       `${round.profiles?.display_name || 'Player'} · ${round.courses?.name || 'Course'} · ${round.tees?.name || 'Tee'}`,
       round.id,
     )),
   );
+  return rounds.length;
 }
 
 function hydrateCommentarySettings() {
@@ -931,7 +968,7 @@ function hydrateCommentarySettings() {
 }
 
 function requiresManualTeamResult(match) {
-  return match?.match_segments?.some(segment => segment.format === 'foursomes') ?? false;
+  return match?.match_segments?.some(segment => segment.format === 'foursomes' && !isSharedSegment(segment)) ?? false;
 }
 
 function resultSnapshotLabel(audit, prefix, segment) {
@@ -1016,6 +1053,27 @@ async function refreshResultAuditHistory(matchId) {
   renderResultAuditHistory();
 }
 
+async function refreshTeamCorrectionHistory(match) {
+  const request = ++teamHistoryRequest;
+  const panel = document.querySelector('#teamCorrectionLog');
+  panel.hidden = !match?.match_segments?.some(isSharedSegment) || !canAdministerMatch(match);
+  teamCorrectionHistory.replaceChildren();
+  if (panel.hidden) return '';
+  teamCorrectionHistory.textContent = 'Loading shared score corrections…';
+  try {
+    const audits = await loadTeamCorrectionAudits(match.id);
+    if (request !== teamHistoryRequest || resultMatch.value !== match.id) return '';
+    const squads = match.correctionSquads ?? adminData.scrambleSessions.flatMap(session => session.texas_scramble_squads);
+    renderTeamCorrectionAudits(teamCorrectionHistory, audits.filter(row => row.match_id === match.id), squads.filter(squad => squad.match_id === match.id));
+    return '';
+  } catch (error) {
+    if (request !== teamHistoryRequest || resultMatch.value !== match.id) return '';
+    const warning = `Team correction history refresh failed: ${error.message}`;
+    teamCorrectionHistory.textContent = warning;
+    return warning;
+  }
+}
+
 function renderResultSegments() {
   resultSegmentRows.replaceChildren();
   const match = adminData.matches.find(item => item.id === resultMatch.value);
@@ -1031,13 +1089,13 @@ function renderResultSegments() {
       card.dataset.resultReady = 'true';
       card.innerHTML = `${legend}
         <p><strong>${derived.label}</strong></p>
-        <p>Calculated automatically from submitted hole-by-hole scores.</p>
+        <p>${isSharedSegment(segment) ? 'Official result from the submitted shared scorecard.' : 'Calculated automatically from submitted hole-by-hole scores.'}</p>
         <input name="differential" type="hidden" value="${derived.differential}">
         <input name="holesPlayed" type="hidden" value="${derived.holes_played}">`;
     } else if (derived.mode === 'waiting') {
       card.dataset.resultReady = 'false';
       canFinalize = false;
-      card.innerHTML = `${legend}<p><strong>Waiting for completed scorecards</strong></p><p>${derived.reason}</p>`;
+      card.innerHTML = `${legend}<p><strong>${isSharedSegment(segment) ? 'Waiting for shared entries' : 'Waiting for completed scorecards'}</strong></p><p>${derived.reason}</p>`;
     } else {
       card.dataset.resultReady = 'true';
       card.innerHTML = `${legend}
@@ -1050,15 +1108,9 @@ function renderResultSegments() {
     resultSegmentRows.append(card);
   }
   const submitButton = resultFinalizationForm.querySelector('button[type="submit"]');
-  const manualTeamResult = requiresManualTeamResult(match) && match?.status !== 'final';
+  const manualTeamResult = requiresManualTeamResult(match) && match?.status !== 'final' && !correctionRestriction(match);
   submitButton.hidden = !manualTeamResult;
   submitButton.disabled = !manualTeamResult || !canFinalize;
-  const deleteToggle = document.querySelector('#correctionDelete');
-  deleteToggle.disabled = match?.status === 'final';
-  if (deleteToggle.disabled) {
-    deleteToggle.checked = false;
-    document.querySelector('#correctionScore').disabled = false;
-  }
 }
 
 function renderCommentaryApprovals() {
@@ -1210,10 +1262,13 @@ texasScrambleForm.addEventListener('submit', async event => {
 });
 
 resultMatch.addEventListener('change', async () => {
+  correctionOpenRequest++;
   renderResultSegments();
-  populateCorrectionRounds(resultMatch.value);
   const matchId = resultMatch.value;
-  if (!matchId) return;
+  const match = adminData.matches.find(item => item.id === matchId);
+  updateCorrectionAccess(match);
+  void refreshTeamCorrectionHistory(match);
+  if (!canAdministerMatch(match)) return;
   const loading = document.createElement('p');
   loading.className = 'empty-panel';
   loading.textContent = 'Loading authoritative result history…';
@@ -1232,6 +1287,8 @@ resultFinalizationForm.addEventListener('submit', async event => {
   event.preventDefault();
   const message = document.querySelector('#resultMessage');
   try {
+    const restriction = correctionRestriction(adminData.matches.find(item => item.id === resultMatch.value));
+    if (restriction) throw new Error(restriction);
     const resultCards = [...resultSegmentRows.querySelectorAll('[data-segment-id]')];
     if (resultCards.some(card => card.dataset.resultReady !== 'true')) {
       throw new Error('All assigned players must submit every score before this match can be finalized.');
@@ -1472,6 +1529,7 @@ function restoreCorrectionDialogFocus() {
 }
 
 function closeScoreCorrectionDialog() {
+  if (savingCorrection) return;
   if (typeof scoreCorrectionDialog.close === 'function' && scoreCorrectionDialog.open) {
     scoreCorrectionDialog.close();
     return;
@@ -1490,7 +1548,8 @@ function handleCorrectionDialogKeydown(event) {
     return;
   }
   if (event.key !== 'Tab') return;
-  const focusable = [...scoreCorrectionDialog.querySelectorAll('button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+  const focusable = [...scoreCorrectionDialog.querySelectorAll('button, select, input, textarea, [tabindex]:not([tabindex="-1"])')]
+    .filter(control => !control.matches(':disabled') && !control.closest('[hidden]'));
   if (!focusable.length) return;
   const first = focusable[0];
   const last = focusable[focusable.length - 1];
@@ -1503,15 +1562,35 @@ function handleCorrectionDialogKeydown(event) {
   }
 }
 
-document.querySelector('#openScoreCorrection').addEventListener('click', event => {
+openScoreCorrection.addEventListener('click', async event => {
+  if (savingCorrection || scoreCorrectionDialog.hasAttribute('open')) return;
+  const request = ++correctionOpenRequest;
+  const trigger = event.currentTarget;
   const matchId = resultMatch.value;
   if (!matchId) {
     setMessage(document.querySelector('#resultMessage'), 'Select a match before editing a submitted score.', true);
     resultMatch.focus();
     return;
   }
-  populateCorrectionRounds(matchId);
-  correctionDialogTrigger = event.currentTarget;
+  const match = adminData.matches.find(item => item.id === matchId);
+  if (!match || updateCorrectionAccess(match)) return;
+  let readError = '';
+  if (match.match_segments?.some(isSharedSegment)) {
+    setMessage(document.querySelector('#resultMessage'), 'Loading submitted team entries…');
+    try {
+      const latest = await loadCorrectionMatch(matchId);
+      if (request !== correctionOpenRequest || resultMatch.value !== matchId) return;
+      Object.assign(match, latest);
+      if (match.match_segments.every(isSharedSegment)) renderResultSegments();
+    } catch (error) {
+      if (request !== correctionOpenRequest || resultMatch.value !== matchId) return;
+      readError = `Could not load submitted team entries: ${error.message}. Close and reopen to retry.`;
+    }
+    if (updateCorrectionAccess(match)) return;
+  }
+  correctionEditor.prepare(match, populateCorrectionRounds(matchId), readError);
+  document.querySelector('#correctionMatchLabel').textContent = match.name;
+  correctionDialogTrigger = trigger;
   if (typeof scoreCorrectionDialog.showModal === 'function') scoreCorrectionDialog.showModal();
   else {
     scoreCorrectionDialog.setAttribute('open', '');
@@ -1519,10 +1598,11 @@ document.querySelector('#openScoreCorrection').addEventListener('click', event =
     scoreCorrectionDialog.setAttribute('aria-modal', 'true');
     document.addEventListener('keydown', handleCorrectionDialogKeydown);
   }
-  correctionRound.focus();
+  correctionEditor.focus();
 });
 
 scoreCorrectionDialog.addEventListener('close', restoreCorrectionDialogFocus);
+scoreCorrectionDialog.addEventListener('cancel', event => { if (savingCorrection) event.preventDefault(); });
 
 document.querySelector('#closeScoreCorrection').addEventListener('click', closeScoreCorrectionDialog);
 
@@ -1532,67 +1612,107 @@ document.querySelector('#correctionDelete').addEventListener('change', event => 
   scoreInput.required = !event.target.checked;
 });
 
+function setCorrectionBusy(busy) {
+  savingCorrection = busy;
+  scoreCorrectionForm.inert = busy;
+  resultMatch.disabled = busy;
+  document.querySelector('#closeScoreCorrection').disabled = busy;
+  scoreCorrectionForm.querySelector('button[type="submit"]').disabled = busy;
+}
+
 scoreCorrectionForm.addEventListener('submit', async event => {
   event.preventDefault();
+  if (savingCorrection || !scoreCorrectionDialog.hasAttribute('open')) return;
   const message = document.querySelector('#correctionMessage');
-  const deleteScore = document.querySelector('#correctionDelete').checked;
-  const roundId = correctionRound.value;
-  const holeNumber = Number(document.querySelector('#correctionHole').value);
-  const round = adminData.rounds.find(item => item.id === roundId && item.match_id === resultMatch.value);
-  if (!round) {
-    setMessage(message, 'Select a player round from the chosen match.', true);
+  const matchId = resultMatch.value;
+  const match = adminData.matches.find(item => item.id === matchId);
+  if (!match || correctionEditor.matchId !== matchId) {
+    setMessage(message, 'Close this dialog and select the match again.', true);
     return;
   }
-  const submitButton = scoreCorrectionForm.querySelector('button[type="submit"]');
-  submitButton.disabled = true;
+  const restriction = correctionRestriction(match);
+  if (restriction) {
+    setMessage(message, restriction, true);
+    return;
+  }
+  const team = correctionEditor.team;
+  const warnings = [];
+  let status = '';
+  setCorrectionBusy(true);
+  setMessage(message, 'Saving audited correction…');
   try {
-    setMessage(message, 'Saving audited correction…');
-    const result = await correctHoleScore({
-      roundId,
-      holeNumber,
-      grossScore: deleteScore ? null : document.querySelector('#correctionScore').value,
-      deleteScore,
-      reason: document.querySelector('#correctionReason').value,
-    });
-    round.scores = deleteScore
-      ? round.scores.filter(score => score.hole_number !== holeNumber)
-      : [...round.scores.filter(score => score.hole_number !== holeNumber), result.score];
-    const matchId = resultMatch.value;
-    const correctedMatch = adminData.matches.find(match => match.id === matchId);
-    let correctionStatus = `Correction saved and audited (${result.audit?.action || (deleteScore ? 'delete' : 'update')}).`;
-    let historyWarning = '';
-    if (correctedMatch?.status === 'final') {
-      const commentarySettings = adminData.settings.find(item => item.tournament_id === correctedMatch.tournament_id);
-      if (commentarySettings?.enabled) {
-        try {
-          const commentary = await generateMatchCommentary(matchId, { regenerate: true });
-          adminData.commentaries = upsertCommentaryById(adminData.commentaries, commentary);
-          renderCommentaryApprovals();
-          correctionStatus = 'Score corrected, result recalculated, and commentary regenerated.';
-        } catch (commentaryError) {
-          correctionStatus = `Score corrected and result recalculated, but commentary regeneration failed: ${commentaryError.message}`;
-        }
-      } else {
-        correctionStatus = 'Score corrected and result recalculated.';
+    if (team) {
+      let entry = correctionEditor.entry;
+      const saved = await correctTeamScoreEntry(correctionEditor.payload());
+      status = 'Team correction saved and audited.';
+      Object.assign(entry.row, saved);
+      try {
+        const latest = await loadCorrectionMatch(matchId);
+        Object.assign(match, latest);
+        updateCorrectionAccess(match);
+        correctionEditor.prepare(match, populateCorrectionRounds(matchId));
+        if (correctionEditor.entry?.row.id !== saved.id) throw new Error('The submitted entry is no longer available.');
+        entry = correctionEditor.entry;
+      } catch (refreshError) {
+        warnings.push(`Score/result refresh failed: ${refreshError.message}. Reopen the correction to retry.`);
       }
+      status += ` ${entry.label}: ${teamValue(entry.type, entry.row, entry.players)}.`;
       renderResultSegments();
+    } else {
+      const round = adminData.rounds.find(item => item.id === correctionRound.value && item.match_id === matchId);
+      if (!round) throw new Error('Select a player round from the chosen match.');
+      const holeNumber = Number(document.querySelector('#correctionHole').value);
+      const deleteScore = match.status !== 'final' && document.querySelector('#correctionDelete').checked;
+      const result = await correctHoleScore({
+        roundId: round.id, holeNumber, deleteScore,
+        grossScore: deleteScore ? null : document.querySelector('#correctionScore').value,
+        reason: document.querySelector('#correctionReason').value,
+      });
+      status = result.audit?.action ? `Correction saved and audited (${result.audit.action}).` : 'Correction saved and audited.';
+      if (result.auditWarning) warnings.push(result.auditWarning);
+      round.scores = round.scores.filter(score => score.hole_number !== holeNumber);
+      if (!deleteScore) round.scores.push(result.score);
+      if (match.status === 'final') {
+        status = 'Score corrected and result recalculated.';
+        renderResultSegments();
+      }
+    }
+    if (match.status === 'final' && adminData.settings.find(item => item.tournament_id === match.tournament_id)?.enabled) {
+      try {
+        const commentary = await generateMatchCommentary(matchId, { regenerate: true });
+        adminData.commentaries = upsertCommentaryById(adminData.commentaries, commentary);
+        renderCommentaryApprovals();
+        status = team ? `${status} Commentary regenerated.` : 'Score corrected, result recalculated, and commentary regenerated.';
+      } catch (commentaryError) {
+        warnings.push(`Commentary regeneration failed: ${commentaryError.message}`);
+      }
+    }
+    if (team || match.status === 'final') {
+      const teamHistory = team ? refreshTeamCorrectionHistory(match) : '';
       try {
         await refreshResultAuditHistory(matchId);
       } catch (historyError) {
-        historyWarning = ` History refresh failed: ${historyError.message}`;
+        warnings.push(`History refresh failed: ${historyError.message}`);
       }
+      const teamWarning = await teamHistory;
+      if (teamWarning) warnings.push(teamWarning);
     }
-    correctionStatus += historyWarning;
-    setMessage(message, correctionStatus, Boolean(historyWarning));
-    scoreCorrectionForm.reset();
-    document.querySelector('#correctionScore').disabled = false;
-    setMessage(document.querySelector('#resultMessage'), correctionStatus, Boolean(historyWarning));
-    closeScoreCorrectionDialog();
   } catch (error) {
-    setMessage(message, error.message, true);
+    // The mutation and its audit commit together; a later display/read failure is not a failed save.
+    if (!status) {
+      setMessage(message, error.message, true);
+      return;
+    }
+    warnings.push(`Refresh failed: ${error.message}`);
   } finally {
-    submitButton.disabled = false;
+    setCorrectionBusy(false);
   }
+  const summary = [status, ...warnings].join(' ');
+  setMessage(message, summary, Boolean(warnings.length));
+  setMessage(document.querySelector('#resultMessage'), summary, Boolean(warnings.length));
+  if (team) document.querySelector('#correctionReason').value = '';
+  else scoreCorrectionForm.reset();
+  closeScoreCorrectionDialog();
 });
 
 commentaryTournament.addEventListener('change', hydrateCommentarySettings);
@@ -1628,6 +1748,7 @@ async function start() {
     session = await getCurrentSession();
     if (!session) throw new Error('Sign in through the player portal first.');
     const playerData = await loadPlayerData(session.user.id);
+    globalAdministrator = playerData.profile.role === 'admin';
     const tournamentAdmin = playerData.memberships.some(membership => membership.status === 'active' && membership.role === 'admin');
     if (playerData.profile.role !== 'admin' && !tournamentAdmin) throw new Error('This page is limited to the tournament administrator.');
     adminData = await loadAdminData();
