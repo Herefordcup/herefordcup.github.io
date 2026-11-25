@@ -4,7 +4,20 @@
 <section class="admin-panel" id="membershipManagement"><div class="dashboard-head"><div><p class="eyebrow">MEMBER ACCESS</p><h1>Approve and manage members</h1><p>New requests remain pending until an administrator approves them. Deleting a membership preserves the person's login and profile, but removes all tournament access and requires approval again if they return.</p></div><button class="button secondary" id="refreshMemberships" type="button">Refresh requests</button></div><div class="membership-sections"><section><h2>Pending approval</h2><div class="approval-list pending-member-list" id="pendingMembers"></div></section><section class="active-member-section"><div class="active-member-toolbar"><div><h2>Active members</h2><p id="activeMemberCount" aria-live="polite">0 members</p></div><div class="active-member-filters" role="search"><label>Search members<input id="activeMemberSearch" type="search" autocomplete="off" placeholder="Search by name"></label><label>Team<select id="activeMemberTeamFilter"><option value="">All teams</option><option value="cardinal">Blue</option><option value="silver">White</option><option value="unassigned">Unassigned</option></select></label><label>Role<select id="activeMemberRoleFilter"><option value="">All roles</option><option value="player">Player</option><option value="admin">Admin</option><option value="captain">Captain</option></select></label></div></div><div class="approval-list active-member-list" id="activeMembers"></div><p class="empty-panel active-member-filter-empty" id="activeMemberFilterEmpty" hidden>No active members match these filters.</p></section></div><p id="membershipMessage" role="status"></p></section>
 <section class="admin-panel">
 <div class="dashboard-head"><div><p class="eyebrow">MATCH PLANNING</p><h1>Formats, segments, and pairings</h1></div></div>
-<form id="matchPlanForm"><div class="admin-fields"><label>Tournament<select name="tournamentId" id="matchTournament" required></select></label><label>Match name<input name="matchName" required placeholder="Friday Match 1"></label><label>Session<input name="session" required placeholder="Friday morning"></label><label>Start time<input name="startsAt" type="datetime-local" required></label><label>Course<select name="courseId" id="matchCourse"><option value="">Course TBA</option></select></label></div><div class="admin-section-title"><div><p class="eyebrow">HOLE-RANGE SEGMENTS</p><h2>Change format or pairings at any boundary</h2></div><button class="button" id="addSegment" type="button">Add segment</button></div><div id="segmentRows" class="segment-rows"></div><div class="save-row"><span id="matchPlanMessage"></span><button class="button button-primary" type="submit">Save match plan</button></div></form>
+<form id="matchPlanForm">
+<div class="admin-fields">
+<label>Tournament<select name="tournamentId" id="matchTournament" required></select></label>
+<label>Match plan<select id="matchPlanExisting" aria-describedby="matchPlanState"><option value="">New match plan</option></select></label>
+<label>Match name<input name="matchName" required placeholder="Friday Match 1"></label>
+<label>Session<input name="session" required placeholder="Friday morning"></label>
+<label>Start time (Eastern)<input name="startsAt" type="datetime-local" required></label>
+<label>Course<select name="courseId" id="matchCourse"><option value="">Course TBA</option></select></label>
+</div>
+<p id="matchPlanState" role="status"></p>
+<div class="admin-section-title"><div><p class="eyebrow">HOLE-RANGE SEGMENTS</p><h2>Change format or pairings at any boundary</h2></div><button class="button" id="addSegment" type="button">Add segment</button></div>
+<div id="segmentRows" class="segment-rows"></div>
+<div class="save-row"><span id="matchPlanMessage" role="status"></span><button class="button button-primary" type="submit">Save match plan</button></div>
+</form>
 </section>
 <section class="admin-panel texas-scramble-planner">
 <div class="dashboard-head"><div><p class="eyebrow">TEXAS SCRAMBLE</p><h1>Plan shared squad scorecards</h1><p>Choose a saved lineup to edit before play starts, or start a new one with Blue A, Blue B, White A, and White B. Each squad shares one net scorecard and records whose tee shot was selected on every hole.</p></div></div>

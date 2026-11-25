@@ -66,6 +66,11 @@ const squadState = page => page.locator(cards).evaluateAll(nodes => nodes.map(ca
   players: [...card.querySelectorAll('[data-scramble-player]')].map(select => select.value),
 })));
 
+async function saveLineup(page) {
+  await page.click(`${form} button[type=submit]`);
+  await page.waitForFunction(() => document.querySelector('#texasScrambleMessage').textContent.includes('plan saved.'), null, { timeout: 3000 });
+}
+
 test('open the exact tournament lineup with its local start, tee and ordered two-/four-player squads', async t => {
   const page = await openPlanner(t);
   assert.equal(await page.locator(saved).count(), 1, 'planner must offer a saved-session selector');
@@ -118,7 +123,7 @@ test('editing submits one update for the original ID and preserves another organ
   await page.waitForFunction(() => /saved|updated/i.test(document.querySelector('#texasScrambleMessage').textContent), null, { timeout: 3000 });
   assert.deepEqual(writes.map(w => w.session.id), ['lineup'], 'one existing-ID RPC; no create call on edit or double submit');
   assert.deepEqual(writes[0].session, { id: 'lineup', tournament_id: 'cup', name: ' New pairings ', session_label: 'Morning groups',
-    starts_at: original.starts_at, start_hole: 10, end_hole: 18, required_tee_shots: 2, course_id: 'links', tee_id: 'tee' });
+    starts_at: original.starts_at, start_hole: 10, end_hole: 18, required_tee_shots: 2 });
   assert.deepEqual(writes[0].squads, [
     { label: 'Blue pair', side: 'cardinal', squad_number: 3, player_ids: ['b3', 'b1'] },
     { label: 'White visitors', side: 'silver', squad_number: 7, player_ids: ['w2', 'w4', 'w3', 'w1'] },
@@ -129,6 +134,52 @@ test('editing submits one update for the original ID and preserves another organ
   assert.equal(await page.inputValue('#ruleForm [name=title]'), 'Unpublished rule draft');
   assert.deepEqual((await squadState(page))[0].players, ['b3', 'b1']);
   assert.equal(await submit.isEnabled(), true);
+});
+
+test('a lineup-only retry preserves a tee chosen by a player after the organizer opened a blank tee selection', async t => {
+  const data = sampleData();
+  const stored = Object.assign(data.scrambleSessions[0], { course_id: null, tee_id: null });
+  const writes = [];
+  const page = await openPlanner(t, data, { saveTexasScramblePlan: ({ session }) => {
+    writes.push(session);
+    if (writes.length === 1) throw new Error('Save interrupted');
+    Object.assign(stored, session); // Omitted keys preserve the pair; explicit nulls clear it.
+    return stored.id;
+  } });
+  await page.selectOption('#texasScrambleTournament', 'cup');
+  await page.selectOption(saved, stored.id);
+  await page.locator(`${cards}[data-squad-side=cardinal] select`).first().selectOption('b3');
+  Object.assign(stored, { course_id: 'links', tee_id: 'tee' }); // The player's choice races the lineup edit.
+  await page.click(`${form} button[type=submit]`);
+  await page.getByText('Save interrupted', { exact: true }).waitFor();
+  // The failed save refreshed the data cache, not the organizer's still-open draft.
+  assert.equal(await page.inputValue('#texasScrambleTee'), '');
+  await saveLineup(page);
+  assert.deepEqual([stored.course_id, stored.tee_id], ['links', 'tee'], 'the stale lineup must not clear the player-selected tee');
+  assert.deepEqual(writes.map(s => [Object.hasOwn(s, 'course_id'), Object.hasOwn(s, 'tee_id')]), [[false, false], [false, false]]);
+  assert.equal(await page.inputValue('#texasScrambleTee'), 'tee', 'the successful readback shows the player-selected tee');
+});
+
+test('changing or clearing a hydrated tee sends the explicit pair, but returning to the hydrated selection does not', async t => {
+  const data = sampleData();
+  data.courses[0].tees.push({ ...data.courses[0].tees[0], id: 'forward', name: 'Forward' });
+  const writes = [];
+  const page = await openPlanner(t, data, { saveTexasScramblePlan: ({ session }) => {
+    writes.push(session);
+    Object.assign(data.scrambleSessions[0], session);
+    return session.id;
+  } });
+  await page.selectOption('#texasScrambleTournament', 'cup');
+  await page.selectOption(saved, 'lineup');
+  await page.selectOption('#texasScrambleTee', 'forward');
+  await saveLineup(page);
+  await page.selectOption('#texasScrambleTee', 'tee');
+  await page.selectOption('#texasScrambleTee', 'forward');
+  await saveLineup(page);
+  await page.selectOption('#texasScrambleCourse', '');
+  await saveLineup(page);
+  assert.deepEqual(writes.map(s => [s.course_id, s.tee_id]), [['links', 'forward'], [undefined, undefined], [null, null]]);
+  assert.equal(await page.inputValue('#texasScrambleTee'), '');
 });
 
 test('played, finalized, archived or unverifiable lineups stay read-only, even on a direct submit event', async t => {
@@ -299,4 +350,102 @@ test('planner readback leaves the mounted member editor attached to its roster r
   await member.getByLabel('Tournament role').selectOption('admin');
   await page.waitForFunction(() => /role is now Admin/.test(document.querySelector('#membershipMessage').textContent));
   assert.equal(await member.getByLabel('Tournament role').inputValue(), 'admin');
+});
+
+// Return fresh match/segment IDs on save, as the RPC does. Pause the save so an
+// organizer can open the correction dialog while the lineup operation is pending.
+async function openPickerFixture(t, data) {
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const page = await openPlanner(t, data, {
+    loadTeamCorrectionAudits: () => [],
+    loadCorrectionMatch: id => ({ ...data.matches.find(m => m.id === id),
+      correctionSquads: data.scrambleSessions.flatMap(s => s.texas_scramble_squads).filter(s => s.match_id === id) }),
+    saveTexasScramblePlan: async ({ session, squads }) => {
+      await pending;
+      const prior = data.scrambleSessions.find(s => s.id === session.id);
+      const next = { ...prior, ...session, id: session.id ?? 'created' };
+      const retired = new Set(prior?.texas_scramble_squads.map(s => s.match_id));
+      data.matches = data.matches.filter(m => !retired.has(m.id));
+      next.status = next.tee_id ? 'live' : 'scheduled';
+      next.texas_scramble_squads = squads.map(({ player_ids, ...squad }, i) => {
+        const id = `fresh-${i}`, match_id = `match-${id}`, segment_id = `segment-${id}`;
+        data.matches.push({ id: match_id, name: squad.label, tournament_id: next.tournament_id, format: 'scramble', status: next.status,
+          match_segments: [{ id: segment_id, format: 'scramble', status: next.status, start_hole: next.start_hole, end_hole: next.end_hole,
+            scoring_mode: 'net', holes_played: 0, differential: 0, point_value: 0 }] });
+        return { ...squad, id, session_id: next.id, match_id, segment_id, status: next.status, squad_size: player_ids.length,
+          texas_scramble_hole_scores: [], texas_scramble_squad_players: player_ids.map((user_id, j) => ({ user_id, squad_id: id, playing_order: j + 1 })) };
+      });
+      data.scrambleSessions = [...data.scrambleSessions.filter(s => s.id !== next.id), next];
+      return next.id;
+    },
+  });
+  return { page, finishSave: async () => { release(); await page.getByText(/Texas Scramble plan saved\./).waitFor(); } };
+}
+
+const resultMatchIds = page => page.locator('#resultMatch option').evaluateAll(options => options.map(o => o.value));
+
+test('creating a lineup adds the returned squad matches to corrections without resetting a surviving result or correction draft', async t => {
+  const data = sampleData();
+  data.matches.push({ id: 'ordinary', name: 'Other foursomes', tournament_id: 'other', status: 'live',
+    match_segments: [{ id: 'ordinary-segment', format: 'foursomes', start_hole: 1, end_hole: 9, scoring_mode: 'gross', point_value: 1 }] });
+  data.rounds.push({ id: 'ordinary-round', match_id: 'ordinary', scores: [] });
+  const { page, finishSave } = await openPickerFixture(t, data);
+  await page.selectOption('#resultMatch', 'ordinary');
+  await page.fill('#resultSegmentRows [name=differential]', '2');
+  await page.fill('#ruleForm [name=title]', 'Unpublished rule');
+  await page.selectOption('#texasScrambleTournament', 'cup');
+  await page.fill(`${form} [name=sessionLabel]`, 'New groups');
+  await page.fill(`${form} [name=startsAt]`, '2027-03-20T08:15');
+  for (const [side, prefix] of [['cardinal', 'b'], ['silver', 'w']]) {
+    const slots = await page.locator(`${cards}[data-squad-side=${side}] select`).all();
+    for (const [i, slot] of slots.entries()) await slot.selectOption(`${prefix}${i + 1}`);
+  }
+  await page.click(`${form} button[type=submit]`);
+  await page.click('#openScoreCorrection');
+  await page.selectOption('#correctionRound', 'ordinary-round');
+  await page.fill('#correctionReason', 'Checking the card');
+  await finishSave();
+  const created = data.scrambleSessions.find(s => s.id === 'created');
+  assert.deepEqual([created.course_id, created.tee_id], [null, null], 'creation still sends both tee keys');
+  assert.deepEqual(await resultMatchIds(page), ['', ...data.matches.map(m => m.id)], 'offer all newly created squad match IDs');
+  assert.equal(await page.inputValue('#resultMatch'), 'ordinary');
+  assert.equal(await page.inputValue('#resultSegmentRows [name=differential]'), '2');
+  assert.equal(await page.inputValue('#ruleForm [name=title]'), 'Unpublished rule');
+  assert.equal(await page.locator('#scoreCorrectionDialog').isVisible(), true);
+  assert.equal(await page.inputValue('#correctionRound'), 'ordinary-round');
+  assert.equal(await page.inputValue('#correctionReason'), 'Checking the card');
+  await page.click('#closeScoreCorrection');
+
+  const squad = created.texas_scramble_squads[0];
+  squad.texas_scramble_hole_scores.push({ id: 'fresh-hole', squad_id: squad.id, hole_number: 1, gross_score: 4, tee_shot_player_id: 'b1' });
+  await page.selectOption('#resultMatch', squad.match_id);
+  await page.click('#openScoreCorrection');
+  await page.locator('#scoreCorrectionDialog[open]').waitFor();
+  assert.equal(await page.textContent('#correctionMatchLabel'), squad.label);
+  assert.equal(await page.inputValue('#teamCorrectionEntry'), 'fresh-hole');
+});
+
+test('replacing a lineup removes retired squad match IDs, clears their selected results and history, and explains the change', async t => {
+  const data = sampleData();
+  const { page, finishSave } = await openPickerFixture(t, data);
+  await page.selectOption('#resultMatch', 'match-blue');
+  await page.locator('#resultSegmentRows [data-segment-id=segment-blue]').waitFor();
+  await page.getByText('No authoritative result changes have been logged for this match.').waitFor();
+  await page.getByText('No shared score corrections have been logged for this match.').waitFor();
+  await page.selectOption('#texasScrambleTournament', 'cup');
+  await page.selectOption(saved, 'lineup');
+  await page.locator(`${cards}[data-squad-side=cardinal] select`).first().selectOption('b3');
+  await page.click(`${form} button[type=submit]`);
+  await page.click('#openScoreCorrection');
+  await page.locator('#scoreCorrectionDialog[open]').waitFor();
+  await finishSave();
+  assert.deepEqual(await resultMatchIds(page), ['', ...data.matches.map(m => m.id)], 'replace retired IDs with authoritative squad match IDs');
+  assert.equal(await page.inputValue('#resultMatch'), '');
+  assert.equal(await page.locator('#resultSegmentRows [data-segment-id]').count(), 0);
+  assert.match(await page.textContent('#resultTransitions'), /select a match/i);
+  assert.equal(await page.locator('#teamCorrectionLog').isHidden(), true);
+  assert.equal(await page.textContent('#teamCorrectionHistory'), '');
+  assert.equal(await page.locator('#scoreCorrectionDialog').isHidden(), true);
+  assert.match(await page.textContent('#resultMessage'), /match.*(?:no longer available|removed|replaced)/i);
 });

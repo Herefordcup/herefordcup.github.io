@@ -491,6 +491,21 @@ export async function saveMatchPlan({ match, segments }) {
   return data;
 }
 
+function adminMatchPlanQuery(supabase, includeRounds = false) {
+  const fields = '*, courses(name), match_segments(*, match_segment_players(*, profiles(display_name)), match_hole_outcomes(hole_number))';
+  // The initial admin load already includes rounds. A planner-only refresh needs just evidence of play.
+  const query = supabase.from('matches').select(includeRounds ? `${fields}, rounds(scores!scores_round_id_fkey(hole_number))` : fields)
+    .limit(1, { referencedTable: 'match_segments.match_hole_outcomes' }).order('starts_at').order('id');
+  return includeRounds ? query.limit(1, { referencedTable: 'rounds.scores' }) : query;
+}
+
+export async function loadTournamentMatchPlans(tournamentId) {
+  const supabase = await getSupabase();
+  const { data, error } = await adminMatchPlanQuery(supabase, true).eq('tournament_id', tournamentId);
+  if (error) throw error;
+  return data;
+}
+
 export async function saveTexasScramblePlan({ session, squads }) {
   const supabase = await getSupabase();
   const { data, error } = await supabase.rpc('save_texas_scramble_plan', {
@@ -889,7 +904,7 @@ export async function loadAdminData() {
     supabase.from('tournaments').select('*').order('edition_year', { ascending: false }),
     supabase.from('tournament_memberships').select('*, profiles!tournament_memberships_user_id_fkey(id, display_name, handicap_index, role)').order('created_at'),
     supabase.from('courses').select('id, name, tees(id, name, rating_category, rating, slope, par, rating_par, yardage)').eq('active', true).order('name'),
-    supabase.from('matches').select('*, match_segments(*, match_segment_players(*))').order('starts_at'),
+    adminMatchPlanQuery(supabase),
     supabase.from('tournament_rules').select('*').eq('active', true).order('sort_order').order('created_at').order('id'),
     supabase.from('commentary_settings').select('*'),
     supabase.from('match_commentaries').select('*, matches(name)').order('created_at', { ascending: false }),
