@@ -19,6 +19,40 @@ function strokeIndexForHole(round, holeNumber) {
 }
 
 export function deriveSegmentResult({ segment, rounds }) {
+  if (segment.format === 'scramble') {
+    if (segment.status !== 'final') {
+      return {
+        mode: 'waiting',
+        reason: 'Waiting for the shared Texas Scramble scorecard and tee-shot requirements.',
+      };
+    }
+    const points = Number(segment.point_value);
+    return {
+      mode: 'automatic',
+      differential: Number(segment.differential),
+      holes_played: Number(segment.holes_played),
+      label: `${Number(segment.differential) > 0 ? 'Blue' : 'White'} earns ${points} Cup point${points === 1 ? '' : 's'}`,
+    };
+  }
+
+  if (segment.entry_mode === 'hole_outcomes') {
+    if (segment.status !== 'final') {
+      return {
+        mode: 'waiting',
+        reason: 'Waiting for the assigned players to record the required hole outcomes.',
+      };
+    }
+    const differential = Number(segment.differential);
+    const holesPlayed = Number(segment.holes_played);
+    const totalHoles = Number(segment.end_hole) - Number(segment.start_hole) + 1;
+    return {
+      mode: 'automatic',
+      differential,
+      holes_played: holesPlayed,
+      label: formatMatchStatus({ differential, holesPlayed }, totalHoles),
+    };
+  }
+
   if (!AUTOMATIC_FORMATS.has(segment.format)) {
     return {
       mode: 'manual',

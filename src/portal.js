@@ -28,15 +28,18 @@ import {
   saveNotificationPreferences,
   saveProfile,
   saveRound,
+  selectTexasScrambleCourseTee,
   setNewPassword,
   signInWithEmail,
   signInWithGoogle,
   signOut,
   signUpWithEmail,
+  submitMatchHoleOutcome,
+  submitTexasScrambleHole,
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=result-audit-layout-1';
+} from './supabase.js?v=organizer-scoring-2';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');
@@ -50,6 +53,12 @@ const handicapInput = document.querySelector('#handicapIndex');
 const scorecard = document.querySelector('#scorecard');
 const emptyScorecard = document.querySelector('#emptyScorecard');
 const saveButton = document.querySelector('#saveRound');
+const assignmentSummary = document.querySelector('#assignmentSummary');
+const teamScorecard = document.querySelector('#teamScorecard');
+const teamScorecardRows = document.querySelector('#teamScorecardRows');
+const teeShotProgress = document.querySelector('#teeShotProgress');
+const holeOutcomeScorecard = document.querySelector('#holeOutcomeScorecard');
+const holeOutcomeRows = document.querySelector('#holeOutcomeRows');
 const authForm = document.querySelector('#emailAuthForm');
 const authMessage = document.querySelector('#authMessage');
 const displayNameField = document.querySelector('#displayNameField');
@@ -471,6 +480,56 @@ function selectedMatch() {
   return playerData?.assignments.find(item => item.matches?.id === matchSelect.value)?.matches;
 }
 
+function selectedScrambleSquad() {
+  return playerData?.scrambleSquads?.find(squad => squad.match_id === matchSelect.value);
+}
+
+function selectedOutcomeSegments() {
+  return selectedMatchSegments().filter(segment => segment.entry_mode === 'hole_outcomes');
+}
+
+function selectedIndividualSegments() {
+  return selectedMatchSegments().filter(segment => segment.entry_mode !== 'hole_outcomes');
+}
+
+function selectNextPlayableAssignment() {
+  const playable = playerData.assignments
+    .map(assignment => assignment.matches)
+    .filter(match => match && match.status !== 'final')
+    .sort((left, right) => new Date(left.starts_at || 0) - new Date(right.starts_at || 0));
+  if (!playable.length) return;
+  matchSelect.value = playable[0].id;
+  matchSelect.dispatchEvent(new Event('change'));
+}
+
+function renderAssignmentSummary() {
+  assignmentSummary.replaceChildren();
+  const match = selectedMatch();
+  if (!match) {
+    assignmentSummary.append(element('p', '', 'Standalone gross scorecard. Select a course, tee, and hole range.'));
+    return;
+  }
+  const squad = selectedScrambleSquad();
+  const heading = element('strong', '', match.name);
+  const details = document.createElement('ul');
+  const add = text => details.append(element('li', '', text));
+  if (squad) {
+    const sessionRecord = squad.texas_scramble_sessions;
+    const partners = (squad.texas_scramble_squad_players ?? []).map(player => player.profiles?.display_name || 'Player').join(', ');
+    add(`Texas Scramble · ${squad.side === 'cardinal' ? 'Blue' : 'White'} · ${squad.label}`);
+    add(`Squad: ${partners}`);
+    add('Net stroke play · WHS team allowance · one Cup point per stroke under net par');
+    add(`${sessionRecord.required_tee_shots} selected tee shots required from each player`);
+    add(sessionRecord.course_id ? 'Course and tee are shared and locked for every squad.' : 'Select the course and tee; the first saved choice becomes shared for every squad.');
+  } else {
+    for (const segment of selectedMatchSegments()) {
+      const entry = segment.entry_mode === 'hole_outcomes' ? 'Hole winner entry' : 'Full player scores';
+      add(`Holes ${segment.start_hole}–${segment.end_hole} · ${formatName(segment.format)} · ${entry}`);
+    }
+  }
+  assignmentSummary.append(heading, details);
+}
+
 function selectedMatchSegments() {
   const match = selectedMatch();
   if (!match) return [];
@@ -478,8 +537,16 @@ function selectedMatchSegments() {
   return assignedSegmentsForPlayer(matchSegments, session.user.id);
 }
 
-function playableHoleNumbers() {
-  return holeNumbersForRound(holeRangeSelect.value, selectedMatchSegments());
+function individualHoleNumbers() {
+  const segments = selectedIndividualSegments();
+  // An outcome-only assignment must not fall back to a standalone 18-hole card.
+  if (!segments.length && selectedOutcomeSegments().length) return [];
+  return holeNumbersForRound(holeRangeSelect.value, segments);
+}
+
+function unsavedIndividualScores() {
+  const holes = new Set(individualHoleNumbers());
+  return unsavedScoreRows(scores).filter(score => holes.has(score.hole_number));
 }
 
 function syncHoleRangeControl() {
@@ -502,13 +569,13 @@ function syncHoleRangeControl() {
 }
 
 function scoreEntryBlockReason() {
-  return individualEntryBlockReason(selectedMatchSegments());
+  return individualEntryBlockReason(selectedIndividualSegments());
 }
 
 function selectedScoringMode() {
   const match = selectedMatch();
   if (!match) return 'gross';
-  return assignedRoundScoringMode(match, selectedMatchSegments());
+  return assignedRoundScoringMode(match, selectedIndividualSegments());
 }
 
 function baseCourseHandicap() {
@@ -541,7 +608,7 @@ function updateCourseHandicap() {
 }
 
 function updateSummary() {
-  const playableHoles = new Set(playableHoleNumbers());
+  const playableHoles = new Set(individualHoleNumbers());
   const completed = scores.filter(score => playableHoles.has(score.hole_number) && Number(score.gross_score) > 0);
   const gross = completed.reduce((total, score) => total + Number(score.gross_score), 0);
   const holes = selectedTee?.holes ?? [];
@@ -552,7 +619,7 @@ function updateSummary() {
   const scoringMode = selectedScoringMode();
   const calculatedHandicap = baseCourseHandicap();
   const courseHandicap = calculatedHandicap ?? (scoringMode === 'gross' ? 0 : null);
-  const segments = selectedMatchSegments();
+  const segments = selectedIndividualSegments();
   const adjusted = courseHandicap === null ? null : completed.reduce((total, score) => {
     const hole = holes.find(item => item.hole_number === score.hole_number);
     const segment = segments.find(item => score.hole_number >= item.start_hole && score.hole_number <= item.end_hole)
@@ -602,10 +669,167 @@ function updateSummary() {
   const relation = gross - par;
   document.querySelector('#toPar').textContent = !completed.length ? 'E' : relation === 0 ? 'E' : relation > 0 ? `+${relation}` : relation;
   const netNeedsRating = scoringMode === 'net' && courseHandicap === null;
-  saveButton.disabled = !selectedTee || !unsavedScoreRows(scores).length || netNeedsRating || Boolean(scoreEntryBlockReason());
+  saveButton.disabled = !selectedTee || !unsavedIndividualScores().length || netNeedsRating || Boolean(scoreEntryBlockReason());
+}
+
+function renderTexasScrambleScorecard() {
+  const squad = selectedScrambleSquad();
+  if (!squad) return false;
+  scorecard.hidden = true;
+  holeOutcomeScorecard.hidden = true;
+  saveButton.hidden = true;
+  const sessionRecord = squad.texas_scramble_sessions;
+  const savedScores = squad.texas_scramble_hole_scores ?? [];
+  const players = squad.texas_scramble_squad_players ?? [];
+  const counts = new Map(players.map(player => [player.user_id, savedScores.filter(score => score.tee_shot_player_id === player.user_id).length]));
+  teeShotProgress.replaceChildren(...players.map(player => {
+    const name = player.profiles?.display_name || 'Player';
+    const used = counts.get(player.user_id) ?? 0;
+    return element('div', used >= sessionRecord.required_tee_shots ? 'is-complete' : '', `${name}: ${used} of ${sessionRecord.required_tee_shots} required drives used`);
+  }));
+
+  const holes = [...(selectedTee?.holes ?? [])]
+    .filter(hole => hole.hole_number >= sessionRecord.start_hole && hole.hole_number <= sessionRecord.end_hole)
+    .sort((left, right) => left.hole_number - right.hole_number);
+  if (!holes.length) {
+    teamScorecard.hidden = true;
+    emptyScorecard.hidden = false;
+    emptyScorecard.querySelector('p').textContent = 'Select the shared course and tee to open the Texas Scramble scorecard.';
+    return true;
+  }
+  emptyScorecard.hidden = true;
+  teamScorecard.hidden = false;
+  teamScorecardRows.replaceChildren(...holes.map(hole => {
+    const persisted = savedScores.find(score => Number(score.hole_number) === Number(hole.hole_number));
+    const row = document.createElement('div');
+    row.className = 'hole-row team-hole-row';
+    row.append(element('div', 'hole-id', String(hole.hole_number)), element('div', 'hole-meta', `Par ${hole.par}`));
+    const scoreLabel = document.createElement('label');
+    scoreLabel.textContent = 'Team gross';
+    const scoreInput = document.createElement('input');
+    scoreInput.type = 'number';
+    scoreInput.min = '1';
+    scoreInput.max = '30';
+    scoreInput.inputMode = 'numeric';
+    scoreInput.value = persisted?.gross_score ?? '';
+    scoreInput.disabled = Boolean(persisted);
+    scoreLabel.append(scoreInput);
+    const driveLabel = document.createElement('label');
+    driveLabel.textContent = 'Tee shot used';
+    const driveSelect = document.createElement('select');
+    driveSelect.append(new Option('Select player', ''), ...players.map(player => new Option(player.profiles?.display_name || 'Player', player.user_id)));
+    driveSelect.value = persisted?.tee_shot_player_id ?? '';
+    driveSelect.disabled = Boolean(persisted);
+    driveLabel.append(driveSelect);
+    const submit = document.createElement('button');
+    submit.type = 'button';
+    submit.className = 'button';
+    submit.textContent = persisted ? 'Locked' : 'Save hole';
+    submit.disabled = Boolean(persisted);
+    submit.addEventListener('click', async () => {
+      try {
+        submit.disabled = true;
+        if (!scoreInput.value || !driveSelect.value) throw new Error('Enter the team score and choose whose tee shot was used.');
+        const result = await submitTexasScrambleHole({
+          squadId: squad.id,
+          holeNumber: hole.hole_number,
+          grossScore: scoreInput.value,
+          teeShotPlayerId: driveSelect.value,
+        });
+        squad.texas_scramble_hole_scores = [...savedScores, result.hole];
+        Object.assign(squad, result.squad);
+        if (result.finalized) selectedMatch().status = 'final';
+        showMessage(result.finalized ? 'Texas Scramble scorecard complete. Cup points are final.' : 'Shared hole saved and locked.');
+        renderTexasScrambleScorecard();
+      } catch (error) {
+        submit.disabled = false;
+        showMessage(error.message, true);
+      }
+    });
+    row.append(scoreLabel, driveLabel, submit);
+    return row;
+  }));
+  const gross = savedScores.reduce((total, score) => total + Number(score.gross_score), 0);
+  document.querySelector('#holesCompleted').textContent = savedScores.length;
+  document.querySelector('#grossTotal').textContent = savedScores.length ? gross : '—';
+  document.querySelector('#adjustedLabel').textContent = 'TEAM NET';
+  document.querySelector('#netTotal').textContent = squad.net_score ?? '—';
+  document.querySelector('#toPar').textContent = squad.status === 'final' ? `${Number(squad.points)} pts` : '—';
+  return true;
+}
+
+function renderHoleOutcomeScorecard() {
+  const segments = selectedOutcomeSegments();
+  holeOutcomeScorecard.hidden = !segments.length;
+  if (!segments.length) return false;
+  const matchIsFinal = selectedMatch().status === 'final';
+  const outcomes = playerData.holeOutcomes ?? [];
+  const holes = segments.flatMap(segment => Array.from({ length: segment.end_hole - segment.start_hole + 1 }, (_, index) => ({ segment, holeNumber: segment.start_hole + index })));
+  holeOutcomeRows.replaceChildren(...holes.map(({ segment, holeNumber }) => {
+    const persisted = outcomes.find(outcome => outcome.segment_id === segment.id && Number(outcome.hole_number) === holeNumber);
+    const closed = matchIsFinal || segment.status === 'final';
+    const row = document.createElement('div');
+    row.className = 'hole-row outcome-hole-row';
+    row.append(element('div', 'hole-id', String(holeNumber)), element('div', 'hole-meta', `Holes ${segment.start_hole}–${segment.end_hole}`));
+    const label = document.createElement('label');
+    label.textContent = 'Hole result';
+    const select = document.createElement('select');
+    select.append(new Option('Choose result', ''), new Option('Blue', 'cardinal'), new Option('Halved', 'halved'), new Option('White', 'silver'));
+    select.value = persisted?.winner ?? '';
+    select.disabled = Boolean(persisted) || closed;
+    label.append(select);
+    const submit = document.createElement('button');
+    submit.type = 'button';
+    submit.className = 'button';
+    submit.textContent = persisted ? 'Locked' : closed ? 'Segment complete' : 'Save hole';
+    submit.disabled = Boolean(persisted) || closed;
+    submit.addEventListener('click', async () => {
+      try {
+        submit.disabled = true;
+        if (!select.value) throw new Error('Choose Blue, Halved, or White.');
+        const result = await submitMatchHoleOutcome({ segmentId: segment.id, holeNumber, winner: select.value });
+        playerData.holeOutcomes.push(result.outcome);
+        if (result.finalized) Object.assign(segment, { status: 'final', differential: result.differential, holes_played: result.holes_played });
+        if (selectedMatch()?.id !== segment.match_id) return;
+        if (result.match_finalized) selectedMatch().status = 'final';
+        const message = result.match_finalized ? 'Hole outcome saved. Match complete.'
+          : result.finalized ? 'Match-play segment complete.' : 'Hole outcome saved and locked.';
+        showMessage(result.completion_warning ? `${message} Individual scorecards need review: ${result.completion_warning}` : message);
+        renderHoleOutcomeScorecard();
+      } catch (error) {
+        submit.disabled = false;
+        showMessage(error.message, true);
+      }
+    });
+    row.append(label, submit);
+    return row;
+  }));
+  if (!selectedIndividualSegments().length) {
+    document.querySelector('#segmentSummaries').replaceChildren();
+    document.querySelector('#holesCompleted').textContent = outcomes.filter(outcome => segments.some(segment => segment.id === outcome.segment_id)).length;
+    document.querySelector('#grossTotal').textContent = '—';
+    document.querySelector('#adjustedLabel').textContent = 'RESULT';
+    document.querySelector('#netTotal').textContent = 'Match play';
+    document.querySelector('#toPar').textContent = '—';
+  }
+  return true;
 }
 
 function renderScorecard() {
+  if (renderTexasScrambleScorecard()) return;
+  teamScorecard.hidden = true;
+  if (renderHoleOutcomeScorecard() && !selectedIndividualSegments().length) {
+    scorecard.hidden = true;
+    emptyScorecard.hidden = true;
+    saveButton.hidden = true;
+    saveButton.disabled = true;
+    return;
+  }
+  renderIndividualScorecard();
+}
+
+function renderIndividualScorecard() {
+  saveButton.hidden = false;
   const blockReason = scoreEntryBlockReason();
   if (blockReason) {
     scorecard.hidden = true;
@@ -615,7 +839,7 @@ function renderScorecard() {
     return;
   }
   emptyScorecard.querySelector('p').textContent = 'Select a course and tee to open your scorecard.';
-  const playableHoles = new Set(playableHoleNumbers());
+  const playableHoles = new Set(individualHoleNumbers());
   emptyScorecard.querySelector('span').textContent = playableHoles.size;
   const holes = [...(selectedTee?.holes ?? [])]
     .filter(hole => playableHoles.has(Number(hole.hole_number)))
@@ -686,12 +910,18 @@ function populateTees(course, teeId = '') {
 
 function applyMatchAssignment() {
   const match = selectedMatch();
-  existingRound = match ? playerData.rounds.find(round => round.match_id === match.id) : undefined;
-  courseSelect.disabled = Boolean(match);
-  courseSelect.value = existingRound?.course_id ?? match?.course_id ?? '';
-  populateTees(currentCourse(), existingRound?.tee_id ?? '');
+  const squad = selectedScrambleSquad();
+  const scrambleSession = squad?.texas_scramble_sessions;
+  existingRound = match && !squad ? playerData.rounds.find(round => round.match_id === match.id) : undefined;
+  const sharedCourseId = scrambleSession?.course_id ?? '';
+  const sharedTeeId = scrambleSession?.tee_id ?? '';
+  courseSelect.disabled = Boolean(match && !squad) || Boolean(sharedCourseId);
+  courseSelect.value = squad ? sharedCourseId : (existingRound?.course_id ?? match?.course_id ?? '');
+  populateTees(currentCourse(), squad ? sharedTeeId : (existingRound?.tee_id ?? ''));
+  teeSelect.disabled = Boolean(sharedTeeId) || (!currentCourse()) || Boolean(existingRound);
   scores = mergePersistedScores(blankScores(), existingRound?.scores ?? []);
   if (existingRound) showMessage('Submitted holes are locked. Continue with the remaining holes.');
+  renderAssignmentSummary();
 }
 
 courseSelect.addEventListener('change', () => {
@@ -702,12 +932,34 @@ courseSelect.addEventListener('change', () => {
   updateCourseHandicap();
 });
 
-teeSelect.addEventListener('change', () => {
+teeSelect.addEventListener('change', async () => {
   selectedTee = currentCourse()?.tees.find(tee => tee.id === teeSelect.value);
   const facts = document.querySelectorAll('#teeFacts b');
   facts[0].textContent = selectedTee?.rating ?? '—';
   facts[1].textContent = selectedTee?.slope ?? '—';
   facts[2].textContent = selectedTee?.par ?? '—';
+  const squad = selectedScrambleSquad();
+  if (squad && selectedTee && !squad.texas_scramble_sessions.tee_id) {
+    try {
+      setSyncStatus('Locking shared tee…', true);
+      const savedSession = await selectTexasScrambleCourseTee({
+        sessionId: squad.session_id,
+        courseId: courseSelect.value,
+        teeId: teeSelect.value,
+      });
+      for (const item of playerData.scrambleSquads.filter(item => item.session_id === squad.session_id)) {
+        item.texas_scramble_sessions = savedSession;
+      }
+      courseSelect.disabled = true;
+      teeSelect.disabled = true;
+      setSyncStatus('Shared tee locked');
+      renderAssignmentSummary();
+    } catch (error) {
+      setSyncStatus('Not saved');
+      showMessage(error.message, true);
+      return;
+    }
+  }
   scores = blankScores();
   updateCourseHandicap();
   renderScorecard();
@@ -772,47 +1024,53 @@ notificationPreferencesForm.addEventListener('submit', async event => {
 });
 
 saveButton.addEventListener('click', async () => {
+  const match = selectedMatch();
+  const round = existingRound;
+  const assignment = { matchId: matchSelect.value || null, courseId: courseSelect.value, teeId: teeSelect.value };
+  const range = holeRangeSelect.value;
+  const onSubmittedCard = () => (matchSelect.value || null) === assignment.matchId && courseSelect.value === assignment.courseId
+    && teeSelect.value === assignment.teeId && holeRangeSelect.value === range;
   try {
     setSyncStatus('Saving…', true);
     showMessage('');
     const blockReason = scoreEntryBlockReason();
     if (blockReason) throw new Error(blockReason);
+    const newScores = unsavedIndividualScores();
+    if (!newScores.length) throw new Error('Enter an individual score before saving.');
     const courseHandicap = updateCourseHandicap();
     if (selectedScoringMode() === 'net' && courseHandicap === null) {
       throw new Error('A course rating and slope are required for net scoring.');
     }
+    assertRoundAssignment(round, assignment);
     await saveProfile(session.user.id, playerData.profile.display_name, handicapInput.value || 0);
-    assertRoundAssignment(existingRound, {
-      matchId: matchSelect.value || null,
-      courseId: courseSelect.value,
-      teeId: teeSelect.value,
-    });
     const savedRound = await saveRound({
+      ...assignment,
       userId: session.user.id,
-      matchId: matchSelect.value || null,
-      courseId: courseSelect.value,
-      teeId: teeSelect.value,
       courseHandicap: courseHandicap ?? 0,
-      scores: unsavedScoreRows(scores),
-      existingRound,
+      scores: newScores,
+      existingRound: round,
     });
-    existingRound = savedRound;
-    if (matchSelect.value) teeSelect.disabled = true;
     const roundIndex = playerData.rounds.findIndex(round => round.id === savedRound.id);
     if (roundIndex >= 0) playerData.rounds[roundIndex] = savedRound;
     else playerData.rounds.push(savedRound);
-    scores = mergePersistedScores(blankScores(), savedRound.scores ?? []);
-    renderScorecard();
+    if (onSubmittedCard()) {
+      existingRound = savedRound;
+      if (matchSelect.value) teeSelect.disabled = true;
+      scores = mergePersistedScores(blankScores(), savedRound.scores ?? []);
+      renderIndividualScorecard(); // Keep the independent hole-winner form and its unsaved choices.
+    }
     setSyncStatus('Saved');
     let savedMessage = 'Scores saved. Submitted holes are now locked; continue with any remaining holes.';
-    if (matchSelect.value) {
+    if (match) {
       try {
-        const completion = await completeMatchIfReady(matchSelect.value);
+        const completion = await completeMatchIfReady(match.id);
         if (completion?.finalized) {
+          match.status = 'final';
+          if (onSubmittedCard() && selectedOutcomeSegments().length) renderHoleOutcomeScorecard();
           savedMessage = 'Scores saved. Match complete.';
           if (completion.commentary_eligible) {
             try {
-              await generateMatchCommentary(matchSelect.value);
+              await generateMatchCommentary(match.id);
               savedMessage += ' The AI recap was generated.';
             } catch (commentaryError) {
               savedMessage += ` The recap could not be generated automatically: ${commentaryError.message}`;
@@ -823,10 +1081,10 @@ saveButton.addEventListener('click', async () => {
         savedMessage += ` Automatic completion is waiting: ${completionError.message}`;
       }
     }
-    showMessage(savedMessage);
+    if (onSubmittedCard()) showMessage(savedMessage);
   } catch (error) {
     setSyncStatus('Save failed', true);
-    showMessage(error.message, true);
+    if (onSubmittedCard()) showMessage(error.message, true);
   }
 });
 
@@ -1056,6 +1314,7 @@ async function start() {
     document.querySelector('#playerName').textContent = playerData.profile.display_name || session.user.user_metadata?.full_name || 'Golfer';
     handicapInput.value = playerData.profile.handicap_index ?? '';
     populateCourses();
+    selectNextPlayableAssignment();
     renderMemberHome();
     setSyncStatus('Synced');
   } catch (error) {

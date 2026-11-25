@@ -3,6 +3,7 @@ name: Disposable authenticated browser smoke
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 concurrency:
@@ -14,13 +15,16 @@ permissions:
 
 jobs:
   smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - name: Check out the exact test commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Node dependencies
-        run: npm ci
+        run: npm ci --include=dev --ignore-scripts
+      - name: Run the full suite on the clean Linux runner
+        run: npm test
       - name: Install the reviewed Supabase CLI
         uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13
         with:
@@ -34,6 +38,11 @@ jobs:
         run: supabase start --workdir "$E2E_WORKDIR" --exclude studio,imgproxy,mailpit,postgres-meta,realtime,edge-runtime,logflare,vector,supavisor
       - name: Rebuild the disposable database from migrations
         run: supabase db reset --workdir "$E2E_WORKDIR" --no-seed
+      - name: Identify the disposable database before testing
+        run: |
+          db=supabase_db_hereford-cup-disposable-e2e
+          test "$(docker inspect --format '{{.State.Running}}' "$db")" = true
+          docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' "$db" > "$RUNNER_TEMP/scramble-volumes"
       - name: Export only disposable local connection values
         run: |
           supabase status --workdir "$E2E_WORKDIR" -o env > "$RUNNER_TEMP/supabase-status.env"
@@ -45,6 +54,8 @@ jobs:
           test "$API_URL" = "http://127.0.0.1:54321"
           test -n "$publishable_key"
           test -n "$service_key"
+          echo "::add-mask::$service_key"
+          echo "::add-mask::$publishable_key"
           password="E2E-$(openssl rand -hex 18)"
           echo "::add-mask::$password"
           {
@@ -59,9 +70,11 @@ jobs:
       - name: Install the reviewed Chromium browser
         run: npx playwright install --with-deps chromium
       - name: Run authenticated player and administrator smoke tests
-        run: npm run test:e2e
+        run: npm run test:e2e -- --grep-invert @scramble
       - name: Verify exact completion rows and generated-archive protection
         run: node scripts/e2e/verify-completion.mjs
+      - name: Play 72 Texas Scramble holes as 16 signed-in players
+        run: npm run test:e2e -- --grep @scramble --reporter=line --retries=0
       - name: Upload credential-free failure report
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -73,3 +86,17 @@ jobs:
       - name: Destroy disposable Supabase data
         if: always()
         run: supabase stop --workdir "$E2E_WORKDIR" --no-backup
+      - name: Verify the disposable stack and database volumes are gone
+        if: always()
+        run: |
+          set -euo pipefail
+          containers=$(docker ps -a --format '{{.Names}}')
+          volumes=$(docker volume ls --format '{{.Name}}')
+          if printf '%s\n' "$containers" "$volumes" | grep -Eq '^supabase_.*_hereford-cup-disposable-e2e$'; then exit 1; fi
+          if test -f "$RUNNER_TEMP/scramble-volumes"; then
+            while IFS= read -r name; do
+              if test -n "$name" && grep -Fxq -- "$name" <<< "$volumes"; then exit 1; fi
+            done < "$RUNNER_TEMP/scramble-volumes"
+          fi
+          if supabase status --workdir "$E2E_WORKDIR" >/dev/null 2>&1; then exit 1; fi
+          echo 'Disposable stack stopped; no project containers or database volumes remain.'
