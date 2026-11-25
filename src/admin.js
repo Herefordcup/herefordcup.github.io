@@ -1518,6 +1518,7 @@ matchPlanForm.addEventListener('submit', async event => {
     if (!tournamentMatchPlans().some(match => match.id === savedId)) throw new Error('The saved match is not in the refreshed plans.');
     populateMatchPlanOptions(savedId);
     openMatchPlan();
+    populateResultMatchChoices();
     matchPlanNeedsReload = false;
     setMessage(matchPlanMessage, 'Match plan saved.');
   } catch (error) {

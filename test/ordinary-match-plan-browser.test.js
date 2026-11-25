@@ -163,6 +163,7 @@ test('a real rename submits the selected ID and unchanged structure, then reopen
   assert.deepEqual(calls[0].segments, [rpcSegment(first), rpcSegment(last)]);
   assert.equal(await form.locator('#matchPlanExisting').inputValue(), match.id);
   assert.match(await form.locator('#matchPlanExisting :checked').textContent(), /New name/);
+  await expect(page.locator('#resultMatch option[value="ordinary"]')).toHaveText('New name');
   assert.equal(await form.locator('[name=session]').inputValue(), 'Authoritative session');
   assert.equal(await ruleTitle.inputValue(), 'Unsubmitted rule');
 });
