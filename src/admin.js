@@ -117,6 +117,7 @@ let resultHistoryRequest = 0;
 let scorecardView;
 let openedHole;
 let pendingHole;
+const correctionReceipts = new WeakMap();
 let holeEditor;
 let openingHole = false;
 const finalizingMatches = new Set();
@@ -1692,12 +1693,16 @@ function canEditHole(target) {
 async function saveSelectedHole(api, payload) {
   const target = openedHole?.target;
   const exact = target && (api === correctHoleScore ? target.kind === 'individual' && target.roundId === payload.roundId
-    && target.row.hole_number === Number(payload.holeNumber) && !payload.deleteScore
+    && target.row.id === payload.expectedScoreId && target.row.hole_number === Number(payload.holeNumber) && !payload.deleteScore
     : target.kind === payload.targetType && target.row.id === payload.targetId);
-  if (!exact || pendingHole || !canEditHole(target)) throw new Error('Reopen the submitted hole on the current scorecard.');
+  if (!exact || pendingHole || openedHole.sent || !canEditHole(target)) throw new Error('Reopen the submitted hole on the current scorecard.');
   pendingHole = openedHole;
-  try { return await api(payload); }
-  catch (error) { pendingHole = null; throw error; }
+  try {
+    const result = await api(payload);
+    pendingHole.sent = true;
+    if (result && typeof result === 'object') correctionReceipts.set(result, pendingHole);
+    return result;
+  } finally { pendingHole = null; }
 }
 
 async function openSelectedHole(entry, trigger) {
@@ -1718,9 +1723,12 @@ async function openSelectedHole(entry, trigger) {
         correctHoleScore: payload => saveSelectedHole(correctHoleScore, payload),
         correctTeamScoreEntry: payload => saveSelectedHole(correctTeamScoreEntry, payload),
         async onSaved(target, result) {
-          const view = sameSubmittedHole(pendingHole?.target, target) ? pendingHole.view : null;
-          try { return (await refreshSavedHole(target, result, view)).warnings.join(' '); }
-          finally { pendingHole = null; }
+          // The modal can reject a mismatched receipt rather than call onSaved.
+          // Bind readback to this write without keeping other holes locked.
+          const receipt = correctionReceipts.get(result);
+          correctionReceipts.delete(result);
+          const view = sameSubmittedHole(receipt?.target, target) ? receipt.view : null;
+          return (await refreshSavedHole(target, result, view, { rpcWarnings: false })).warnings.join(' ');
         },
         notify(message, isError, target) {
           if (sameSubmittedHole(openedHole?.target, target) && sameScorecardView(openedHole.view, target)) setMessage(resultMessage, message, isError);
@@ -1734,14 +1742,14 @@ async function openSelectedHole(entry, trigger) {
 }
 
 // The correction RPC has already committed. A readback, history or recap failure is only a warning.
-async function refreshSavedHole(target, result, view, { deletion = false } = {}) {
+async function refreshSavedHole(target, result, view, { deletion = false, rpcWarnings = true } = {}) {
   const { matchId } = target;
   const match = adminData.matches.find(m => m.id === matchId);
   const team = target.kind !== 'individual';
   const visible = () => sameScorecardView(view, target);
   const warnings = [];
-  if (result.auditWarning) warnings.push(result.auditWarning);
-  if (result.completion_warning) warnings.push(`Individual scorecards need review: ${result.completion_warning}`);
+  if (rpcWarnings && result.auditWarning) warnings.push(result.auditWarning);
+  if (rpcWarnings && result.completion_warning) warnings.push(`Individual scorecards need review: ${result.completion_warning}`);
   let status = team ? 'Team correction saved and audited.' : result.audit?.action ? `Correction saved and audited (${result.audit.action}).` : 'Correction saved and audited.';
   if (!canAdministerMatch(match)) return { status, warnings };
   let latest = view?.detail?.id === matchId ? view.detail : match;

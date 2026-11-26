@@ -560,8 +560,8 @@ async function verifySubmittedEntry(context) {
     texas_scramble_hole: ['texas_scramble_hole_scores', 'squad_id', target.row.squad_id],
     match_hole_outcome: ['match_hole_outcomes', 'segment_id', target.row.segment_id],
   }[target.kind];
-  // The legacy individual RPC addresses round + hole and can insert on live
-  // cards. Reject a deleted/replaced row before calling any audited mutation.
+  // Refresh the exact submission shown to the player; the individual RPC also
+  // checks the expected score ID atomically before updating it.
   const [editable, entry] = await Promise.all([readEditableTournament(editableTournamentId), client.from(table).select('id')
     .eq('id', target.row.id).eq(parent, id).eq('hole_number', target.row.hole_number).maybeSingle()]);
   if (context !== openCorrection || !onOpenedCard(target) || !canEditHole(target)) throw new Error('The selected scorecard changed. Reopen the hole.');
@@ -583,7 +583,8 @@ async function submitHoleCorrection(payload, individual) {
   const target = context?.target;
   if (!onOpenedCard(target) || !canEditHole(target)) throw new Error('The selected scorecard changed. Reopen the hole.');
   const matchesTarget = individual
-    ? target.kind === 'individual' && payload.roundId === target.roundId && Number(payload.holeNumber) === Number(target.row.hole_number) && !payload.deleteScore
+    ? target.kind === 'individual' && payload.roundId === target.roundId && payload.expectedScoreId === target.row.id
+      && Number(payload.holeNumber) === Number(target.row.hole_number) && !payload.deleteScore
     : target.kind !== 'individual' && payload.targetType === target.kind && payload.targetId === target.row.id;
   if (!matchesTarget) throw new Error('The correction target changed. Reopen the hole.');
   if (context.submitted) throw new Error('This correction has already been submitted.');
