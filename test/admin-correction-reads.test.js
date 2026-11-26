@@ -72,6 +72,21 @@ test('an exact individual edit passes its displayed score ID and keeps the score
   assert.deepEqual(await correctHoleScore({ roundId: 'round', holeNumber: 7, grossScore: 4, reason: ' Verified ', expectedScoreId: score.id }, client), { score, audit });
 });
 
+test('the exact-row guard works on browsers without Object.hasOwn', async () => {
+  const args = [];
+  const client = reader(() => ({ data: null }));
+  client.rpc = async (name, payload) => { args.push(payload); return { data: { id: 'exact-id' } }; };
+  const descriptor = Object.getOwnPropertyDescriptor(Object, 'hasOwn');
+  let pending;
+  try {
+    Object.defineProperty(Object, 'hasOwn', { ...descriptor, value: undefined });
+    pending = correctHoleScore({ roundId: 'round', holeNumber: 3, grossScore: 5, reason: 'Signed card', expectedScoreId: 'exact-id' }, client);
+  } finally { Object.defineProperty(Object, 'hasOwn', descriptor); }
+  await pending;
+  assert.equal(args.length, 1);
+  assert.equal(args[0].expected_score_id, 'exact-id');
+});
+
 test('an explicitly missing displayed ID never falls back to an old-client insert', async () => {
   const client = { rpc: () => assert.fail('A form missing its displayed ID must not send a mutation') };
   for (const expectedScoreId of [null, undefined]) {

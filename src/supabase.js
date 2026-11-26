@@ -821,7 +821,7 @@ export async function correctHoleScore(correction, supabaseClient) {
   const { roundId, holeNumber, grossScore = null, deleteScore = false, reason, expectedScoreId } = correction;
   const correctionReason = reason?.trim();
   if (!correctionReason) throw new Error('A correction reason is required.');
-  const exact = Object.hasOwn(correction, 'expectedScoreId');
+  const exact = Object.prototype.hasOwnProperty.call(correction, 'expectedScoreId');
   if (exact && !expectedScoreId) throw new Error('A submitted score ID is required. Refresh the scorecard.');
   const supabase = supabaseClient ?? await getSupabase();
   const { data, error } = await supabase.rpc('correct_hole_score', {
