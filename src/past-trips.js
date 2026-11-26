@@ -1,4 +1,4 @@
-import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js?v=organizer-scoring-2';
+import { loadLegacyArchive, legacyPhotoUrl } from './supabase.js?v=compact-scorecard-1';
 import { renderLegacyArchive } from './legacy.js?v=pimentel-correction-1';
 
 const target = {

@@ -1,0 +1,36 @@
+.admin-tool-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+#adminTool {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  background-color: var(--white);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+}
+
+#adminTool:focus-visible {
+  outline: 2px solid var(--cardinal);
+  outline-offset: 2px;
+}
+
+#adminContent .admin-workspace-hidden {
+  display: none !important;
+}
+
+#adminContent .admin-workspace-single {
+  grid-template-columns: minmax(0, 1fr);
+}

@@ -17,8 +17,11 @@ import { hasSupabaseConfig } from './config.js';
 import {
   canSetNewPassword,
   completeMatchIfReady,
+  correctHoleScore,
+  correctTeamScoreEntry,
   generateMatchCommentary,
   getCurrentSession,
+  getSupabase,
   hasActiveTournamentMembership,
   loadOwnTournamentMemberships,
   loadPlayerData,
@@ -39,7 +42,7 @@ import {
   uploadProfilePhoto,
   validateAuthInput,
   waitForPasswordRecovery,
-} from './supabase.js?v=organizer-scoring-2';
+} from './supabase.js?v=compact-scorecard-1';
 
 const authView = document.querySelector('#authView');
 const accessPendingView = document.querySelector('#accessPendingView');
@@ -93,6 +96,11 @@ let existingRound;
 let authMode = 'signin';
 let recoveryVerified = false;
 let membershipRefreshPromise;
+let editableTournamentId = null;
+let holeEditor;
+let openCorrection;
+let cardVersion = 0;
+const unavailableEntries = new Set();
 let scores = Array.from({ length: 18 }, (_, index) => ({ hole_number: index + 1, gross_score: null }));
 
 function showAuthMessage(message, isError = false) {
@@ -154,6 +162,7 @@ function formatName(value = '') {
 }
 
 function showMemberView(viewName) {
+  if (viewName !== 'score' && !document.querySelector('#scoreView').hidden) cardVersion++;
   document.querySelectorAll('.member-view').forEach(view => {
     view.hidden = view.dataset.view !== viewName;
   });
@@ -480,6 +489,245 @@ function selectedMatch() {
   return playerData?.assignments.find(item => item.matches?.id === matchSelect.value)?.matches;
 }
 
+const currentTournament = status => ['live', 'open', 'setup'].includes(status);
+
+function hasCorrectionRole(data = playerData) {
+  const tournament = data?.tournament;
+  return Boolean(tournament?.id && currentTournament(tournament.status) && data.profile?.id === session?.user.id
+    && (data.profile.role === 'admin' || data.memberships.some(member => member.tournaments?.id === tournament.id
+      && member.status === 'active' && member.role === 'admin')));
+}
+
+async function readEditableTournament(tournamentId) {
+  const client = await getSupabase();
+  const { data, error } = await client.from('tournaments')
+    .select('id,status,legacy_editions!legacy_editions_source_tournament_id_fkey(id)').eq('id', tournamentId).maybeSingle();
+  if (error) throw error;
+  return data?.id === tournamentId && currentTournament(data.status)
+    && (data.legacy_editions === null || (Array.isArray(data.legacy_editions) && !data.legacy_editions.length));
+}
+
+async function checkCorrectionAccess() {
+  editableTournamentId = null;
+  const id = playerData?.tournament?.id;
+  if (!hasCorrectionRole() || !playerData.assignments.some(item => item.matches?.tournament_id === id)) return;
+  try {
+    if (await readEditableTournament(id) && playerData.tournament?.id === id && hasCorrectionRole()) editableTournamentId = id;
+  } catch { /* Archive status is unknown: keep regular member scoring available, without Edit. */ }
+}
+
+function submittedHoleTarget(kind, holeNumber, segmentId) {
+  const match = selectedMatch();
+  if (!match || !editableTournamentId || match.tournament_id !== editableTournamentId || !hasCorrectionRole()) return null;
+  const target = { kind, matchId: match.id, label: `${match.name} · Hole ${holeNumber}` };
+  const atHole = score => Number(score.hole_number) === holeNumber;
+  if (kind === 'individual') {
+    if (!existingRound?.id || existingRound.match_id !== match.id || existingRound.user_id !== session.user.id) return null;
+    target.roundId = existingRound.id;
+    target.row = existingRound.scores?.find(atHole);
+  } else if (kind === 'texas_scramble_hole') {
+    const squad = selectedScrambleSquad();
+    if (!squad?.texas_scramble_squad_players?.some(player => player.user_id === session.user.id)) return null;
+    target.players = squad.texas_scramble_squad_players.map(player => ({ id: player.user_id, name: player.profiles?.display_name || 'Player' }));
+    target.row = squad.texas_scramble_hole_scores?.find(atHole);
+  } else if (kind === 'match_hole_outcome' && selectedOutcomeSegments().some(segment => segment.id === segmentId)) {
+    target.row = playerData.holeOutcomes.find(score => score.segment_id === segmentId && atHole(score));
+  }
+  return target.row?.id && !unavailableEntries.has(target.row.id) ? target : null;
+}
+
+function canEditHole(target) {
+  const latest = submittedHoleTarget(target.kind, Number(target.row.hole_number), target.row.segment_id);
+  return Boolean(latest && latest.matchId === target.matchId && latest.roundId === target.roundId && latest.row.id === target.row.id);
+}
+
+function onOpenedCard(target) {
+  return Boolean(target && openCorrection?.version === cardVersion && matchSelect.value === target.matchId
+    && openCorrection.target.kind === target.kind && openCorrection.target.row.id === target.row.id);
+}
+
+function removeHoleEdits() {
+  const focused = document.activeElement?.matches('button[data-edit-hole]');
+  document.querySelectorAll('.hole-row [data-edit-hole]').forEach(button => button.remove());
+  if (focused) matchSelect.focus({ preventScroll: true });
+}
+
+async function verifySubmittedEntry(context) {
+  const { target } = context;
+  const client = await getSupabase();
+  const [table, parent, id] = {
+    individual: ['scores', 'round_id', target.roundId],
+    texas_scramble_hole: ['texas_scramble_hole_scores', 'squad_id', target.row.squad_id],
+    match_hole_outcome: ['match_hole_outcomes', 'segment_id', target.row.segment_id],
+  }[target.kind];
+  // The legacy individual RPC addresses round + hole and can insert on live
+  // cards. Reject a deleted/replaced row before calling any audited mutation.
+  const [editable, entry] = await Promise.all([readEditableTournament(editableTournamentId), client.from(table).select('id')
+    .eq('id', target.row.id).eq(parent, id).eq('hole_number', target.row.hole_number).maybeSingle()]);
+  if (context !== openCorrection || !onOpenedCard(target) || !canEditHole(target)) throw new Error('The selected scorecard changed. Reopen the hole.');
+  if (!editable) {
+    editableTournamentId = null;
+    removeHoleEdits();
+    throw new Error('This tournament is closed to corrections.');
+  }
+  if (entry.error) throw entry.error;
+  if (entry.data?.id !== target.row.id) {
+    unavailableEntries.add(target.row.id);
+    openCorrection.trigger.remove();
+    throw new Error('This submitted hole changed or is no longer available. Reopen the card.');
+  }
+}
+
+async function submitHoleCorrection(payload, individual) {
+  const context = openCorrection;
+  const target = context?.target;
+  if (!onOpenedCard(target) || !canEditHole(target)) throw new Error('The selected scorecard changed. Reopen the hole.');
+  const matchesTarget = individual
+    ? target.kind === 'individual' && payload.roundId === target.roundId && Number(payload.holeNumber) === Number(target.row.hole_number) && !payload.deleteScore
+    : target.kind !== 'individual' && payload.targetType === target.kind && payload.targetId === target.row.id;
+  if (!matchesTarget) throw new Error('The correction target changed. Reopen the hole.');
+  if (context.submitted) throw new Error('This correction has already been submitted.');
+  context.submitted = true;
+  try {
+    await verifySubmittedEntry(context);
+    return await (individual ? correctHoleScore(payload) : correctTeamScoreEntry(payload));
+  } catch (error) { context.submitted = false; throw error; }
+}
+
+function notifyHoleCorrection(message, isError, target) {
+  if (onOpenedCard(target)) showMessage(message, isError);
+}
+
+// Do not run setup or dispatch a match change after a correction: both reset the
+// player's scorecard. Preserve drafts as they are *now*, not when Edit opened.
+function redrawCorrectedCard() {
+  const drafts = new Map([...document.querySelectorAll('[data-card-draft]')].map(field => [field.dataset.cardDraft, field.value]));
+  const focus = document.activeElement;
+  const trigger = openCorrection?.version === cardVersion ? openCorrection.trigger : null;
+  const id = selectedMatch().id;
+  existingRound = playerData.rounds.find(round => round.match_id === id && round.user_id === session.user.id);
+  scores = mergePersistedScores(scores.map(score => score.locked ? { hole_number: score.hole_number, gross_score: null } : score), existingRound?.scores);
+  renderScorecard();
+  for (const field of document.querySelectorAll('[data-card-draft]')) {
+    if (drafts.has(field.dataset.cardDraft)) field.value = drafts.get(field.dataset.cardDraft);
+    if (focus.dataset.cardDraft === field.dataset.cardDraft) field.focus({ preventScroll: true });
+  }
+  // The shared dialog restores focus to the original element on close.
+  const replacement = trigger && document.querySelector(`[data-edit-hole][data-entry-id="${CSS.escape(trigger.dataset.entryId)}"]`);
+  if (replacement && replacement !== trigger) {
+    replacement.replaceWith(trigger);
+    if (focus === trigger) trigger.focus({ preventScroll: true });
+  }
+}
+
+function readbackRow(data, target) {
+  let rows;
+  if (target.kind === 'individual') {
+    rows = data.rounds.find(row => row.match_id === target.matchId && row.id === target.roundId && row.user_id === session.user.id)?.scores;
+  } else if (target.kind === 'texas_scramble_hole') {
+    rows = data.scrambleSquads.find(row => row.match_id === target.matchId)?.texas_scramble_hole_scores;
+  } else {
+    rows = data.holeOutcomes.filter(row => data.segments.some(segment => segment.id === row.segment_id && segment.match_id === target.matchId));
+  }
+  return rows?.find(row => row.id === target.row.id && Number(row.hole_number) === Number(target.row.hole_number));
+}
+
+async function refreshCorrectedRecap(match, segments) {
+  if (match.status !== 'final' || segments.length !== 1 || segments[0].status !== 'final' || segments[0].entry_mode !== 'individual_scores'
+    || !['singles', 'fourball'].includes(segments[0].format)) return;
+  try {
+    const client = await getSupabase();
+    const { data, error } = await client.from('commentary_settings').select('enabled').eq('tournament_id', match.tournament_id).maybeSingle();
+    if (error) throw error;
+    if (!data?.enabled || !hasCorrectionRole() || editableTournamentId !== match.tournament_id) return;
+    const recap = await generateMatchCommentary(match.id, { regenerate: true });
+    if (!recap?.id || recap.match_id !== match.id) throw new Error('No matching recap was returned.');
+    if (playerData.tournament?.id !== match.tournament_id) return;
+    playerData.commentaries = playerData.commentaries.filter(item => item.id !== recap.id);
+    if (recap.status === 'approved') playerData.commentaries.unshift(recap);
+    renderRecentResults();
+  } catch (error) { return `Recap refresh failed: ${error.message}`; }
+}
+
+async function onHoleCorrectionSaved(target, result) {
+  // The write already committed. Keep its returned value even if a later read
+  // is offline; never report a failed correction or retry the mutation here.
+  const local = readbackRow(playerData, target);
+  const saved = target.kind === 'individual' ? result?.score : result;
+  if (local && saved?.id === local.id) Object.assign(local, saved);
+  let fresh;
+  try { fresh = await loadPlayerData(session.user.id); }
+  catch (error) {
+    if (matchSelect.value === target.matchId) redrawCorrectedCard();
+    return `Scorecard and standings refresh failed: ${error.message}. Reload to see the latest result.`;
+  }
+  const tournamentId = playerData.tournament?.id;
+  if (!tournamentId || fresh.tournament?.id !== tournamentId || !hasCorrectionRole(fresh)) {
+    editableTournamentId = null;
+    removeHoleEdits();
+    return 'Tournament access changed. Reopen Play to see the current card.';
+  }
+  const sameMatch = row => row.match_id === target.matchId;
+  const match = fresh.matches.find(row => row.id === target.matchId && row.tournament_id === tournamentId);
+  const assignment = playerData.assignments.find(item => item.matches?.id === target.matchId);
+  if (!match || !assignment || !fresh.assignments.some(item => item.matches?.id === target.matchId)) {
+    playerData.assignments = playerData.assignments.filter(item => item !== assignment);
+    if (matchSelect.value === target.matchId) removeHoleEdits();
+    return 'This assigned card is no longer available.';
+  }
+  Object.assign(assignment.matches, match);
+  const segmentIds = new Set([...playerData.segments, ...fresh.segments].filter(sameMatch).map(row => row.id));
+  // Standings include every match in this tournament. Keep other scorecards'
+  // bound segment objects and draft controls; refresh their result facts.
+  playerData.matches = fresh.matches;
+  const segmentsById = new Map(playerData.segments.map(row => [row.id, row]));
+  playerData.segments = fresh.segments.map(row => Object.assign(segmentsById.get(row.id) ?? {}, row));
+  for (const key of ['rounds', 'scrambleSquads', 'holeOutcomes']) {
+    const belongs = key === 'holeOutcomes' ? row => segmentIds.has(row.segment_id) : sameMatch;
+    playerData[key] = [...playerData[key].filter(row => !belongs(row)), ...fresh[key].filter(belongs)];
+  }
+  playerData.statistics = fresh.statistics;
+  playerData.commentaries = fresh.commentaries;
+  renderLiveMatch();
+  renderCup();
+  renderRecentResults();
+  renderStats();
+  if (matchSelect.value === target.matchId) redrawCorrectedCard();
+  if (!readbackRow(fresh, target)) return 'The submitted entry is no longer available on this card.';
+  return refreshCorrectedRecap(match, fresh.segments.filter(sameMatch));
+}
+
+function appendHoleEdit(row, target) {
+  if (!target) return;
+  const button = element('button', 'hole-edit-trigger', 'Edit');
+  button.type = 'button';
+  button.dataset.editHole = target.kind;
+  button.dataset.entryId = target.row.id;
+  button.dataset.hole = target.row.hole_number;
+  if (target.roundId) button.dataset.roundId = target.roundId;
+  button.setAttribute('aria-label', `Edit ${target.label}`);
+  button.addEventListener('click', async () => {
+    const version = cardVersion;
+    if (!canEditHole(target)) return;
+    try {
+      const { createHoleEditor } = await import('./scorecard-hole-editor.js?v=compact-scorecard-1');
+      if (version !== cardVersion || !button.isConnected || !canEditHole(target)) return;
+      const latest = submittedHoleTarget(target.kind, Number(target.row.hole_number), target.row.segment_id);
+      openCorrection = { target: latest, trigger: button, version };
+      holeEditor ??= createHoleEditor({
+        canEdit: (t = openCorrection?.target) => onOpenedCard(t) && canEditHole(openCorrection.target),
+        correctHoleScore: payload => submitHoleCorrection(payload, true),
+        correctTeamScoreEntry: payload => submitHoleCorrection(payload, false),
+        onSaved: onHoleCorrectionSaved, notify: notifyHoleCorrection,
+      });
+      holeEditor.open({ ...latest, row: { ...latest.row } }, button);
+    } catch (error) {
+      if (version === cardVersion) showMessage(`Could not open the submitted hole: ${error.message}`, true);
+    }
+  });
+  row.querySelector('.hole-meta').append(button);
+}
+
 function selectedScrambleSquad() {
   return playerData?.scrambleSquads?.find(squad => squad.match_id === matchSelect.value);
 }
@@ -669,7 +917,7 @@ function updateSummary() {
   const relation = gross - par;
   document.querySelector('#toPar').textContent = !completed.length ? 'E' : relation === 0 ? 'E' : relation > 0 ? `+${relation}` : relation;
   const netNeedsRating = scoringMode === 'net' && courseHandicap === null;
-  saveButton.disabled = !selectedTee || !unsavedIndividualScores().length || netNeedsRating || Boolean(scoreEntryBlockReason());
+  saveButton.disabled = selectedMatch()?.status === 'final' || !selectedTee || !unsavedIndividualScores().length || netNeedsRating || Boolean(scoreEntryBlockReason());
 }
 
 function renderTexasScrambleScorecard() {
@@ -711,12 +959,14 @@ function renderTexasScrambleScorecard() {
     scoreInput.min = '1';
     scoreInput.max = '30';
     scoreInput.inputMode = 'numeric';
+    if (!persisted) scoreInput.dataset.cardDraft = `gross:${squad.id}:${hole.hole_number}`;
     scoreInput.value = persisted?.gross_score ?? '';
     scoreInput.disabled = Boolean(persisted);
     scoreLabel.append(scoreInput);
     const driveLabel = document.createElement('label');
     driveLabel.textContent = 'Tee shot used';
     const driveSelect = document.createElement('select');
+    if (!persisted) driveSelect.dataset.cardDraft = `drive:${squad.id}:${hole.hole_number}`;
     driveSelect.append(new Option('Select player', ''), ...players.map(player => new Option(player.profiles?.display_name || 'Player', player.user_id)));
     driveSelect.value = persisted?.tee_shot_player_id ?? '';
     driveSelect.disabled = Boolean(persisted);
@@ -747,6 +997,7 @@ function renderTexasScrambleScorecard() {
       }
     });
     row.append(scoreLabel, driveLabel, submit);
+    if (persisted) appendHoleEdit(row, submittedHoleTarget('texas_scramble_hole', Number(hole.hole_number)));
     return row;
   }));
   const gross = savedScores.reduce((total, score) => total + Number(score.gross_score), 0);
@@ -774,6 +1025,7 @@ function renderHoleOutcomeScorecard() {
     const label = document.createElement('label');
     label.textContent = 'Hole result';
     const select = document.createElement('select');
+    if (!persisted) select.dataset.cardDraft = `outcome:${segment.id}:${holeNumber}`;
     select.append(new Option('Choose result', ''), new Option('Blue', 'cardinal'), new Option('Halved', 'halved'), new Option('White', 'silver'));
     select.value = persisted?.winner ?? '';
     select.disabled = Boolean(persisted) || closed;
@@ -802,6 +1054,7 @@ function renderHoleOutcomeScorecard() {
       }
     });
     row.append(label, submit);
+    if (persisted) appendHoleEdit(row, submittedHoleTarget('match_hole_outcome', holeNumber, segment.id));
     return row;
   }));
   if (!selectedIndividualSegments().length) {
@@ -864,10 +1117,11 @@ function renderIndividualScorecard() {
         <button type="button" aria-label="Increase hole ${hole.hole_number} score">+</button>
       </div>`;
     const input = row.querySelector('input');
-    input.readOnly = Boolean(current.locked);
-    row.querySelectorAll('button').forEach(button => { button.disabled = Boolean(current.locked); });
+    if (!current.locked) input.dataset.cardDraft = `individual:${matchSelect.value}:${hole.hole_number}`;
+    input.readOnly = Boolean(current.locked) || selectedMatch()?.status === 'final';
+    row.querySelectorAll('button').forEach(button => { button.disabled = input.readOnly; });
     const commit = value => {
-      if (current.locked) return;
+      if (input.readOnly) return;
       current.gross_score = value >= 1 ? Math.min(15, value) : null;
       input.value = current.gross_score ?? '';
       updateSummary();
@@ -875,6 +1129,7 @@ function renderIndividualScorecard() {
     row.querySelectorAll('button')[0].addEventListener('click', () => commit((Number(input.value) || hole.par) - 1));
     row.querySelectorAll('button')[1].addEventListener('click', () => commit((Number(input.value) || hole.par - 1) + 1));
     input.addEventListener('input', () => commit(Number(input.value)));
+    if (current.locked) appendHoleEdit(row, submittedHoleTarget('individual', Number(hole.hole_number)));
     return row;
   }));
   updateSummary();
@@ -973,6 +1228,8 @@ holeRangeSelect.addEventListener('change', () => {
   updateCourseHandicap();
 });
 matchSelect.addEventListener('change', () => {
+  cardVersion++;
+  removeHoleEdits();
   const match = selectedMatch();
   const segments = selectedMatchSegments();
   const formatNames = new Set(segments.map(segment => formatName(segment.format)));
@@ -1239,12 +1496,39 @@ profileSetupForm.addEventListener('submit', async event => {
   }
 });
 
+async function refreshCorrectionRole(memberships) {
+  const before = hasCorrectionRole();
+  if (before && playerData.profile.role === 'admin') {
+    // The own-membership poll alone cannot observe a revoked global role.
+    const client = await getSupabase();
+    const { data, error } = await client.from('profiles').select('role').eq('id', session.user.id).maybeSingle();
+    if (error) {
+      editableTournamentId = null;
+      removeHoleEdits();
+      throw error;
+    }
+    playerData.profile.role = data?.role;
+  }
+  playerData.memberships = memberships;
+  if (hasCorrectionRole() && !editableTournamentId) {
+    await checkCorrectionAccess();
+    if (editableTournamentId && selectedMatch()) redrawCorrectedCard();
+  } else if (before && !hasCorrectionRole()) {
+    editableTournamentId = null;
+    removeHoleEdits();
+  }
+}
+
 async function refreshMembershipAccess() {
   if (!session || !playerData || document.hidden) return;
   if (membershipRefreshPromise) return membershipRefreshPromise;
   membershipRefreshPromise = (async () => {
     const freshMemberships = await loadOwnTournamentMemberships(session.user.id);
     const transition = membershipAccessTransition(playerData.memberships, freshMemberships);
+    if (transition !== 'none') {
+      editableTournamentId = null;
+      removeHoleEdits();
+    } else await refreshCorrectionRole(freshMemberships);
     if (transition === 'request') {
       await requestTournamentMembership(selectActiveTournament(playerData.memberships)?.id);
       window.location.reload();
@@ -1308,6 +1592,7 @@ async function start() {
       dashboardView.hidden = true;
       return;
     }
+    await checkCorrectionAccess();
     accessPendingView.hidden = true;
     dashboardView.hidden = false;
     setSyncStatus('Loading…', true);

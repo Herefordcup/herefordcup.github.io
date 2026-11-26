@@ -6,20 +6,22 @@ export function isSharedSegment(segment) {
   return segment.format === 'scramble' || segment.entry_mode === 'hole_outcomes';
 }
 
-function submittedEntries(match) {
+export function submittedEntries(match) {
   const entries = [];
   for (const squad of match.correctionSquads ?? []) {
     if (squad.match_id !== match.id) continue;
-    const players = squad.texas_scramble_squad_players.filter(player => player.squad_id === squad.id)
+    const players = (squad.texas_scramble_squad_players ?? []).filter(player => player.squad_id === squad.id)
       .sort((a, b) => a.playing_order - b.playing_order);
-    for (const row of squad.texas_scramble_hole_scores) {
-      if (row.squad_id === squad.id) entries.push({ type: SCRAMBLE, row, players, label: `${squad.label} · Hole ${row.hole_number}` });
+    for (const row of squad.texas_scramble_hole_scores ?? []) {
+      if (row.id && row.squad_id === squad.id) entries.push({ type: SCRAMBLE, row, players, label: `${squad.label} · Hole ${row.hole_number}`,
+        cardId: `squad:${squad.id}`, cardLabel: squad.label });
     }
   }
   for (const segment of match.match_segments ?? []) {
     if (segment.match_id !== match.id || segment.entry_mode !== 'hole_outcomes') continue;
     for (const row of segment.match_hole_outcomes ?? []) {
-      if (row.segment_id === segment.id) entries.push({ type: OUTCOME, row, label: `Hole ${row.hole_number} · Holes ${segment.start_hole}–${segment.end_hole}` });
+      if (row.id && row.segment_id === segment.id) entries.push({ type: OUTCOME, row, label: `Hole ${row.hole_number} · Holes ${segment.start_hole}–${segment.end_hole}`,
+        cardId: `segment:${segment.id}`, cardLabel: `Hole winners · Holes ${segment.start_hole}–${segment.end_hole}` });
     }
   }
   return entries.sort((a, b) => a.row.hole_number - b.row.hole_number || a.label.localeCompare(b.label));
