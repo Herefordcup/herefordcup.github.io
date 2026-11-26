@@ -163,7 +163,7 @@ test('Record Foursomes result is available only for a genuine manual Foursomes s
     export const getCurrentSession = async () => ({user: {id: ${JSON.stringify(f.admin)}}}),
       loadPlayerData = async () => ({profile: {role:'admin'}, memberships: []}), loadMatchResultAudits = async () => [], loadTeamCorrectionAudits = async () => [],
       loadAdminData = async () => ({matches:${JSON.stringify(matches)},tournaments:[],memberships:[],courses:[],rules:[],settings:[],rounds:[],scrambleSessions:[],legacyEditions:[],commentaries:[]});`);
-  await page.goto(`${origin}/admin.html`);
+  await page.goto(`${origin}/admin.html?tool=scorecards`);
   await expect(page.locator('#adminContent')).toBeVisible();
   const button = page.locator('#resultFinalizationForm button[type="submit"]');
   await page.locator('#resultMatch').selectOption(manual.id);

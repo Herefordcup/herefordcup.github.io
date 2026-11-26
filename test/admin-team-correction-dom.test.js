@@ -90,7 +90,8 @@ async function openAdmin(t, data = organizerData(), overrides = {}, probeEditor 
     const contentType = pathname.endsWith('.js') ? 'text/javascript' : pathname.endsWith('.css') ? 'text/css' : 'text/html';
     return route.fulfill({ contentType, body: await readFile(new URL(pathname.slice(1), root)) });
   });
-  await page.goto(`${origin}/admin.html`);
+  // These tests exercise the scorecard itself, including its durable direct link.
+  await page.goto(`${origin}/admin.html?tool=scorecards`);
   await expect(page.locator('#adminContent')).toBeVisible();
   return { page, calls };
 }
@@ -111,6 +112,26 @@ test('unselected Scorecards is one small picker at the top on phone and desktop'
   await expect(panel.getByLabel('Scorecards', { exact: true })).toHaveValue('');
   await expect(panel.locator('button:visible, summary:visible, h1:visible, h2:visible')).toHaveCount(0);
   assert.equal(calls.some(([n]) => ['loadMatchResultAudits', 'loadTeamCorrectionAudits', 'loadCorrectionMatch'].includes(n)), false);
+});
+
+test('browser Back does not move a still-open correction to another workspace or discard its draft', async t => {
+  const { page, calls } = await openAdmin(t);
+  await page.locator('#adminBack').click();
+  const scorecards = page.getByRole('navigation', { name: 'Admin sections' }).getByRole('link', { name: 'Scorecards', exact: true });
+  await scorecards.click();
+  await page.selectOption('#resultMatch', 'blue');
+  await page.locator('button[data-entry-id="blue-squad-hole-2"]').click();
+  const sheet = page.locator('#holeEditDialog');
+  await expect(sheet).toBeVisible();
+  await sheet.locator('#holeEditReason').fill('Unsaved card note');
+  await page.goBack();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(page.locator('#adminContent')).toHaveAttribute('data-admin-route', 'scorecards', { timeout: 900 });
+  await expect(sheet.locator('#holeEditReason')).toHaveValue('Unsaved card note');
+  await sheet.locator('#holeEditCancel').click();
+  await expect(scorecards).toBeVisible();
+  await expect(scorecards).toBeFocused();
+  assert.equal(calls.some(([name]) => name === 'correctTeamScoreEntry'), false);
 });
 
 test('selecting a mixed scorecard shows one bounded card, exact submitted rows and scoped history', async t => {

@@ -158,7 +158,7 @@ test('[A1][A2][R1][R2][R3][C1][S1][S2][F1][F2][M1] pre-completion browser matrix
   page.on('pageerror', error => browserErrors.push(error.message));
   await page.goto('/admin.html');
   await expect(page.locator('#adminContent')).toBeVisible({ timeout: 20_000 });
-  await selectAdminTool(page, 'members');
+  await selectAdminTool(page, 'roster');
   await expect(page.locator('#membershipManagement')).toBeVisible();
 
   await selectAdminTool(page, 'legacy');

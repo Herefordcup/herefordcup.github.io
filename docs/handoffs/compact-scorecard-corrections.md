@@ -2,7 +2,8 @@
 
 ## User flow
 
-- In Admin, show a single workspace at a time. Scorecards opens without a blank result panel, audit log or manual action. The other organizer forms stay mounted, so switching tools preserves an unfinished draft. Bookmarks can select a tool with `admin.html?tool=scorecards` (or `members`, `matches`, `scramble`, `completion`, `rules`, `commentary`, `legacy`, `courses`, `all`).
+- Admin opens on four sections: **Scorecards**, **Players & teams**, **Rounds & pairings**, and **Tournament tools**. Select a section to see its tasks, not a page of stacked forms. Scorecards opens the compact match picker directly. Players separates membership requests from the active roster; rounds contains match planning, Texas Scramble lineups, and courses/tees; tournament tools contains rules, commentary, Past Trips, and explicit tournament completion.
+- Section links, the Back link, and browser Back/Forward switch within the same page, keeping unsaved forms and selections mounted. `admin.html?tool=scorecards` remains a direct scoring shortcut, and existing `?tool=` bookmarks and the optional All tools view remain supported. Navigation is inside the existing Admin gate and changes no scoring settings or privileges.
 - Pick a match and, only if needed, a player's/shared card. Tap **Edit** next to a submitted hole, change the score/driver/winner, give a reason and save. Ordinary players retain the existing entry and lock behavior. An organizer looking at their own assigned card in Play uses the same contextual dialog, not another Admin page.
 - Open **View change history** to inspect the selected match. A genuine unfinished manual Foursomes result remains available on its own match. Less-common legacy correction options remain behind **More options**; the exact-row editor never inserts or deletes a score. Published editions remain read-only.
 - Tournament formats, team names and point rules are unchanged.

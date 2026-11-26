@@ -4,8 +4,17 @@ import { expect, test } from '@playwright/test';
 // rows from the disposable runner; UI toast text alone never counts as a pass.
 const admin = () => ({ name: 'Disposable E2E Admin', email: process.env.E2E_USER_EMAIL });
 export async function selectAdminTool(page, tool) {
+  const root = page.locator('#adminContent');
   const chooser = page.locator('#adminTool');
-  await chooser.selectOption(tool);
+  await expect(page.locator('#adminWorkspaceNav')).toBeVisible();
+  if (await chooser.isHidden()) {
+    if ((await root.getAttribute('data-admin-route')) !== 'home') await page.locator('#adminBack').click();
+    const links = page.locator('#adminSectionLinks');
+    const section = { matches: 'rounds', scramble: 'rounds', courses: 'rounds', requests: 'players', roster: 'players',
+      completion: 'tournament', legacy: 'tournament', rules: 'tournament', commentary: 'tournament' }[tool];
+    if (section) await links.locator(`a[data-admin-route="${section}"]`).click();
+    await links.locator(`a[data-admin-route="${tool}"]`).click();
+  } else if ((await chooser.inputValue()) !== tool) await chooser.selectOption(tool);
   await expect(chooser).toHaveValue(tool);
 }
 async function goAdmin(page, tool) {
@@ -204,9 +213,34 @@ async function enterOutcome(page, hole, winner) {
 }
 
 async function expectCompactScorecards(page, squad) {
-  await goAdmin(page); // Check the default without selecting a tool or scrolling first.
+  await goAdmin(page);
   const chooser = page.locator('#adminTool');
   const picker = page.locator('#resultMatch');
+  const home = page.getByRole('navigation', { name: 'Admin sections' });
+  const titles = ['Scorecards', 'Players & teams', 'Rounds & pairings', 'Tournament tools'];
+  await expect(home.locator('a strong')).toHaveText(titles);
+  for (const title of titles) await expect(home.getByRole('link', { name: title, exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(chooser).toBeHidden();
+  await expect(picker).toBeHidden();
+  await expect(page.locator('#adminContent form:visible')).toHaveCount(0);
+
+  // Change only an unsaved input. Use the real navigation, not a reload or test-only route.
+  await home.getByRole('link', { name: 'Tournament tools', exact: true }).click();
+  const rules = page.getByRole('link', { name: 'Playing rules', exact: true });
+  await rules.click();
+  const titleField = page.locator('#ruleForm [name=title]');
+  const initialTitle = await titleField.inputValue();
+  await titleField.fill('Disposable unsaved navigation check');
+  await page.goBack();
+  await expect(rules).toBeFocused();
+  await page.goForward();
+  await expect(titleField).toBeVisible();
+  await expect(titleField).toHaveValue('Disposable unsaved navigation check');
+  await titleField.fill(initialTitle);
+  await page.locator('#adminBack').click();
+  await expect(rules).toBeVisible();
+  await page.locator('#adminBack').click();
+  await home.getByRole('link', { name: 'Scorecards', exact: true }).click();
   await expect(chooser).toBeVisible();
   await expect(chooser).toHaveValue('scorecards');
   await expect(picker.locator(`option[value="${squad.matchId}"]`)).toHaveCount(1);
@@ -218,7 +252,7 @@ async function expectCompactScorecards(page, squad) {
     '#scorecardMore', '#openScoreCorrection', '#holeEditDialog']) await expect(page.locator(selector)).toBeHidden();
   await expect(page.getByRole('button', { name: 'Record Foursomes result' })).toHaveCount(0);
   await expect(page.locator('button[data-edit-hole]:visible')).toHaveCount(0);
-  await selectAdminTool(page, 'members');
+  await selectAdminTool(page, 'roster');
   await expect(page.locator('#membershipManagement')).toBeVisible();
   await expect(picker).toBeHidden();
   await selectAdminTool(page, 'scorecards');
@@ -259,7 +293,7 @@ export async function verifyOrganizerCorrections({ browser, baseURL, signIn, fix
     expect(unplayed.segment).toMatchObject({ match_id: m.id, entry_mode: 'hole_outcomes', point_value: 1 });
     expect(unplayed.outcomes).toEqual([]);
     await Promise.all([signIn(panel, admin()), signIn(playerPage,member)]);
-    await test.step('Admin opens on just the compact scorecard picker on phone and desktop', async () => {
+    await test.step('Four-section Admin home fits on phone and desktop; Back retains drafts and Scorecards opens its picker', async () => {
       for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
         const fresh = await adminCtx.newPage();
         await fresh.setViewportSize(viewport);

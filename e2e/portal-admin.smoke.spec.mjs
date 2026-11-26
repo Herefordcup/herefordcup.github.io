@@ -32,8 +32,10 @@ test('controlled administrator can sign in, update disposable profile data, and 
   await expect(page.locator('#profileSetupMessage')).toHaveText('Profile saved.');
   await expect(page.locator('#homeHandicap')).toHaveText('10.4');
 
-  await page.goto('/admin.html');
+  await expect(page.locator('#adminLink')).toHaveAttribute('href', 'admin.html');
+  await page.locator('#adminLink').click();
   await expect(page.locator('#adminContent')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('navigation', { name: 'Admin sections' }).getByRole('link')).toHaveCount(4);
   await selectAdminTool(page, 'completion');
   await expect(page.locator('#tournamentCompletionForm')).toBeVisible();
   const completionOption = page.locator('#completionTournament option').filter({ hasText: '2099' });
@@ -41,7 +43,7 @@ test('controlled administrator can sign in, update disposable profile data, and 
   const completionOptionText = await completionOption.textContent();
   const alreadyCompleted = completionOptionText?.includes('complete') ?? false;
   const tournamentId = await completionOption.getAttribute('value');
-  await selectAdminTool(page, 'members');
+  await selectAdminTool(page, 'roster');
   await expect(page.locator('#membershipManagement')).toBeVisible();
   await expect(page.locator('#activeMemberSearch')).toBeVisible();
   if (!alreadyCompleted) {
