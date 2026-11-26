@@ -50,12 +50,13 @@ function organizerData() {
 
 // The actual page, CSS and event handlers run in Chrome. Only the Supabase boundary is replaced;
 // requests cannot reach a real site or database, and each test gets its own organizer state.
-async function openAdmin(t, data = organizerData(), overrides = {}) {
+async function openAdmin(t, data = organizerData(), overrides = {}, probeEditor = false) {
   const calls = [];
   const api = {
     getCurrentSession: () => ({ user: { id: 'organizer' } }),
     loadPlayerData: () => ({ profile: { role: 'admin' }, memberships: [] }),
     loadAdminData: () => data,
+    readRounds: (_table, _fields, _column, id) => data.rounds.filter(round => round.match_id === id),
     loadMembershipRosterData: () => ({ tournaments: data.tournaments, memberships: data.memberships }),
     loadMatchResultAudits: () => [], loadTeamCorrectionAudits: () => [],
     loadCorrectionMatch: id => ({ ...data.matches.find(match => match.id === id),
@@ -73,7 +74,18 @@ async function openAdmin(t, data = organizerData(), overrides = {}) {
   await page.route('**/*', async route => {
     const { origin: host, pathname } = new URL(route.request().url());
     if (host !== origin) return route.abort();
-    if (pathname === '/src/supabase.js') return route.fulfill({ contentType: 'text/javascript', body: apiStub });
+    if (pathname === '/src/scorecard-hole-editor.js' && probeEditor) {
+      // Test Admin's half of the shared editor contract; the modal itself has its own tests.
+      return route.fulfill({ contentType: 'text/javascript', body: `export const createHoleEditor = callbacks => ({
+        open(target, trigger) { window.editorOpens = (window.editorOpens || 0) + 1; window.holeProbe = { callbacks, target, trigger }; }
+      });` });
+    }
+    if (pathname === '/src/supabase.js') {
+      const body = apiStub.replace(/^export const getSupabase = .*$/m, `export const getSupabase = async () => ({
+        from: table => ({select: fields => ({eq: async (column, id) => ({data: await window.organizerTestApi('readRounds', table, fields, column, id)})})})
+      });`);
+      return route.fulfill({ contentType: 'text/javascript', body });
+    }
     if (!/^\/(admin\.html|[\w-]+\.css|src\/[\w-]+\.js)$/.test(pathname)) return route.abort();
     const contentType = pathname.endsWith('.js') ? 'text/javascript' : pathname.endsWith('.css') ? 'text/css' : 'text/html';
     return route.fulfill({ contentType, body: await readFile(new URL(pathname.slice(1), root)) });
@@ -83,14 +95,226 @@ async function openAdmin(t, data = organizerData(), overrides = {}) {
   return { page, calls };
 }
 
+test('unselected Scorecards is one small picker at the top on phone and desktop', async t => {
+  const { page, calls } = await openAdmin(t);
+  const panel = page.locator('#resultMatch').locator('xpath=ancestor::section[1]');
+  const measurements = [];
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    measurements.push(await panel.evaluate(el => {
+      const { width, height, top } = el.getBoundingClientRect();
+      return { viewport: innerWidth, width, height, top, pageWidth: document.documentElement.scrollWidth };
+    }));
+  }
+  t.diagnostic(JSON.stringify(measurements));
+  assert.ok(measurements.every(m => m.height <= 104 && m.top < 420 && m.pageWidth <= m.viewport));
+  await expect(panel.getByLabel('Scorecards', { exact: true })).toHaveValue('');
+  await expect(panel.locator('button:visible, summary:visible, h1:visible, h2:visible')).toHaveCount(0);
+  assert.equal(calls.some(([n]) => ['loadMatchResultAudits', 'loadTeamCorrectionAudits', 'loadCorrectionMatch'].includes(n)), false);
+});
+
+test('selecting a mixed scorecard shows one bounded card, exact submitted rows and scoped history', async t => {
+  const data = organizerData();
+  const match = outcomeMatch('mixed');
+  match.match_segments.push({ ...makeSegment('mixed', 'singles'), id: 'back-nine', start_hole: 10, end_hole: 18 });
+  data.matches.push(match);
+  data.rounds = ['alpha', 'beta'].map(id => ({ id, match_id: 'mixed', profiles: { display_name: `${id} <scorer>` },
+    scores: Array.from({ length: 18 }, (_, n) => ({ id: `${id}-${n + 1}`, round_id: id, hole_number: n + 1, gross_score: 5 })) }));
+  const { page } = await openAdmin(t, data);
+  await page.setViewportSize({ width: 390, height: 650 });
+  const select = page.locator('#resultMatch');
+  const rows = page.locator('#scorecardHoles');
+  const history = page.locator('#scorecardHistory');
+  await select.selectOption('mixed');
+  await expect(page.locator('#scorecardCard')).toBeVisible();
+  await page.locator('#scorecardCard').selectOption('round:beta');
+  const hole = rows.locator('button[data-edit-hole][data-entry-id="beta-10"][data-round-id="beta"][data-hole="10"]');
+  await expect(hole).toHaveText('Edit');
+  await expect(rows.locator('button[data-edit-hole]')).toHaveCount(18);
+  assert.ok(await rows.evaluate(el => el.clientHeight <= 360 && el.scrollHeight > el.clientHeight));
+  assert.equal(await rows.locator('scorer').count(), 0);
+  await page.locator('#scorecardCard').selectOption('segment:mixed-segment');
+  await expect(rows.locator('button[data-entry-id="mixed-first"]').locator('..')).toContainText('White');
+  await expect(rows.locator('button[data-edit-hole]')).toHaveCount(2);
+  await expect(history).not.toHaveAttribute('open', '');
+  await history.getByText('View change history', { exact: true }).click();
+  await expect(page.locator('#teamCorrectionHistory')).toBeVisible();
+  await select.selectOption('white');
+  await expect(history).not.toHaveAttribute('open', '');
+  await expect(rows.locator('button[data-entry-id="white-squad-hole-2"]').locator('..')).toContainText('Gross 4 · tee shot: Player wren');
+  await expect(rows).not.toContainText('alpha');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await select.selectOption('');
+  await expect(history).toBeHidden();
+  await expect(rows.locator('button')).toHaveCount(0);
+});
+
+test('row Edit opens the immutable individual target and rereads its match, scores, recap and audit without replacing another draft', async t => {
+  const data = organizerData();
+  const match = makeMatch('singles', 'singles');
+  match.status = match.match_segments[0].status = 'final';
+  Object.assign(match.match_segments[0], { differential: 1, holes_played: 9 });
+  data.matches.push(match);
+  data.settings.push({ tournament_id: 'cup', enabled: true });
+  const round = { id: 'round', match_id: match.id, profiles: { display_name: 'Jordan' }, scores: [
+    { id: 'immutable-4', round_id: 'round', hole_number: 4, gross_score: 5 },
+    { id: 'immutable-5', round_id: 'round', hole_number: 5, gross_score: 6 },
+  ] };
+  data.rounds.push(round);
+  const commentary = { id: 'recap', status: 'approved', commentary: 'Initial recap', matches: { name: 'Other match' } };
+  data.commentaries.push(commentary);
+  const { page, calls } = await openAdmin(t, data, {
+    correctHoleScore: () => {
+      round.scores[0].gross_score = 3; // A later correction already superseded this RPC response.
+      match.match_segments[0].differential = -1;
+      return { score: { ...round.scores[0], gross_score: 4 }, audit: { action: 'updated' } };
+    },
+    readRounds: (table, fields, column, id) => { assert.deepEqual([table, column, id], ['rounds', 'match_id', match.id]); return [round]; },
+    generateMatchCommentary: () => ({ ...commentary, id: 'saved-recap', commentary: 'Regenerated recap', matches: { name: 'Match singles' } }),
+  }, true);
+  await page.locator('#ruleForm [name=title]').evaluate(el => { el.value = 'Unpublished rule'; });
+  await page.locator('#commentaryApprovalList').getByText('Edit', { exact: true }).evaluate(el => el.click());
+  await page.locator('#commentaryApprovalList textarea').evaluate(el => { el.value = 'Private recap draft'; });
+  await page.locator('#resultMatch').selectOption(match.id);
+  const button = page.locator('[data-entry-id="immutable-4"][data-round-id="round"][data-hole="4"]');
+  await expect(page.locator('#scorecardCaption')).toBeVisible();
+  await expect(page.locator('#scorecardCaption')).toHaveText('Jordan');
+  await button.evaluate(el => { el.click(); el.click(); });
+  await expect.poll(() => page.evaluate(() => window.editorOpens)).toBe(1);
+  const [target, allowed] = await page.evaluate(() => [holeProbe.target, holeProbe.callbacks.canEdit(holeProbe.target)]);
+  assert.deepEqual([target.kind, target.matchId, target.roundId, target.row.id, target.row.gross_score, allowed],
+    ['individual', 'singles', 'round', 'immutable-4', 5, true]);
+  await page.evaluate(async () => {
+    const { target, callbacks } = holeProbe;
+    const result = await callbacks.correctHoleScore({ roundId: target.roundId, holeNumber: target.row.hole_number, grossScore: 4, reason: 'Checked card' });
+    const warning = await callbacks.onSaved(target, result);
+    callbacks.notify(`Hole 4 corrected.${warning ? ' ' + warning : ''}`, Boolean(warning), target);
+  });
+  await expect(button.locator('..')).toContainText('Gross 3');
+  await expect(page.locator('[data-entry-id="immutable-5"]').locator('..')).toContainText('Gross 6');
+  await expect(page.locator('#resultSegmentRows')).toContainText('White wins 1 Up');
+  await expect(page.locator('#resultMessage')).toHaveText('Hole 4 corrected.');
+  await expect(page.locator('#ruleForm [name=title]')).toHaveValue('Unpublished rule');
+  await expect(page.getByLabel('Edit commentary for Other match')).toHaveValue('Private recap draft');
+  await expect(page.getByLabel('Edit commentary for Match singles')).toHaveValue('Regenerated recap');
+  assert.deepEqual(calls.filter(([n]) => n === 'generateMatchCommentary'), [['generateMatchCommentary', match.id, { regenerate: true }]]);
+  assert.equal(calls.filter(([n]) => n === 'loadMatchResultAudits').length, 1);
+  assert.equal(await page.evaluate(() => holeProbe.callbacks.canEdit(holeProbe.target)), false, 'old snapshot no longer editable');
+});
+
+test('final manual segments are read-only, use text labels and cannot submit an outcome-only match', async t => {
+  const data = organizerData();
+  const match = makeMatch('finished-manual', 'foursomes');
+  Object.assign(match.match_segments[0], { status: 'final', differential: 1, holes_played: 9, scoring_mode: '<b>gross</b>' });
+  data.matches.push(match, outcomeMatch('winners'));
+  const { page, calls } = await openAdmin(t, data);
+  await page.locator('#resultMatch').selectOption(match.id);
+  await expect(page.locator('#resultFinalizationForm button[type=submit]')).toBeHidden();
+  await expect(page.locator('#resultSegmentRows input:visible')).toHaveCount(0);
+  await expect(page.locator('#resultSegmentRows b')).toHaveCount(0);
+  await expect(page.locator('#resultSegmentRows')).toContainText('Blue wins 1 Up');
+  await page.locator('#resultMatch').selectOption('winners');
+  await page.locator('#resultFinalizationForm').evaluate(form => form.requestSubmit());
+  assert.equal(calls.some(([n]) => n === 'finalizeMatchResults'), false);
+});
+
+test('submitted shared edits bind their own driver or winner and stop when tournament authority changes', async t => {
+  const data = organizerData();
+  data.matches.push(outcomeMatch('winners'));
+  data.memberships.push({ tournament_id: 'cup', user_id: 'organizer', status: 'active', role: 'admin' });
+  const { page, calls } = await openAdmin(t, data, {
+    loadPlayerData: () => ({ profile: { role: 'player' }, memberships: data.memberships }),
+    correctTeamScoreEntry: ({ targetId, grossScore, teeShotPlayerId }) => {
+      const row = data.scrambleSessions[0].texas_scramble_squads[1].texas_scramble_hole_scores.find(h => h.id === targetId);
+      return Object.assign(row, { gross_score: grossScore, tee_shot_player_id: teeShotPlayerId });
+    },
+  }, true);
+  const picker = page.locator('#resultMatch');
+  await picker.selectOption('white');
+  const button = page.locator('[data-entry-id="white-squad-hole-7"]');
+  await button.click();
+  await expect.poll(() => page.evaluate(() => window.editorOpens)).toBe(1);
+  const snap = await page.evaluate(() => holeProbe.target);
+  assert.deepEqual(Object.keys(snap.row).sort(), ['gross_score', 'hole_number', 'id', 'tee_shot_player_id']);
+  assert.deepEqual([snap.kind, snap.matchId, snap.row.id, snap.players], ['texas_scramble_hole', 'white', 'white-squad-hole-7',
+    [{ id: 'wren', name: 'Player wren' }, { id: 'wren-partner', name: 'Player wren-partner' }]]);
+  await page.evaluate(async () => {
+    const { target, callbacks } = holeProbe;
+    const saved = await callbacks.correctTeamScoreEntry({ targetType: target.kind, targetId: target.row.id, grossScore: 6, teeShotPlayerId: 'wren-partner', reason: 'Verified' });
+    await callbacks.onSaved(target, saved);
+    callbacks.notify('Hole 7 corrected.', false, target);
+  });
+  await expect(button.locator('..')).toContainText('Gross 6 · tee shot: Player wren-partner');
+  assert.equal(await page.evaluate(() => holeProbe.trigger.isConnected), true, 'focus return target survives readback');
+  await picker.selectOption('winners');
+  assert.equal(await page.evaluate(() => holeProbe.callbacks.canEdit(holeProbe.target)), false);
+  await assert.rejects(page.evaluate(() => holeProbe.callbacks.correctTeamScoreEntry({ targetType: holeProbe.target.kind,
+    targetId: holeProbe.target.row.id, grossScore: 9, teeShotPlayerId: 'wren', reason: 'Stale tab' })), /scorecard|submitted hole/i);
+  await page.locator('[data-entry-id="winners-second"]').click();
+  const outcome = await page.evaluate(() => holeProbe.target);
+  assert.deepEqual([outcome.kind, outcome.matchId, outcome.row.id, outcome.row.winner], ['match_hole_outcome', 'winners', 'winners-second', 'halved']);
+  data.memberships[0].role = 'player';
+  await page.locator('#refreshMemberships').evaluate(el => el.click());
+  await expect(page.locator('#membershipMessage')).toContainText('requests refreshed');
+  assert.equal(await page.evaluate(() => holeProbe.callbacks.canEdit(holeProbe.target)), false);
+  await expect(page.locator('button[data-edit-hole]:visible')).toHaveCount(0);
+  await expect(page.locator('#scorecardHistory')).toBeHidden();
+  assert.equal(calls.filter(([name]) => name === 'correctTeamScoreEntry').length, 1);
+});
+
+test('manual Foursomes submit runs once and does not reset another form or restore a previous match', async t => {
+  const data = organizerData();
+  const manual = makeMatch('manual', 'foursomes');
+  data.matches.push(manual);
+  const gate = deferred();
+  const { page, calls } = await openAdmin(t, data, { finalizeMatchResults: () => gate.promise });
+  await page.locator('#resultMatch').selectOption('manual');
+  await page.locator('#ruleForm [name=title]').evaluate(el => { el.value = 'Unpublished rule'; });
+  await page.locator('#resultSegmentRows [name=differential]').fill('2');
+  await page.locator('#resultFinalizationForm').evaluate(form => { form.requestSubmit(); form.requestSubmit(); });
+  await page.locator('#resultMatch').selectOption('blue');
+  await expect(page.locator('#scorecardHoles [data-entry-id="blue-squad-hole-2"]')).toBeVisible();
+  gate.resolve();
+  await expect(page.locator('#commentaryMatch option[value=manual]')).toHaveCount(1);
+  await expect(page.locator('#resultMessage')).not.toContainText('Match finalized');
+  await expect(page.locator('#ruleForm [name=title]')).toHaveValue('Unpublished rule');
+  assert.equal(calls.filter(([n]) => n === 'finalizeMatchResults').length, 1);
+});
+
+test('a corrected shared hole preserves an unfinished manual segment draft in the same match', async t => {
+  const data = organizerData();
+  const match = outcomeMatch('mixed');
+  match.match_segments.push({ ...makeSegment('mixed', 'foursomes'), id: 'mixed-back', start_hole: 10, end_hole: 18 });
+  data.matches.push(match);
+  const { page } = await openAdmin(t, data, { correctTeamScoreEntry: ({ winner }) => Object.assign(match.match_segments[0].match_hole_outcomes[0], { winner }) }, true);
+  await page.locator('#resultMatch').selectOption('mixed');
+  const differential = page.locator('[data-segment-id="mixed-back"] [name=differential]');
+  await differential.fill('3');
+  await page.locator('[data-entry-id="mixed-first"]').click();
+  await page.waitForFunction(() => Boolean(window.holeProbe));
+  await page.evaluate(async () => {
+    const { callbacks, target } = holeProbe;
+    const result = await callbacks.correctTeamScoreEntry({ targetType: target.kind, targetId: target.row.id, winner: 'halved', reason: 'Checked' });
+    await callbacks.onSaved(target, result);
+  });
+  await expect(differential).toHaveValue('3');
+  await expect(page.locator('[data-entry-id="mixed-first"]').locator('..')).toContainText('Halved');
+});
+
 function deferred() {
   let resolve;
   const promise = new Promise(done => { resolve = done; });
   return { promise, resolve };
 }
 
+async function reveal(page, id) {
+  const details = page.locator(id);
+  if (!await details.evaluate(el => el.open)) await details.locator('summary').click();
+}
+
 async function editMatch(page, matchId) {
   await page.locator('#resultMatch').selectOption(matchId);
+  await reveal(page, '#scorecardMore');
   await page.locator('#openScoreCorrection').click();
   await expect(page.locator('#scoreCorrectionDialog')).toBeVisible();
 }
@@ -200,6 +424,7 @@ test('a scramble correction saves once, reloads the exact result and selected ho
   await expect(page.locator('#scoreCorrectionDialog')).not.toBeVisible();
   await expect(page.locator('#resultMatch')).toHaveValue('white');
   await expect(page.locator('#resultSegmentRows')).toContainText('White earns 3 Cup points');
+  await reveal(page, '#scorecardHistory');
   const history = page.locator('#teamCorrectionHistory');
   await expect(history).toContainText('Gross 4 · tee shot: Player wren → Gross 5 · tee shot: Player wren-partner');
   await expect(history).toContainText(reason);
@@ -267,6 +492,7 @@ test('a committed hole winner still reports success and the returned value when 
   await expect(page.locator('#resultMessage')).toContainText('Individual scorecards need review: Tee stroke indexes disagree');
   await expect(page.locator('#resultMessage')).toContainText('Score/result refresh failed: Scores offline');
   await expect(page.locator('#resultMessage')).toContainText('Team correction history refresh failed: Log offline');
+  await reveal(page, '#scorecardHistory');
   await expect(page.locator('#teamCorrectionHistory')).toContainText('Log offline');
   await expect(page.locator('#resultMatch')).toHaveValue('winner');
   assert.deepEqual(calls.filter(([name]) => name === 'correctTeamScoreEntry'), [['correctTeamScoreEntry', {
@@ -340,6 +566,7 @@ test('a rejected outcome correction stays editable, while a successful retry sho
   await expect(page.locator('#teamCorrectionWinner')).toHaveValue('cardinal');
   await expect(page.locator('#correctionReason')).toHaveValue('Scorer confirmed Blue');
   await submit.click();
+  await reveal(page, '#scorecardHistory');
   await expect(page.locator('#teamCorrectionHistory')).toContainText('White → Blue');
   await expect(page.locator('#teamCorrectionHistory')).toContainText('Scorer confirmed Blue');
   await expect(page.locator('#resultMessage')).toContainText('Team correction saved and audited.');
@@ -356,6 +583,7 @@ test('a late entry read cannot replace the selected match and an unsubmitted car
     },
   });
   await page.locator('#resultMatch').selectOption('blue');
+  await reveal(page, '#scorecardMore');
   await page.locator('#openScoreCorrection').click();
   await expect(page.locator('#resultMessage')).toHaveText('Loading submitted team entries…');
   await editMatch(page, 'white');

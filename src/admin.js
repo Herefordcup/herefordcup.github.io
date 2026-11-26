@@ -4,7 +4,8 @@ import { applyMemberCardVisibility, createMutationGate, easternDateTimeInput, ea
 import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
 import { deriveSegmentResult } from './match-results.js?v=compact-scorecard-1';
 import { formatMatchStatus } from './scoring.js';
-import { createCorrectionEditor, isSharedSegment, renderTeamCorrectionAudits, teamValue } from './team-correction-editor.js?v=compact-scorecard-1';
+import { createScorecardList, readScorecardRounds, sameSubmittedHole } from './admin-scorecard.js?v=compact-scorecard-1';
+import { createCorrectionEditor, isSharedSegment, renderTeamCorrectionAudits, submittedEntries, teamValue } from './team-correction-editor.js?v=compact-scorecard-1';
 import {
   completeTournamentArchive,
   correctHoleScore,
@@ -14,6 +15,7 @@ import {
   deleteLegacyPhoto,
   deleteLegacyResult,
   getCurrentSession,
+  getSupabase,
   generateMatchCommentary,
   finalizeMatchResults,
   loadAdminData,
@@ -72,6 +74,11 @@ const resultMatch = document.querySelector('#resultMatch');
 const resultSegmentRows = document.querySelector('#resultSegmentRows');
 const resultAuditHistory = document.querySelector('#resultTransitions');
 const teamCorrectionHistory = document.querySelector('#teamCorrectionHistory');
+const scorecardHistory = document.querySelector('#scorecardHistory');
+const scorecardMore = document.querySelector('#scorecardMore');
+const resultMessage = document.querySelector('#resultMessage');
+const scorecardList = createScorecardList(document.querySelector('#scorecardCard'), document.querySelector('#scorecardCaption'), document.querySelector('#scorecardHoles'),
+  (target, trigger) => openSelectedHole(target, trigger));
 const tournamentCompletionForm = document.querySelector('#tournamentCompletionForm');
 const completionTournament = document.querySelector('#completionTournament');
 const completionReadiness = document.querySelector('#completionReadiness');
@@ -106,6 +113,13 @@ let membershipRosterRefreshPromise;
 let correctionDialogTrigger;
 let correctionOpenRequest = 0;
 let teamHistoryRequest = 0;
+let resultHistoryRequest = 0;
+let scorecardView;
+let openedHole;
+let pendingHole;
+let holeEditor;
+let openingHole = false;
+const finalizingMatches = new Set();
 let savingCorrection = false;
 let globalAdministrator = false;
 
@@ -1050,6 +1064,7 @@ async function refreshMembershipRoster() {
     const freshData = await loadMembershipRosterData();
     adminData.tournaments = freshData.tournaments;
     adminData.memberships = freshData.memberships;
+    syncScorecardAccess();
     refreshSegmentPlayerOptions();
     renderMemberships();
     setMessage(membershipMessage, 'Membership requests refreshed.');
@@ -1159,6 +1174,7 @@ function populateResultMatchChoices() {
   );
   if ([...resultMatch.options].some(option => option.value === selectedResultMatchId)) {
     resultMatch.value = selectedResultMatchId;
+    syncScorecardAccess();
     return; // Keep the surviving match's result and correction drafts mounted.
   }
   if (scoreCorrectionDialog.hasAttribute('open') && correctionEditor.matchId === selectedResultMatchId) closeScoreCorrectionDialog();
@@ -1182,23 +1198,23 @@ function populateAdminChoices() {
     new Option('Select a finalized match', ''),
     ...adminData.matches.filter(match => match.status === 'final').map(match => new Option(match.name, match.id)),
   );
-  updateCorrectionAccess(adminData.matches.find(match => match.id === resultMatch.value));
   populateResultMatchChoices();
   populateLegacyChoices();
   renderTournamentCompletion();
 }
 
 function canAdministerMatch(match) {
-  return match && (globalAdministrator || adminData.memberships.some(member => member.tournament_id === match.tournament_id
+  return match && (globalAdministrator || match.tournament_id && adminData.memberships.some(member => member.tournament_id === match.tournament_id
     && member.user_id === session.user.id && member.status === 'active' && member.role === 'admin'));
 }
 
 function correctionRestriction(match) {
   if (!match) return '';
   if (!canAdministerMatch(match)) return 'Only an administrator of this tournament can correct its scores.';
+  if (!['scheduled', 'live', 'final'].includes(match.status)) return 'This match is closed to corrections.';
   if (!match.tournament_id) return ''; // A global administrator can still correct a pre-edition match.
-  const status = match.tournaments?.status ?? adminData.tournaments.find(item => item.id === match.tournament_id)?.status;
-  if (!['setup', 'open', 'live'].includes(status)
+  const status = adminData.tournaments.find(item => item.id === match.tournament_id)?.status;
+  if (!['setup', 'open', 'live'].includes(status) || (match.tournaments && !['setup', 'open', 'live'].includes(match.tournaments.status))
     || adminData.legacyEditions.some(edition => edition.source_tournament_id === match.tournament_id)) {
     return 'This tournament is closed to corrections. Submitted scores are read-only.';
   }
@@ -1206,10 +1222,27 @@ function correctionRestriction(match) {
 }
 
 function updateCorrectionAccess(match) {
-  const reason = correctionRestriction(match);
-  openScoreCorrection.disabled = Boolean(reason);
-  setMessage(document.querySelector('#resultMessage'), reason);
+  const reason = correctionRestriction(listedScorecardMatch()) || correctionRestriction(match);
+  if (scorecardView) scorecardView.restriction = reason;
+  openScoreCorrection.disabled = !match || Boolean(reason);
+  scorecardMore.hidden = openScoreCorrection.disabled;
+  document.querySelector('#selectedScorecard').hidden = !canAdministerMatch(match);
+  setMessage(resultMessage, reason);
   return reason;
+}
+
+function syncScorecardAccess() {
+  const view = scorecardView;
+  const match = listedScorecardMatch();
+  if (!view?.matchId || match?.id !== view.matchId) return;
+  if ((correctionRestriction(match) || correctionRestriction(view.detail)) !== view.restriction) {
+    resultMatch.dispatchEvent(new Event('change'));
+  } else if (view.listed !== match) {
+    // The planner replaced its snapshot; keep its and the manual result's drafts mounted.
+    view.listed = match;
+    renderSubmittedHoles();
+    if (match.match_segments?.some(isSharedSegment)) void loadSharedSnapshot(view);
+  }
 }
 
 function populateCorrectionRounds(matchId) {
@@ -1232,8 +1265,13 @@ function hydrateCommentarySettings() {
   commentarySettingsForm.elements.maxCharacters.value = settings?.max_characters ?? 600;
 }
 
+function isManualFoursomes(segment) {
+  return segment.format === 'foursomes' && (segment.entry_mode == null || segment.entry_mode === 'individual_scores');
+}
+
 function requiresManualTeamResult(match) {
-  return match?.match_segments?.some(segment => segment.format === 'foursomes' && !isSharedSegment(segment)) ?? false;
+  return ['scheduled', 'live'].includes(match?.status)
+    && match.match_segments?.some(segment => isManualFoursomes(segment) && segment.status !== 'final');
 }
 
 function resultSnapshotLabel(audit, prefix, segment) {
@@ -1309,8 +1347,9 @@ function renderResultAuditHistory() {
 }
 
 async function refreshResultAuditHistory(matchId) {
+  const request = ++resultHistoryRequest;
   const latest = await loadMatchResultAudits(matchId);
-  if (resultMatch.value !== matchId) return;
+  if (request !== resultHistoryRequest || resultMatch.value !== matchId || !canAdministerMatch(listedScorecardMatch())) return;
   adminData.resultAudits = [
     ...(adminData.resultAudits ?? []).filter(audit => audit.match_id !== matchId),
     ...latest,
@@ -1340,47 +1379,72 @@ async function refreshTeamCorrectionHistory(match) {
 }
 
 function renderResultSegments() {
-  resultSegmentRows.replaceChildren();
-  const match = adminData.matches.find(item => item.id === resultMatch.value);
-  renderResultAuditHistory();
-  let canFinalize = Boolean(match?.match_segments?.length);
+  const match = currentScorecardMatch();
+  const drafts = scorecardView?.manualDrafts;
+  const manual = requiresManualTeamResult(match) && !correctionRestriction(match) && !correctionRestriction(listedScorecardMatch());
+  const rows = [];
+  let ready = Boolean(match?.match_segments?.length);
   for (const segment of match?.match_segments ?? []) {
     const card = document.createElement('fieldset');
-    card.className = 'segment-card';
+    card.className = 'scorecard-result';
     card.dataset.segmentId = segment.id;
+    const legend = document.createElement('legend');
+    legend.textContent = `Holes ${segment.start_hole}–${segment.end_hole} · ${segment.format} · ${segment.scoring_mode} · ${segment.point_value} pts`;
+    card.append(legend);
+    const total = segment.end_hole - segment.start_hole + 1;
     const derived = deriveSegmentResult({ segment, rounds: adminData.rounds });
-    const legend = `<legend>Holes ${segment.start_hole}–${segment.end_hole} · ${segment.format} · ${segment.scoring_mode} · ${segment.point_value} pts</legend>`;
-    if (derived.mode === 'automatic') {
-      card.dataset.resultReady = 'true';
-      card.innerHTML = `${legend}
-        <p><strong>${derived.label}</strong></p>
-        <p>${isSharedSegment(segment) ? 'Official result from the submitted shared scorecard.' : 'Calculated automatically from submitted hole-by-hole scores.'}</p>
-        <input name="differential" type="hidden" value="${derived.differential}">
-        <input name="holesPlayed" type="hidden" value="${derived.holes_played}">`;
-    } else if (derived.mode === 'waiting') {
-      card.dataset.resultReady = 'false';
-      canFinalize = false;
-      card.innerHTML = `${legend}<p><strong>${isSharedSegment(segment) ? 'Waiting for shared entries' : 'Waiting for completed scorecards'}</strong></p><p>${derived.reason}</p>`;
+    const recorded = segment.status === 'final';
+    const needsInput = !recorded && isManualFoursomes(segment) && manual;
+    const settled = recorded || derived.mode === 'automatic';
+    card.dataset.resultReady = String(Boolean(settled || needsInput));
+    if (!settled && !needsInput) ready = false;
+    const title = document.createElement('strong');
+    const note = document.createElement('small');
+    if (settled) {
+      const differential = recorded ? Number(segment.differential) : derived.differential;
+      const holesPlayed = recorded ? Number(segment.holes_played) : derived.holes_played;
+      title.textContent = recorded && segment.format !== 'scramble' ? formatMatchStatus({ differential, holesPlayed }, total) : derived.label;
+      note.textContent = isManualFoursomes(segment) ? 'Recorded Foursomes result.' : isSharedSegment(segment)
+        ? 'Official result from the submitted shared scorecard.' : 'Calculated automatically from submitted hole-by-hole scores.';
+      for (const [name, value] of [['differential', differential], ['holesPlayed', holesPlayed]]) {
+        const input = document.createElement('input');
+        Object.assign(input, { name, value, type: 'hidden' });
+        card.append(input);
+      }
+    } else if (needsInput) {
+      const fields = document.createElement('div');
+      fields.className = 'scorecard-manual';
+      for (const [label, name, min, value] of [ ['Match-play differential (Blue + / White −)', 'differential', -total, segment.differential ?? 0],
+        ['Holes played', 'holesPlayed', 1, segment.holes_played || total] ]) {
+        const wrapper = document.createElement('label');
+        wrapper.textContent = label;
+        const input = document.createElement('input');
+        const key = `${segment.id}:${name}`;
+        Object.assign(input, { name, type: 'number', required: true, min, max: total, value: drafts?.get(key) ?? value });
+        input.addEventListener('input', () => drafts.set(key, input.value));
+        wrapper.append(input);
+        fields.append(wrapper);
+      }
+      card.append(fields);
+      note.textContent = derived.reason;
     } else {
-      card.dataset.resultReady = 'true';
-      card.innerHTML = `${legend}
-        <div class="segment-fields">
-          <label>Match-play differential (Blue + / White −)<input name="differential" type="number" min="-${segment.end_hole - segment.start_hole + 1}" max="${segment.end_hole - segment.start_hole + 1}" value="${segment.differential ?? 0}" required></label>
-          <label>Holes played<input name="holesPlayed" type="number" min="1" max="${segment.end_hole - segment.start_hole + 1}" value="${segment.holes_played || segment.end_hole - segment.start_hole + 1}" required></label>
-          <label>Result status<input value="Final" disabled></label>
-        </div><p>${derived.reason} Positive means Blue is up; negative means White; zero means halved.</p>`;
+      title.textContent = isSharedSegment(segment) ? 'Waiting for shared entries' : 'Waiting for completed scorecards';
+      note.textContent = derived.reason;
     }
-    resultSegmentRows.append(card);
+    card.append(title, ' ', note);
+    rows.push(card);
   }
+  resultSegmentRows.replaceChildren(...rows);
   const submitButton = resultFinalizationForm.querySelector('button[type="submit"]');
-  const manualTeamResult = requiresManualTeamResult(match) && match?.status !== 'final' && !correctionRestriction(match);
-  submitButton.hidden = !manualTeamResult;
-  submitButton.disabled = !manualTeamResult || !canFinalize;
+  submitButton.hidden = !manual;
+  submitButton.disabled = !manual || !ready || finalizingMatches.has(match?.id);
 }
 
-function renderCommentaryApprovals() {
+function renderCommentaryApprovals(changedId) {
   const container = document.querySelector('#commentaryApprovalList');
-  container.replaceChildren();
+  // A score edit can regenerate one recap while an unrelated draft is still mounted.
+  if (!changedId) container.replaceChildren();
+  const previous = changedId && [...container.children].find(el => el.dataset.commentaryId === changedId);
   const manageable = adminData.commentaries.filter(commentary => ['draft', 'approved'].includes(commentary.status));
   if (!manageable.length) {
     const empty = document.createElement('p');
@@ -1390,7 +1454,9 @@ function renderCommentaryApprovals() {
     return;
   }
   for (const commentary of manageable) {
+    if (changedId && commentary.id !== changedId) continue;
     const card = document.createElement('article');
+    card.dataset.commentaryId = commentary.id;
     card.className = 'approval-card';
     const title = document.createElement('strong');
     title.textContent = `${commentary.matches?.name || 'Match commentary'} · ${commentary.status}`;
@@ -1431,7 +1497,9 @@ function renderCommentaryApprovals() {
       actions.append(button);
     }
     card.append(title, copy, actions);
-    container.append(card);
+    if (!changedId) container.append(card);
+    else if (previous) previous.replaceWith(card);
+    else { container.querySelector('.empty-panel')?.remove(); container.prepend(card); }
   }
 }
 
@@ -1580,34 +1648,240 @@ texasScrambleForm.addEventListener('submit', async event => {
   }
 });
 
-resultMatch.addEventListener('change', async () => {
-  correctionOpenRequest++;
-  renderResultSegments();
-  const matchId = resultMatch.value;
-  const match = adminData.matches.find(item => item.id === matchId);
-  updateCorrectionAccess(match);
-  void refreshTeamCorrectionHistory(match);
-  if (!canAdministerMatch(match)) return;
-  const loading = document.createElement('p');
-  loading.className = 'empty-panel';
-  loading.textContent = 'Loading authoritative result history…';
-  resultAuditHistory.replaceChildren(loading);
+function listedScorecardMatch() {
+  return adminData?.matches.find(match => match.id === resultMatch.value);
+}
+
+function currentScorecardMatch() {
+  const listed = listedScorecardMatch();
+  if (!canAdministerMatch(listed)) return null;
+  return scorecardView?.detail?.id === listed.id ? scorecardView.detail : listed;
+}
+
+function renderSubmittedHoles(message) {
+  let match = currentScorecardMatch();
+  const allowEdit = match && !correctionRestriction(match) && !correctionRestriction(listedScorecardMatch());
+  if (match && !allowEdit && !scorecardView.detail && match.match_segments?.some(isSharedSegment)) {
+    // Closed editions keep their existing read boundary. Never describe a partial snapshot as an empty card.
+    match = { ...match, correctionSquads: adminData.scrambleSessions.flatMap(s => s.texas_scramble_squads) };
+    message ??= 'This scorecard is read-only.';
+  }
+  scorecardList.render(match, adminData.rounds, allowEdit, message);
+}
+
+function sameScorecardView(view, target) {
+  return Boolean(view && view === scorecardView && target.matchId === resultMatch.value && canAdministerMatch(listedScorecardMatch()));
+}
+
+function updateResultDependents(match) {
+  const recap = document.querySelector('#commentaryMatch');
+  if (match.status === 'final' && ![...recap.options].some(o => o.value === match.id)) recap.add(new Option(match.name, match.id));
+  renderTournamentCompletion();
+}
+
+function canEditHole(target) {
+  if (!sameScorecardView(openedHole?.view, target) || !sameSubmittedHole(openedHole.target, target)
+    || !scorecardList.has(target) || correctionRestriction(listedScorecardMatch()) || correctionRestriction(currentScorecardMatch())) return false;
+  if (target.kind === 'individual') {
+    const round = adminData.rounds.find(r => r.id === target.roundId && r.match_id === target.matchId);
+    return Boolean(round?.scores?.some(row => sameSubmittedHole(target, { ...target, row })));
+  }
+  return submittedEntries(currentScorecardMatch()).some(({ type, row }) => sameSubmittedHole(target, { ...target, kind: type, row }));
+}
+
+async function saveSelectedHole(api, payload) {
+  const target = openedHole?.target;
+  const exact = target && (api === correctHoleScore ? target.kind === 'individual' && target.roundId === payload.roundId
+    && target.row.hole_number === Number(payload.holeNumber) && !payload.deleteScore
+    : target.kind === payload.targetType && target.row.id === payload.targetId);
+  if (!exact || pendingHole || !canEditHole(target)) throw new Error('Reopen the submitted hole on the current scorecard.');
+  pendingHole = openedHole;
+  try { return await api(payload); }
+  catch (error) { pendingHole = null; throw error; }
+}
+
+async function openSelectedHole(entry, trigger) {
+  if (openingHole || pendingHole || savingCorrection || scoreCorrectionDialog.open) return;
+  const { id, hole_number, gross_score, tee_shot_player_id, winner } = entry.row;
+  const row = { id, hole_number };
+  if (entry.kind === 'match_hole_outcome') row.winner = winner;
+  else row.gross_score = gross_score;
+  if (entry.kind === 'texas_scramble_hole') row.tee_shot_player_id = tee_shot_player_id;
+  const target = { ...entry, row };
+  openedHole = { view: scorecardView, target };
+  if (!canEditHole(target)) return;
+  openingHole = true;
   try {
-    await refreshResultAuditHistory(matchId);
+    if (!holeEditor) {
+      const { createHoleEditor } = await import('./scorecard-hole-editor.js?v=compact-scorecard-1');
+      holeEditor = createHoleEditor({ canEdit: canEditHole,
+        correctHoleScore: payload => saveSelectedHole(correctHoleScore, payload),
+        correctTeamScoreEntry: payload => saveSelectedHole(correctTeamScoreEntry, payload),
+        async onSaved(target, result) {
+          const view = sameSubmittedHole(pendingHole?.target, target) ? pendingHole.view : null;
+          try { return (await refreshSavedHole(target, result, view)).warnings.join(' '); }
+          finally { pendingHole = null; }
+        },
+        notify(message, isError, target) {
+          if (sameSubmittedHole(openedHole?.target, target) && sameScorecardView(openedHole.view, target)) setMessage(resultMessage, message, isError);
+        },
+      });
+    }
+    if (canEditHole(target) && trigger.isConnected) holeEditor.open(target, trigger);
   } catch (error) {
-    if (resultMatch.value !== matchId) return;
-    const failure = document.createElement('p');
-    failure.className = 'empty-panel';
-    failure.textContent = `History refresh failed: ${error.message}`;
-    resultAuditHistory.replaceChildren(failure);
+    if (sameScorecardView(openedHole?.view, target)) setMessage(resultMessage, `Could not open the hole editor: ${error.message}`, true);
+  } finally { openingHole = false; }
+}
+
+// The correction RPC has already committed. A readback, history or recap failure is only a warning.
+async function refreshSavedHole(target, result, view, { deletion = false } = {}) {
+  const { matchId } = target;
+  const match = adminData.matches.find(m => m.id === matchId);
+  const team = target.kind !== 'individual';
+  const visible = () => sameScorecardView(view, target);
+  const warnings = [];
+  if (result.auditWarning) warnings.push(result.auditWarning);
+  if (result.completion_warning) warnings.push(`Individual scorecards need review: ${result.completion_warning}`);
+  let status = team ? 'Team correction saved and audited.' : result.audit?.action ? `Correction saved and audited (${result.audit.action}).` : 'Correction saved and audited.';
+  if (!canAdministerMatch(match)) return { status, warnings };
+  let latest = view?.detail?.id === matchId ? view.detail : match;
+  const findTeamEntry = m => submittedEntries(m).find(e => e.type === target.kind && e.row.id === target.row.id);
+  if (visible()) {
+    if (team) {
+      const entry = findTeamEntry(latest);
+      if (entry && result.id === entry.row.id) Object.assign(entry.row, result);
+    } else {
+      const round = adminData.rounds.find(r => r.id === target.roundId && r.match_id === matchId);
+      if (round) {
+        round.scores = round.scores.filter(s => s.hole_number !== target.row.hole_number);
+        if (!deletion && result.score) round.scores.push(result.score);
+      }
+    }
+  }
+  try {
+    // Legacy live deletion is not a match-result mutation. Keep that path round-only.
+    const [readMatch, rounds] = await Promise.all([
+      deletion ? latest : loadCorrectionMatch(matchId),
+      team ? null : getSupabase().then(client => readScorecardRounds(client, matchId)),
+    ]);
+    if (readMatch.id !== matchId || readMatch.tournament_id !== match.tournament_id) throw new Error('Unexpected match in readback');
+    latest = readMatch;
+    if (visible()) {
+      view.detail = latest;
+      if (rounds) adminData.rounds = [...adminData.rounds.filter(r => r.match_id !== matchId), ...rounds];
+      match.status = latest.status;
+      updateResultDependents(match);
+      for (const segment of latest.match_segments ?? []) {
+        const stored = match.match_segments?.find(s => s.id === segment.id);
+        if (stored) for (const field of ['status', 'differential', 'holes_played', 'point_value']) stored[field] = segment[field];
+      }
+      if (team && !findTeamEntry(latest)) throw new Error('The submitted entry is no longer available');
+      if (!team && !deletion && !rounds.some(r => r.id === target.roundId && r.scores.some(s => s.id === result.score?.id))) {
+        throw new Error('The submitted score is no longer available');
+      }
+    }
+  } catch (error) { warnings.push(`Score/result refresh failed: ${error.message}. Reopen the scorecard to retry.`); }
+  if (team) {
+    const entry = findTeamEntry(latest);
+    if (entry) status += ` ${entry.label}: ${teamValue(entry.type, entry.row, entry.players)}.`;
+  } else if (latest.status === 'final') status = 'Score corrected and result recalculated.';
+  if (visible()) {
+    updateCorrectionAccess(latest);
+    renderSubmittedHoles();
+    renderResultSegments();
+  }
+  if (latest.status === 'final' && adminData.settings.find(s => s.tournament_id === match.tournament_id)?.enabled) {
+    try {
+      const commentary = await generateMatchCommentary(matchId, { regenerate: true });
+      adminData.commentaries = upsertCommentaryById(adminData.commentaries, commentary);
+      renderCommentaryApprovals(commentary.id);
+      status = team ? `${status} Commentary regenerated.` : 'Score corrected, result recalculated, and commentary regenerated.';
+    } catch (error) { warnings.push(`Commentary regeneration failed: ${error.message}`); }
+  }
+  if (visible()) {
+    const teamHistory = team ? refreshTeamCorrectionHistory(latest) : '';
+    try { await refreshResultAuditHistory(matchId); }
+    catch (historyError) {
+      const warning = `History refresh failed: ${historyError.message}`;
+      if (visible()) resultAuditHistory.textContent = warning;
+      warnings.push(warning);
+    }
+    const teamWarning = await teamHistory;
+    if (teamWarning) warnings.push(teamWarning);
+  }
+  return { status, warnings };
+}
+
+function loadSharedSnapshot(view) {
+  const match = listedScorecardMatch();
+  if (!match || !view || match.id !== view.matchId || correctionRestriction(match)) return;
+  if (view.loading) return view.loading;
+  view.error = '';
+  view.loading = (async () => {
+    try {
+      const latest = await loadCorrectionMatch(match.id);
+      if (scorecardView !== view || !canAdministerMatch(listedScorecardMatch())) return;
+      if (latest.id !== match.id || latest.tournament_id !== match.tournament_id) throw new Error('The selected match changed.');
+      view.detail = latest;
+      updateCorrectionAccess(latest);
+      renderSubmittedHoles();
+      renderResultSegments();
+    } catch (error) {
+      if (scorecardView !== view) return;
+      view.error = `Could not load submitted team entries: ${error.message}. Reopen to retry.`;
+      renderSubmittedHoles(view.error);
+      setMessage(resultMessage, view.error, true);
+    } finally { view.loading = null; }
+  })();
+  return view.loading;
+}
+
+resultMatch.addEventListener('change', () => {
+  correctionOpenRequest++;
+  resultHistoryRequest++;
+  teamHistoryRequest++;
+  openedHole = null;
+  if (scoreCorrectionDialog.open) closeScoreCorrectionDialog();
+  scorecardHistory.open = scorecardMore.open = false;
+  resultAuditHistory.replaceChildren();
+  teamCorrectionHistory.replaceChildren();
+  document.querySelector('#teamCorrectionLog').hidden = true;
+  const match = listedScorecardMatch();
+  scorecardView = { matchId: match?.id, listed: match, manualDrafts: new Map() };
+  const restricted = updateCorrectionAccess(match);
+  renderResultSegments();
+  renderSubmittedHoles();
+  if (!canAdministerMatch(match)) return;
+  if (!restricted && match.match_segments?.some(isSharedSegment)) {
+    setMessage(resultMessage, 'Loading submitted team entries…');
+    void loadSharedSnapshot(scorecardView);
+  }
+});
+
+scorecardHistory.addEventListener('toggle', async () => {
+  const match = currentScorecardMatch();
+  const view = scorecardView;
+  if (!scorecardHistory.open || !match) return;
+  resultAuditHistory.textContent = 'Loading authoritative result history…';
+  void refreshTeamCorrectionHistory(match);
+  try {
+    await refreshResultAuditHistory(match.id);
+  } catch (error) {
+    if (scorecardView === view) resultAuditHistory.textContent = `History refresh failed: ${error.message}`;
   }
 });
 resultFinalizationForm.addEventListener('submit', async event => {
   event.preventDefault();
-  const message = document.querySelector('#resultMessage');
+  const matchId = resultMatch.value;
+  if (!matchId || finalizingMatches.has(matchId)) return;
+  const view = scorecardView;
+  const selected = () => sameScorecardView(view, { matchId });
+  const announce = (text, failed) => { if (selected()) setMessage(resultMessage, text, failed); };
   try {
-    const restriction = correctionRestriction(adminData.matches.find(item => item.id === resultMatch.value));
+    const match = currentScorecardMatch();
+    const restriction = correctionRestriction(listedScorecardMatch()) || correctionRestriction(match);
     if (restriction) throw new Error(restriction);
+    if (!requiresManualTeamResult(match)) throw new Error('Select a match with an unfinished manual Foursomes segment.');
     const resultCards = [...resultSegmentRows.querySelectorAll('[data-segment-id]')];
     if (resultCards.some(card => card.dataset.resultReady !== 'true')) {
       throw new Error('All assigned players must submit every score before this match can be finalized.');
@@ -1618,9 +1892,10 @@ resultFinalizationForm.addEventListener('submit', async event => {
       holes_played: Number(card.querySelector('[name="holesPlayed"]').value),
       status: 'final',
     }));
-    const matchId = resultMatch.value;
     if (!matchId || !segmentResults.length) throw new Error('Select a planned match with segments.');
-    setMessage(message, 'Validating rounds and finalizing…');
+    finalizingMatches.add(matchId);
+    resultFinalizationForm.querySelector('button[type="submit"]').disabled = true;
+    announce('Validating rounds and finalizing…');
     await finalizeMatchResults({ matchId, segmentResults });
     const finalized = adminData.matches.find(match => match.id === matchId);
     finalized.status = 'final';
@@ -1628,11 +1903,17 @@ resultFinalizationForm.addEventListener('submit', async event => {
       const segment = finalized.match_segments?.find(item => item.id === savedResult.segment_id);
       if (segment) Object.assign(segment, savedResult);
     }
-    populateAdminChoices();
-    renderResultSegments();
+    updateResultDependents(finalized);
+    if (selected()) {
+      if (view.detail) {
+        view.detail.status = 'final';
+        for (const segment of view.detail.match_segments) Object.assign(segment, segmentResults.find(r => r.segment_id === segment.id));
+      }
+      renderResultSegments();
+    }
     let historyWarning = '';
     try {
-      await refreshResultAuditHistory(matchId);
+      if (selected()) await refreshResultAuditHistory(matchId);
     } catch (historyError) {
       historyWarning = ` History refresh failed: ${historyError.message}`;
     }
@@ -1641,21 +1922,28 @@ resultFinalizationForm.addEventListener('submit', async event => {
     const commentarySettings = adminData.settings.find(item => item.tournament_id === finalized.tournament_id);
     if (commentarySettings?.enabled) {
       try {
-        setMessage(message, 'Match finalized. Generating commentary…');
+        announce('Match finalized. Generating commentary…');
         const commentary = await generateMatchCommentary(matchId);
         adminData.commentaries = upsertCommentaryById(adminData.commentaries, commentary);
-        renderCommentaryApprovals();
-        setMessage(message, finalizationMessage(commentary.status === 'approved'
+        renderCommentaryApprovals(commentary.id);
+        announce(finalizationMessage(commentary.status === 'approved'
           ? 'Match finalized. Commentary generated and published.'
           : 'Match finalized. Commentary generated and awaiting approval.'), Boolean(historyWarning));
       } catch (commentaryError) {
-        setMessage(message, finalizationMessage(`Match finalized, but automatic commentary failed: ${commentaryError.message}. Use Generate match recap to retry.`), true);
+        announce(finalizationMessage(`Match finalized, but automatic commentary failed: ${commentaryError.message}. Use Generate match recap to retry.`), true);
       }
       return;
     }
 
-    setMessage(message, finalizationMessage('Match finalized. Cup points and official statistics are now available.'), Boolean(historyWarning));
-  } catch (error) { setMessage(message, error.message, true); }
+    announce(finalizationMessage('Match finalized. Cup points and official statistics are now available.'), Boolean(historyWarning));
+  } catch (error) { announce(error.message, true); }
+  finally {
+    finalizingMatches.delete(matchId);
+    if (selected() && requiresManualTeamResult(currentScorecardMatch())) {
+      const allReady = [...resultSegmentRows.children].every(card => card.dataset.resultReady === 'true');
+      resultFinalizationForm.querySelector('button[type="submit"]').disabled = !allReady;
+    }
+  }
 });
 
 completionTournament.addEventListener('change', () => {
@@ -1891,23 +2179,17 @@ openScoreCorrection.addEventListener('click', async event => {
     resultMatch.focus();
     return;
   }
-  const match = adminData.matches.find(item => item.id === matchId);
+  const view = scorecardView;
+  let match = listedScorecardMatch();
   if (!match || updateCorrectionAccess(match)) return;
-  let readError = '';
-  if (match.match_segments?.some(isSharedSegment)) {
-    setMessage(document.querySelector('#resultMessage'), 'Loading submitted team entries…');
-    try {
-      const latest = await loadCorrectionMatch(matchId);
-      if (request !== correctionOpenRequest || resultMatch.value !== matchId) return;
-      Object.assign(match, latest);
-      if (match.match_segments.every(isSharedSegment)) renderResultSegments();
-    } catch (error) {
-      if (request !== correctionOpenRequest || resultMatch.value !== matchId) return;
-      readError = `Could not load submitted team entries: ${error.message}. Close and reopen to retry.`;
-    }
-    if (updateCorrectionAccess(match)) return;
+  if (match.match_segments?.some(isSharedSegment) && !view.detail) {
+    setMessage(resultMessage, 'Loading submitted team entries…');
+    await loadSharedSnapshot(view);
+    if (request !== correctionOpenRequest || scorecardView !== view) return;
   }
-  correctionEditor.prepare(match, populateCorrectionRounds(matchId), readError);
+  match = currentScorecardMatch();
+  if (!match || updateCorrectionAccess(match)) return;
+  correctionEditor.prepare(match, populateCorrectionRounds(matchId), view.error);
   document.querySelector('#correctionMatchLabel').textContent = match.name;
   correctionDialogTrigger = trigger;
   if (typeof scoreCorrectionDialog.showModal === 'function') scoreCorrectionDialog.showModal();
@@ -1949,87 +2231,46 @@ scoreCorrectionForm.addEventListener('submit', async event => {
     setMessage(message, 'Close this dialog and select the match again.', true);
     return;
   }
-  const restriction = correctionRestriction(match);
+  const restriction = correctionRestriction(match) || correctionRestriction(currentScorecardMatch());
   if (restriction) {
     setMessage(message, restriction, true);
     return;
   }
   const team = correctionEditor.team;
-  const warnings = [];
-  let status = '';
+  const view = scorecardView;
+  let committed = false;
   setCorrectionBusy(true);
   setMessage(message, 'Saving audited correction…');
   try {
+    let target, result, deletion = false;
     if (team) {
-      let entry = correctionEditor.entry;
-      const { completion_warning: completionWarning, ...saved } = await correctTeamScoreEntry(correctionEditor.payload());
-      status = 'Team correction saved and audited.';
-      if (completionWarning) warnings.push(`Individual scorecards need review: ${completionWarning}`);
-      Object.assign(entry.row, saved);
-      try {
-        const latest = await loadCorrectionMatch(matchId);
-        Object.assign(match, latest);
-        updateCorrectionAccess(match);
-        correctionEditor.prepare(match, populateCorrectionRounds(matchId));
-        if (correctionEditor.entry?.row.id !== saved.id) throw new Error('The submitted entry is no longer available.');
-        entry = correctionEditor.entry;
-      } catch (refreshError) {
-        warnings.push(`Score/result refresh failed: ${refreshError.message}. Reopen the correction to retry.`);
-      }
-      status += ` ${entry.label}: ${teamValue(entry.type, entry.row, entry.players)}.`;
-      renderResultSegments();
+      const { type, row, label } = correctionEditor.entry;
+      target = { matchId, kind: type, row, label };
+      result = await correctTeamScoreEntry(correctionEditor.payload());
     } else {
       const round = adminData.rounds.find(item => item.id === correctionRound.value && item.match_id === matchId);
       if (!round) throw new Error('Select a player round from the chosen match.');
       const holeNumber = Number(document.querySelector('#correctionHole').value);
-      const deleteScore = match.status !== 'final' && document.querySelector('#correctionDelete').checked;
-      const result = await correctHoleScore({
-        roundId: round.id, holeNumber, deleteScore,
-        grossScore: deleteScore ? null : document.querySelector('#correctionScore').value,
+      deletion = match.status !== 'final' && document.querySelector('#correctionDelete').checked;
+      target = { kind: 'individual', matchId, roundId: round.id, row: { hole_number: holeNumber } };
+      result = await correctHoleScore({
+        roundId: round.id, holeNumber, deleteScore: deletion,
+        grossScore: deletion ? null : document.querySelector('#correctionScore').value,
         reason: document.querySelector('#correctionReason').value,
       });
-      status = result.audit?.action ? `Correction saved and audited (${result.audit.action}).` : 'Correction saved and audited.';
-      if (result.auditWarning) warnings.push(result.auditWarning);
-      round.scores = round.scores.filter(score => score.hole_number !== holeNumber);
-      if (!deleteScore) round.scores.push(result.score);
-      if (match.status === 'final') {
-        status = 'Score corrected and result recalculated.';
-        renderResultSegments();
-      }
     }
-    if (match.status === 'final' && adminData.settings.find(item => item.tournament_id === match.tournament_id)?.enabled) {
-      try {
-        const commentary = await generateMatchCommentary(matchId, { regenerate: true });
-        adminData.commentaries = upsertCommentaryById(adminData.commentaries, commentary);
-        renderCommentaryApprovals();
-        status = team ? `${status} Commentary regenerated.` : 'Score corrected, result recalculated, and commentary regenerated.';
-      } catch (commentaryError) {
-        warnings.push(`Commentary regeneration failed: ${commentaryError.message}`);
-      }
-    }
-    if (team || match.status === 'final') {
-      const teamHistory = team ? refreshTeamCorrectionHistory(match) : '';
-      try {
-        await refreshResultAuditHistory(matchId);
-      } catch (historyError) {
-        warnings.push(`History refresh failed: ${historyError.message}`);
-      }
-      const teamWarning = await teamHistory;
-      if (teamWarning) warnings.push(teamWarning);
+    committed = true;
+    const { status, warnings } = await refreshSavedHole(target, result, view, { deletion });
+    if (sameScorecardView(view, target)) {
+      const summary = [status, ...warnings].join(' ');
+      setMessage(resultMessage, summary, Boolean(warnings.length));
+      setMessage(message, summary, Boolean(warnings.length));
+      if (team) correctionEditor.prepare(currentScorecardMatch(), populateCorrectionRounds(matchId));
     }
   } catch (error) {
-    // The mutation and its audit commit together; a later display/read failure is not a failed save.
-    if (!status) {
-      setMessage(message, error.message, true);
-      return;
-    }
-    warnings.push(`Refresh failed: ${error.message}`);
-  } finally {
-    setCorrectionBusy(false);
-  }
-  const summary = [status, ...warnings].join(' ');
-  setMessage(message, summary, Boolean(warnings.length));
-  setMessage(document.querySelector('#resultMessage'), summary, Boolean(warnings.length));
+    if (!committed) { setMessage(message, error.message, true); return; }
+    if (scorecardView === view) setMessage(resultMessage, `Correction saved and audited. Refresh failed: ${error.message}`, true);
+  } finally { setCorrectionBusy(false); }
   if (team) document.querySelector('#correctionReason').value = '';
   else scoreCorrectionForm.reset();
   closeScoreCorrectionDialog();

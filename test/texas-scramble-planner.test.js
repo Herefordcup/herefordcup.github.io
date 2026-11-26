@@ -410,6 +410,7 @@ test('creating a lineup adds the returned squad matches to corrections without r
     for (const [i, slot] of slots.entries()) await slot.selectOption(`${prefix}${i + 1}`);
   }
   await page.click(`${form} button[type=submit]`);
+  await page.locator('#scorecardMore summary').click();
   await page.click('#openScoreCorrection');
   await page.selectOption('#correctionRound', 'ordinary-round');
   await page.fill('#correctionReason', 'Checking the card');
@@ -428,6 +429,7 @@ test('creating a lineup adds the returned squad matches to corrections without r
   const squad = created.texas_scramble_squads[0];
   squad.texas_scramble_hole_scores.push({ id: 'fresh-hole', squad_id: squad.id, hole_number: 1, gross_score: 4, tee_shot_player_id: 'b1' });
   await page.selectOption('#resultMatch', squad.match_id);
+  await page.locator('#scorecardMore summary').click();
   await page.click('#openScoreCorrection');
   await page.locator('#scoreCorrectionDialog[open]').waitFor();
   assert.equal(await page.textContent('#correctionMatchLabel'), squad.label);
@@ -439,19 +441,22 @@ test('replacing a lineup removes retired squad match IDs, clears their selected 
   const { page, finishSave } = await openPickerFixture(t, data);
   await page.selectOption('#resultMatch', 'match-blue');
   await page.locator('#resultSegmentRows [data-segment-id=segment-blue]').waitFor();
+  await page.locator('#scorecardHistory summary').click();
   await page.getByText('No authoritative result changes have been logged for this match.').waitFor();
   await page.getByText('No shared score corrections have been logged for this match.').waitFor();
   await page.selectOption('#texasScrambleTournament', 'cup');
   await page.selectOption(saved, 'lineup');
   await page.locator(`${cards}[data-squad-side=cardinal] select`).first().selectOption('b3');
   await page.click(`${form} button[type=submit]`);
+  await page.locator('#scorecardMore summary').click();
   await page.click('#openScoreCorrection');
   await page.locator('#scoreCorrectionDialog[open]').waitFor();
   await finishSave();
   assert.deepEqual(await resultMatchIds(page), ['', ...data.matches.map(m => m.id)], 'replace retired IDs with authoritative squad match IDs');
   assert.equal(await page.inputValue('#resultMatch'), '');
   assert.equal(await page.locator('#resultSegmentRows [data-segment-id]').count(), 0);
-  assert.match(await page.textContent('#resultTransitions'), /select a match/i);
+  assert.equal(await page.textContent('#resultTransitions'), '', 'retiring the selected match clears its log');
+  assert.equal(await page.locator('#scorecardHistory').isHidden(), true);
   assert.equal(await page.locator('#teamCorrectionLog').isHidden(), true);
   assert.equal(await page.textContent('#teamCorrectionHistory'), '');
   assert.equal(await page.locator('#scoreCorrectionDialog').isHidden(), true);
