@@ -100,7 +100,7 @@ async function openPlanner(t, data, api = {}) {
     if (!/^\/(admin\.html|[\w-]+\.css|src\/[\w-]+\.js|assets\/icon\.svg)$/.test(url.pathname)) return route.abort();
     return route.fulfill({ path: fileURLToPath(new URL(`.${url.pathname}`, root)) });
   });
-  await page.goto(`${origin}/admin.html`);
+  await page.goto(`${origin}/admin.html?tool=matches`);
   await page.locator('#adminContent').waitFor();
   return page;
 }
@@ -153,7 +153,9 @@ test('a real rename submits the selected ID and unchanged structure, then reopen
   const form = page.locator('#matchPlanForm');
   await form.locator('#matchPlanExisting').selectOption(match.id);
   const ruleTitle = page.locator('#ruleForm [name=title]');
+  await page.selectOption('#adminTool', 'rules');
   await ruleTitle.fill('Unsubmitted rule');
+  await page.selectOption('#adminTool', 'matches');
   await form.locator('[name=matchName]').fill('  New name  ');
   await form.locator('button[type=submit]').click();
   await expect(form.locator('#matchPlanMessage')).toHaveText('Match plan saved.');
@@ -321,8 +323,10 @@ test('refreshing the roster keeps a new draft, clears unavailable players and bi
   } });
   const form = await fillNewPlan(page);
   data.memberships.find(row => row.user_id === 'blue').team = null;
+  await page.selectOption('#adminTool', 'members');
   await page.locator('#refreshMemberships').click();
   await expect(page.locator('#membershipMessage')).toHaveText('Membership requests refreshed.');
+  await page.selectOption('#adminTool', 'matches');
   const slots = form.locator('[data-player-select]');
   assert.deepEqual(await selectValues(slots), ['', '', '', 'white']);
   assert.equal(await slots.first().locator('option[value=blue]').isDisabled(), true);
@@ -346,10 +350,12 @@ test('another Admin readback does not reset the tournament or course underneath 
   await form.locator('#matchTournament').selectOption('current');
   await form.locator('#matchPlanExisting').selectOption('ordinary');
   await form.locator('[name=matchName]').fill('In progress');
+  await page.selectOption('#adminTool', 'completion');
   await page.locator('#completionTournament').selectOption('other');
   await page.locator('#completionConfirmation').fill('COMPLETE 2026 HEREFORD CUP');
   await page.locator('#tournamentCompletionForm button[type=submit]').click();
   await expect(page.locator('#completionMessage')).toHaveText('Completed tournament archive verified without changes.');
+  await page.selectOption('#adminTool', 'matches');
   assert.equal(await form.locator('#matchTournament').inputValue(), 'current');
   assert.equal(await form.locator('#matchPlanExisting').inputValue(), 'ordinary');
   assert.equal(await form.locator('#matchCourse').inputValue(), 'pine');

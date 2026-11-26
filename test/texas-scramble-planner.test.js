@@ -53,7 +53,7 @@ async function openPlanner(t, data = sampleData(), overrides = {}) {
     if (/^\/(?:admin\.html|[\w-]+\.css|src\/[\w-]+\.js)$/.test(pathname)) return route.fulfill({ path: fileURLToPath(new URL(`.${pathname}`, root)) });
     return route.abort();
   });
-  await page.goto('http://127.0.0.1/admin.html');
+  await page.goto('http://127.0.0.1/admin.html?tool=scramble');
   await page.locator('#adminContent:not([hidden])').waitFor({ timeout: 5000 });
   return page;
 }
@@ -110,7 +110,9 @@ test('editing submits one update for the original ID and preserves another organ
     blue.texas_scramble_squad_players = payload.squads[0].player_ids.map((user_id, i) => ({ user_id, playing_order: i + 1 }));
     return original.id;
   } });
+  await page.selectOption('#adminTool', 'rules');
   await page.fill('#ruleForm [name=title]', 'Unpublished rule draft');
+  await page.selectOption('#adminTool', 'scramble');
   await page.selectOption('#texasScrambleTournament', 'cup');
   await page.selectOption(saved, original.id);
   await page.fill(`${form} [name=name]`, ' New pairings ');
@@ -310,6 +312,7 @@ test('an unrelated admin refresh preserves a dirty lineup, but never preserves p
   await page.selectOption('#texasScrambleTournament', 'cup');
   await page.selectOption(saved, 'lineup');
   await page.fill(`${form} [name=name]`, 'Unsubmitted lineup draft');
+  await page.selectOption('#adminTool', 'completion');
   await page.selectOption('#completionTournament', 'other');
   const refreshFromOtherForm = async () => {
     await page.fill('#completionConfirmation', 'COMPLETE 2028 HEREFORD CUP');
@@ -341,11 +344,14 @@ test('planner readback leaves the mounted member editor attached to its roster r
     setTournamentMemberRole: ({ role }) => ({ role }),
   });
   const member = page.locator('#activeMembers [data-member-id=b1]');
+  await page.selectOption('#adminTool', 'members');
   await member.getByLabel('Handicap index').fill('7.5');
+  await page.selectOption('#adminTool', 'scramble');
   await page.selectOption('#texasScrambleTournament', 'cup');
   await page.selectOption(saved, 'lineup');
   await page.click(`${form} button[type=submit]`);
   await page.waitForFunction(() => /plan saved/.test(document.querySelector('#texasScrambleMessage').textContent));
+  await page.selectOption('#adminTool', 'members');
   assert.equal(await member.getByLabel('Handicap index').inputValue(), '7.5');
   await member.getByLabel('Tournament role').selectOption('admin');
   await page.waitForFunction(() => /role is now Admin/.test(document.querySelector('#membershipMessage').textContent));
@@ -380,6 +386,8 @@ async function openPickerFixture(t, data) {
       return next.id;
     },
   });
+  // These two race tests deliberately use two mounted tools at once.
+  await page.selectOption('#adminTool', 'all');
   return { page, finishSave: async () => { release(); await page.getByText(/Texas Scramble plan saved\./).waitFor(); } };
 }
 
