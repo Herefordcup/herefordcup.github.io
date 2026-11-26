@@ -1,0 +1,33 @@
+/* A temporary editor for a single submitted hole. No space in the scorecard until opened. */
+.hole-edit-dialog {
+  box-sizing: border-box; position: fixed; inset: 0; z-index: 101; margin: auto; padding: 0;
+  width: min(26rem, calc(100vw - 24px)); max-width: 100%; height: fit-content;
+  max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px);
+  overflow: auto; overscroll-behavior: contain; border: 1px solid #aaa69e; border-radius: 10px;
+  color: #1d2022; background: #fff; font: 15px/1.4 Arial, sans-serif; box-shadow: 0 12px 48px #0003;
+}
+.hole-edit-dialog::backdrop, .hole-edit-backdrop { background: rgb(15 17 19 / 46%); }
+.hole-edit-backdrop { position: fixed; inset: 0; z-index: 100; }
+.hole-edit-dialog [hidden] { display: none !important; }
+.hole-edit-dialog form { display: block; margin: 0; padding: 0; }
+.hole-edit-dialog header { padding: 16px 18px 0; }
+.hole-edit-dialog h2 { margin: 0; font: 700 1.35rem/1.2 Arial,sans-serif; letter-spacing: -.025em; }
+.hole-edit-dialog header p { margin: 4px 0 0; color: #555b61; font-size: .88rem; overflow-wrap: anywhere; }
+.hole-edit-fields { display: grid; gap: 10px; padding: 14px 18px; }
+.hole-edit-fields label { display: grid; gap: 4px; color: #303437; font: 600 .84rem/1.35 Arial,sans-serif; }
+.hole-edit-fields :is(input,select,textarea) {
+  box-sizing: border-box; min-width: 0; width: 100%; min-height: 44px; padding: 7px 10px;
+  border: 1px solid #898f92; border-radius: 5px; background: #fff; color: inherit; font: 400 1rem/1.35 Arial,sans-serif;
+}
+.hole-edit-fields textarea { resize: vertical; }
+#holeEditFeedback { margin: 0; overflow-wrap: anywhere; font: 500 .9rem/1.35 Arial,sans-serif; color: #750014; }
+#holeEditFeedback:empty { display: none; }
+.hole-edit-dialog footer {
+  position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 8px;
+  padding: 10px 18px max(10px, env(safe-area-inset-bottom)); border-top: 1px solid #dedbd5; background: #fff;
+}
+.hole-edit-dialog button { min-height: 44px; padding: 6px 14px; font: 650 .9rem/1.25 Arial,sans-serif; cursor: pointer; border: 1px solid #c5c2bd; border-radius: 5px; color: #282b2e; background: white; }
+#holeEditSave { border-color: #750014; background: #750014; color: white; }
+.hole-edit-dialog :is(button,textarea,input,select):focus-visible { outline: 2px solid #750014; outline-offset: 2px; }
+.hole-edit-dialog button:disabled { cursor: wait; opacity: .64; }
+@media (max-height: 430px) { .hole-edit-dialog header { padding-top: 10px; } .hole-edit-fields { padding-block: 8px; gap: 6px; } }
