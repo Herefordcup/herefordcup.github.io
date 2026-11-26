@@ -6,7 +6,7 @@ import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 
 // An in-memory database only. Supply the Supabase-owned objects, then run the
 // repository's migration files verbatim, including the hole-range exclusion.
-export async function createMixedEntryFixture() {
+export async function createMixedEntryFixture({ throughMigration = Infinity } = {}) {
   const db = new PGlite({ extensions: { btree_gist, pgcrypto } });
   try {
     await db.exec(`
@@ -24,6 +24,7 @@ export async function createMixedEntryFixture() {
     `);
     const root = new URL('../../supabase/migrations/', import.meta.url);
     for (const file of (await readdir(root)).filter(name => /^\d+_.*\.sql$/.test(name)).sort()) {
+      if (parseInt(file, 10) > throughMigration) break;
       await db.exec(await readFile(new URL(file, root), 'utf8'));
     }
     const [admin, blue, white, bluePartner, whitePartner] = Array.from({ length: 5 }, () => randomUUID());
@@ -74,7 +75,7 @@ export async function createMixedEntryFixture() {
     const complete = async (user, match) => (await as(user, 'select public.complete_match_if_ready($1) as result', [match]))[0].result;
     const saveOutcome = async (user, segment, hole, winner) => (await as(user,
       'select public.submit_match_hole_outcome($1,$2,$3) as result', [segment, hole, winner]))[0].result;
-    return { db, as, admin, blue, white, bluePartner, whitePartner, tee, alternate, players, plan, openRound, saveScores, complete, saveOutcome };
+    return { db, as, admin, blue, white, bluePartner, whitePartner, tournament, tee, alternate, players, plan, openRound, saveScores, complete, saveOutcome };
   } catch (error) {
     await db.close();
     throw error;
