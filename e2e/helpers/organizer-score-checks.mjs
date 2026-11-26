@@ -3,9 +3,15 @@ import { expect, test } from '@playwright/test';
 // This helper drives real app controls. The fixture separately reads committed
 // rows from the disposable runner; UI toast text alone never counts as a pass.
 const admin = () => ({ name: 'Disposable E2E Admin', email: process.env.E2E_USER_EMAIL });
-async function goAdmin(page) {
+export async function selectAdminTool(page, tool) {
+  const chooser = page.locator('#adminTool');
+  await chooser.selectOption(tool);
+  await expect(chooser).toHaveValue(tool);
+}
+async function goAdmin(page, tool) {
   await page.goto('/admin.html');
   await expect(page.locator('#adminContent')).toBeVisible({ timeout: 20_000 });
+  if (tool) await selectAdminTool(page, tool);
 }
 async function submitRpc(page, name, click) {
   const [reply] = await Promise.all([
@@ -17,6 +23,7 @@ async function submitRpc(page, name, click) {
     click(),
   ]);
   expect(reply.ok(), `${name} returned HTTP ${reply.status()}`).toBe(true);
+  return reply;
 }
 
 const squadCard = (page, squad) => page.locator(`#texasScrambleSquads [data-squad-side="${squad.side}"][data-squad-number="${squad.number}"]`);
@@ -35,7 +42,7 @@ export async function editUnplayedLineup({ browser, baseURL, signIn, fixture: f 
   try {
     const page = await ctx.newPage();
     await signIn(page, admin());
-    await goAdmin(page);
+    await goAdmin(page, 'scramble');
     await page.locator('#texasScrambleTournament').selectOption(o.tournamentId);
     const saved = page.locator('#texasScrambleSavedSession');
     await saved.selectOption(o.sessionId);
@@ -71,7 +78,7 @@ export async function editUnplayedLineup({ browser, baseURL, signIn, fixture: f 
         user_id, team: s.side, side: s.side, playing_order: j + 1,
       })));
     }
-    await goAdmin(page);
+    await goAdmin(page, 'scramble');
     await page.locator('#texasScrambleTournament').selectOption(o.tournamentId);
     await saved.selectOption(o.sessionId);
     await expect(page.locator('#texasScrambleForm [name="name"]')).toHaveValue(name);
@@ -80,38 +87,86 @@ export async function editUnplayedLineup({ browser, baseURL, signIn, fixture: f 
   } finally { await ctx.close(); }
 }
 
+export async function showCardTarget(page, target, card) {
+  const picker = page.locator('#scorecardCard').filter({ has: page.locator(`option[value="${card}"]`) });
+  // A single/already displayed card need not provide a second picker.
+  await expect(target.or(picker).filter({ visible: true }).first()).toBeVisible();
+  if (!(await target.isVisible()) && (await picker.inputValue()) !== card) await picker.selectOption(card);
+  await expect(target).toBeVisible();
+}
+
+export async function openSavedHole(page, row, scope = page) {
+  const edit = scope.locator(`button[data-edit-hole][data-entry-id="${row.id}"]:not(#scorecardMore *)`);
+  const card = row.round_id ? `round:${row.round_id}` : row.squad_id ? `squad:${row.squad_id}` : `segment:${row.segment_id}`;
+  await showCardTarget(page, edit, card);
+  await expect(edit).toHaveAccessibleName(/edit|correct/i);
+  if (row.round_id) {
+    await expect(edit).toHaveAttribute('data-round-id', row.round_id);
+    await expect(edit).toHaveAttribute('data-hole', String(row.hole_number));
+  }
+  const dialog = page.locator('#holeEditDialog');
+  await expect(dialog).toBeHidden();
+  await edit.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute('data-entry-id', row.id);
+  await expect(dialog.locator('select:enabled:visible:not(#holeEditDriver, #holeEditWinner), input[type="number"]:enabled:visible:not([readonly], #holeEditGross)')).toHaveCount(0);
+  await expect(dialog.locator('#holeEditReason')).toHaveValue('');
+  await expect(dialog.locator('#holeEditCancel')).toBeVisible();
+  return dialog;
+}
+
+export async function saveHoleEdit(page, row, rpc, message, expected) {
+  const dialog = page.locator('#holeEditDialog');
+  await expect(dialog).toHaveAttribute('data-entry-id', row.id);
+  const reply = await submitRpc(page, rpc, () => dialog.locator('#holeEditSave').click());
+  const saved = await reply.json();
+  expect(Array.isArray(saved) ? saved : [saved]).toMatchObject([{ id: row.id, hole_number: row.hole_number, ...expected }]);
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(message)).toHaveText(new RegExp(`^Hole ${row.hole_number} corrected\\.`));
+}
+
+export async function openChangeHistory(page, card) {
+  const history = page.locator('details#scorecardHistory');
+  const summary = history.locator(':scope > summary');
+  if (card) await showCardTarget(page, summary, card);
+  await expect(summary).toBeVisible();
+  await expect(summary).toContainText('View change history');
+  if (!await history.evaluate(details => details.open)) await summary.click();
+  await expect(history).toHaveJSProperty('open', true);
+  return history;
+}
+
 async function prepareCorrection(page, { matchId, row, reason, gross, driver, winner }) {
-  await goAdmin(page);
-  await page.locator('#resultMatch').selectOption(matchId);
-  await page.locator('#openScoreCorrection').click();
-  await expect(page.locator('#scoreCorrectionDialog')).toBeVisible();
-  await page.locator('#teamCorrectionEntry').selectOption(row.id);
+  await goAdmin(page, 'scorecards');
+  const match = page.locator('#resultMatch');
+  await match.selectOption(matchId);
+  await expect(match).toHaveValue(matchId);
+  const dialog = await openSavedHole(page, row);
   if (winner) {
-    const field = page.locator('#teamCorrectionWinner');
+    const field = dialog.locator('#holeEditWinner');
     await expect(field).toHaveValue(row.winner);
     await field.selectOption(winner);
   } else {
-    await expect(page.locator('#teamCorrectionGross')).toHaveValue(String(row.gross_score));
-    await expect(page.locator('#teamCorrectionDriver')).toHaveValue(row.tee_shot_player_id);
-    await page.locator('#teamCorrectionGross').fill(String(gross));
-    await page.locator('#teamCorrectionDriver').selectOption(driver);
+    await expect(dialog.locator('#holeEditGross')).toHaveValue(String(row.gross_score));
+    await expect(dialog.locator('#holeEditDriver')).toHaveValue(row.tee_shot_player_id);
+    await dialog.locator('#holeEditGross').fill(String(gross));
+    await dialog.locator('#holeEditDriver').selectOption(driver);
   }
-  await page.locator('#correctionReason').fill(reason);
+  await dialog.locator('#holeEditReason').fill(reason);
 }
-const correctionSave = page => page.locator('#scoreCorrectionForm button[type="submit"]');
-async function expectVisibleHistory(page, reason) {
-  const history = page.locator('#teamCorrectionHistory');
+async function expectVisibleHistory(page, reason, card) {
+  const history = (await openChangeHistory(page, card)).locator('#teamCorrectionHistory');
   await expect(history).toBeVisible();
   await expect(history).toContainText(reason, { useInnerText: true });
 }
-async function saveCorrection(page, reason) {
-  await submitRpc(page, 'correct_team_score_entry', () => correctionSave(page).click());
-  await expect(page.locator('#scoreCorrectionDialog')).toBeHidden();
-  await expect(page.locator('#resultMessage')).toHaveText(/^Team correction saved and audited\./);
+async function saveCorrection(page, { matchId, row, gross, driver, winner, reason }) {
+  await saveHoleEdit(page, row, 'correct_team_score_entry', '#resultMessage', winner
+    ? { segment_id: row.segment_id, winner } : { squad_id: row.squad_id, gross_score: gross, tee_shot_player_id: driver });
+  await expect(page.locator('#resultMatch')).toHaveValue(matchId);
   await expectVisibleHistory(page, reason);
 }
 async function openPlanner(page, tournamentId, match) {
-  await goAdmin(page);
+  await goAdmin(page, 'matches');
   await page.locator('#matchTournament').selectOption(tournamentId);
   await page.locator('#matchPlanExisting').selectOption(match.id);
   const form = page.locator('#matchPlanForm');
@@ -140,6 +195,34 @@ async function enterOutcome(page, hole, winner) {
   await row.getByRole('combobox').selectOption(winner);
   await row.getByRole('button',{name:'Save hole'}).click();
   await expect(row.getByRole('button',{name:'Locked'})).toBeDisabled();
+  await expect(row.locator('button[data-edit-hole]')).toHaveCount(0);
+}
+
+async function expectCompactScorecards(page, squad) {
+  await goAdmin(page); // Check the default without selecting a tool or scrolling first.
+  const chooser = page.locator('#adminTool');
+  const picker = page.locator('#resultMatch');
+  await expect(chooser).toBeVisible();
+  await expect(chooser).toHaveValue('scorecards');
+  await expect(picker.locator(`option[value="${squad.matchId}"]`)).toHaveCount(1);
+  await expect(picker).toHaveValue('');
+  await expect(picker).toBeVisible();
+  await expect(picker).toBeInViewport({ ratio: 1 });
+  for (const selector of ['#membershipManagement', '#matchPlanForm', '#texasScrambleForm', '#tournamentCompletionForm',
+    '#ruleForm', '#commentarySettingsForm', '#legacyEditionPanel', '#courseForm', '#resultAuditHistory', '#teamCorrectionHistory',
+    '#scorecardMore', '#openScoreCorrection', '#holeEditDialog']) await expect(page.locator(selector)).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Record Foursomes result' })).toHaveCount(0);
+  await expect(page.locator('button[data-edit-hole]:visible')).toHaveCount(0);
+  await selectAdminTool(page, 'members');
+  await expect(page.locator('#membershipManagement')).toBeVisible();
+  await expect(picker).toBeHidden();
+  await selectAdminTool(page, 'scorecards');
+  await picker.selectOption(squad.matchId);
+  const history = page.locator('details#scorecardHistory');
+  await showCardTarget(page, history.locator(':scope > summary'), `squad:${squad.id}`);
+  await expect(history).toHaveJSProperty('open', false);
+  await expect(page.locator('#resultAuditHistory')).toBeHidden();
+  await expect(page.locator('#holeEditDialog')).toBeHidden();
 }
 
 function expectArchiveSources(archive, f, outcomeMatchId, outcomeSegmentId) {
@@ -171,6 +254,14 @@ export async function verifyOrganizerCorrections({ browser, baseURL, signIn, fix
     expect(unplayed.segment).toMatchObject({ match_id: m.id, entry_mode: 'hole_outcomes', point_value: 1 });
     expect(unplayed.outcomes).toEqual([]);
     await Promise.all([signIn(panel, admin()), signIn(playerPage,member)]);
+    await test.step('Admin opens on just the compact scorecard picker on phone and desktop', async () => {
+      for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
+        const fresh = await adminCtx.newPage();
+        await fresh.setViewportSize(viewport);
+        await expectCompactScorecards(fresh, squad);
+        await fresh.close();
+      }
+    });
     const staleTab = await adminCtx.newPage();
     const stale = await openPlanner(staleTab, o.tournamentId, unplayed.match);
     await stale.points.fill('2');
@@ -184,8 +275,9 @@ export async function verifyOrganizerCorrections({ browser, baseURL, signIn, fix
       const first = posted.outcomes[0];
       expect(first).toMatchObject({ segment_id: unplayed.segment.id, hole_number: 1, winner: 'cardinal', submitted_by: member.id });
       const reason='Organizer verified the opening hole was halved';
-      await prepareCorrection(panel,{matchId:m.id,row:first,reason,winner:'halved'});
-      await saveCorrection(panel, reason);
+      const change = { matchId: m.id, row: first, reason, winner: 'halved' };
+      await prepareCorrection(panel, change);
+      await saveCorrection(panel, change);
       const db=await m.snapshot();
       expect(['scheduled','live']).toContain(db.segment.status);
       expect(db.match.status).not.toBe('final');
@@ -223,14 +315,16 @@ export async function verifyOrganizerCorrections({ browser, baseURL, signIn, fix
       await playerPage.reload();
       await openOutcome(playerPage,m.id);
       await expect(playerPage.locator('#holeOutcomeRows select').first()).toHaveValue('halved');
+      await expect(playerPage.locator('#holeOutcomeRows button[data-edit-hole]')).toHaveCount(0);
       for(let n=2;n<=18;n++) await enterOutcome(playerPage,n,'halved');
       let db=await m.snapshot();
       expect(db.segment).toMatchObject({status:'final',holes_played:18,differential:0});
       expect(db.match.status).toBe('final');
       const last=db.outcomes[17];
       const finalReason='Organizer verified White won the last hole';
-      await prepareCorrection(panel,{matchId:m.id,row:last,reason:finalReason,winner:'silver'});
-      await saveCorrection(panel, finalReason);
+      const change = { matchId: m.id, row: last, reason: finalReason, winner: 'silver' };
+      await prepareCorrection(panel, change);
+      await saveCorrection(panel, change);
       db=await m.snapshot();
       expect(db.outcomes).toHaveLength(18);
       expect(db.outcomes[17]).toMatchObject({id:last.id,winner:'silver',submitted_by:member.id});
@@ -242,9 +336,11 @@ export async function verifyOrganizerCorrections({ browser, baseURL, signIn, fix
     await test.step('Two organizer tabs correct different holes of one final squad without losing either change',async()=>{
       const sibling=await adminCtx.newPage();
       const before=await o.holes(squad.id); expect(before).toHaveLength(18);
-      const changes=[0,1].map((i)=>({matchId:squad.matchId,row:before[i],gross:before[i].gross_score+1,driver:squad.players[1].id,reason:`Signed card check: hole ${i+1}`}));
+      // Exchange the actual contributors: both gross and driver must change on each hole.
+      expect(before[0].tee_shot_player_id).not.toBe(before[1].tee_shot_player_id);
+      const changes=[0,1].map((i)=>({matchId:squad.matchId,row:before[i],gross:before[i].gross_score+1,driver:before[1-i].tee_shot_player_id,reason:`Signed card check: hole ${i+1}`}));
       await Promise.all([prepareCorrection(panel,changes[0]),prepareCorrection(sibling,changes[1])]);
-      await Promise.all([saveCorrection(panel, changes[0].reason), saveCorrection(sibling, changes[1].reason)]);
+      await Promise.all([saveCorrection(panel, changes[0]), saveCorrection(sibling, changes[1])]);
       const rows=await o.holes(squad.id);
       expect(rows).toEqual(before.map((row,i)=>i<2 ? {...row,gross_score:changes[i].gross,tee_shot_player_id:changes[i].driver,updated_at:rows[i].updated_at} : row));
       expect((await f.readSquads()).find(s=>s.id===squad.id)).toMatchObject({status:'final',gross_total:72,net_score:69,points:3});
@@ -252,9 +348,9 @@ export async function verifyOrganizerCorrections({ browser, baseURL, signIn, fix
       const { corrections: audit }=await o.history([squad.matchId]); expect(audit).toHaveLength(2);
       for(const c of changes) expect(audit.find(a=>a.target_id===c.row.id)).toMatchObject({target_type:'texas_scramble_hole',reason:c.reason,corrected_by:o.adminId,before_value:{gross_score:c.row.gross_score,tee_shot_player_id:c.row.tee_shot_player_id},after_value:{gross_score:c.gross,tee_shot_player_id:c.driver}});
       // A fresh organizer view must show both concurrent edits under the selected match.
-      await goAdmin(panel);
+      await goAdmin(panel, 'scorecards');
       await panel.locator('#resultMatch').selectOption(squad.matchId);
-      for (const change of changes) await expectVisibleHistory(panel, change.reason);
+      for (const change of changes) await expectVisibleHistory(panel, change.reason, `squad:${squad.id}`);
       await sibling.close();
     });
     await playerPage.reload();
@@ -264,12 +360,20 @@ export async function verifyOrganizerCorrections({ browser, baseURL, signIn, fix
       const staleDialog = await adminCtx.newPage();
       const [row] = await o.holes(squad.id);
       const gross = row.gross_score + 1;
-      await prepareCorrection(staleDialog, { matchId: squad.matchId, row, gross, driver: row.tee_shot_player_id, reason: 'Signed card check held over completion' });
-      await expect(staleDialog.locator('#teamCorrectionEntry')).toHaveValue(row.id);
-      await expect(staleDialog.locator('#teamCorrectionGross')).toHaveValue(String(gross));
-      await expect(correctionSave(staleDialog)).toBeEnabled();
+      const reason = 'Signed card check held over completion';
+      await prepareCorrection(staleDialog, { matchId: squad.matchId, row, gross, driver: row.tee_shot_player_id, reason });
+      const editor = staleDialog.locator('#holeEditDialog');
+      const expectHeldDraft = async () => {
+        await expect(editor).toBeVisible();
+        await expect(editor).toHaveAttribute('data-entry-id', row.id);
+        await expect(editor.locator('#holeEditGross')).toHaveValue(String(gross));
+        await expect(editor.locator('#holeEditDriver')).toHaveValue(row.tee_shot_player_id);
+        await expect(editor.locator('#holeEditReason')).toHaveValue(reason);
+      };
+      await expectHeldDraft();
+      await expect(editor.locator('#holeEditSave')).toBeEnabled();
 
-      await goAdmin(panel);
+      await goAdmin(panel, 'completion');
       const complete=async()=>{
         await panel.locator('#completionTournament').selectOption(o.tournamentId);
         await panel.locator('#completionConfirmation').fill('COMPLETE 2027 HEREFORD CUP');
@@ -286,17 +390,18 @@ export async function verifyOrganizerCorrections({ browser, baseURL, signIn, fix
       const before = await publishedState();
 
       // No reload or second preparation: submit the valid draft held in the other tab.
-      await expect(staleDialog.locator('#scoreCorrectionDialog')).toBeVisible();
-      await expect(staleDialog.locator('#teamCorrectionEntry')).toHaveValue(row.id);
-      await expect(staleDialog.locator('#teamCorrectionGross')).toHaveValue(String(gross));
-      const refusal = staleDialog.locator('#correctionMessage');
+      await expectHeldDraft();
+      const refusal = editor.locator('#holeEditFeedback');
       const priorMessage = await refusal.innerText();
-      await correctionSave(staleDialog).click();
+      await editor.locator('#holeEditSave').click();
       await expect(refusal).not.toHaveText(priorMessage);
       await expectRefusal(refusal,
         /complet(?:e|ed|ion)|archiv(?:e|ed)|publish(?:ed)?|publication|closed/i,
         /cannot (?:correct|edit|change)|not (?:allowed|permitted)|locked|closed|immutable|read.only/i);
+      await expectHeldDraft();
       expect(await publishedState()).toEqual(before);
+      await editor.locator('#holeEditCancel').click();
+      await expect(editor).toBeHidden();
       await staleDialog.close();
       await expect(panel.locator('#tournamentCompletionForm button[type="submit"]')).toHaveText('Verify completed archive');
       await complete();

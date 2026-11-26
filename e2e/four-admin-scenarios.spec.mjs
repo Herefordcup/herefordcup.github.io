@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
+import { assertDisposableSupabaseUrl } from '../scripts/e2e/safety.mjs';
+import { openChangeHistory, openSavedHole, saveHoleEdit, selectAdminTool, showCardTarget } from './helpers/organizer-score-checks.mjs';
 
 const password = process.env.E2E_USER_PASSWORD;
 const fixtureFile = process.env.E2E_FIXTURE_FILE;
@@ -22,14 +24,56 @@ async function signIn(browser, adminIndex) {
   return { context, page, admin };
 }
 
+// Independent fixture readback: the key stays in Node; every correction is a real browser click.
+async function fixtureRows(table, params) {
+  const origin = assertDisposableSupabaseUrl(process.env.E2E_SUPABASE_URL);
+  const key = process.env.E2E_SERVICE_ROLE_KEY;
+  if (!key) throw new Error('Disposable fixture readback key required.');
+  const response = await fetch(`${origin}/rest/v1/${table}?${new URLSearchParams(params)}`, {
+    method: 'GET', redirect: 'error', signal: AbortSignal.timeout(18_000),
+    headers: { apikey: key, Authorization: `Bearer ${key}` },
+  });
+  expect(response.ok, `${table} fixture readback: HTTP ${response.status}`).toBe(true);
+  return response.json();
+}
+
+async function correctIndividual(page, fixture, { hole, before, after, reason, play = false }) {
+  const roundId = fixture.rounds['0'];
+  const actor = manifest.admins[0].id;
+  const readScore = () => fixtureRows('scores', { round_id: `eq.${roundId}`, hole_number: `eq.${hole}`, select: 'id,round_id,user_id,hole_number,gross_score' });
+  const [rows, matches] = await Promise.all([readScore(), fixtureRows('matches', { id: `eq.${fixture.match}`, tournament_id: `eq.${manifest.tournaments.main}`, select: 'status' })]);
+  expect(matches).toEqual([{ status: play ? expect.stringMatching(/^(scheduled|live)$/) : 'final' }]);
+  expect(rows).toEqual([{ id: expect.any(String), round_id: roundId, user_id: actor, hole_number: hole, gross_score: before }]);
+  const [row] = rows;
+  const matchPicker = page.locator(play ? '#matchSelect' : '#resultMatch');
+  await expect(matchPicker).toHaveValue(fixture.match);
+  const dialog = await openSavedHole(page, row, play ? page.locator('#scorecard') : page);
+  const gross = dialog.locator('#holeEditGross');
+  await expect(gross).toHaveValue(String(before));
+  await gross.fill(String(after));
+  await dialog.locator('#holeEditReason').fill(reason);
+  await saveHoleEdit(page, row, 'correct_hole_score', play ? '#saveMessage' : '#resultMessage', { round_id: roundId, gross_score: after });
+  await expect(matchPicker).toHaveValue(fixture.match);
+  const [saved, audit] = await Promise.all([readScore(), fixtureRows('score_correction_audit', { round_id: `eq.${roundId}`,
+    select: 'score_id,round_id,user_id,hole_number,action,old_gross_score,new_gross_score,correction_reason,corrected_by' })]);
+  expect(saved).toEqual([{ ...row, gross_score: after }]);
+  expect(audit).toEqual([{ score_id: row.id, round_id: roundId, user_id: actor, hole_number: hole, action: 'update',
+    old_gross_score: before, new_gross_score: after, correction_reason: reason, corrected_by: actor }]);
+}
+
 async function scoreFromPortal(page, code, fixture, playerIndex) {
   await page.locator('[data-member-view="score"]').click();
   await page.locator('#matchSelect').selectOption(fixture.match);
   await expect(page.locator('#scorecard')).toBeVisible();
   const expectedScores = fixture.expectedScores[String(playerIndex)];
   expect(expectedScores).toHaveLength(18);
+  // Post a real one-stroke error on S1, then correct it before the opponent plays.
+  // C1 remains a separate, finalized correction with its original exact audit count.
+  const correctInPlay = code === 'S1' && playerIndex === 0;
+  const submitted = [...expectedScores];
+  if (correctInPlay) submitted[0] += 1;
   for (let holeNumber = 1; holeNumber <= 18; holeNumber += 1) {
-    await page.getByLabel(`Hole ${holeNumber} gross score`).fill(String(expectedScores[holeNumber - 1]));
+    await page.getByLabel(`Hole ${holeNumber} gross score`).fill(String(submitted[holeNumber - 1]));
   }
   await expect(page.locator('#saveRound')).toBeEnabled();
   await page.locator('#saveRound').click();
@@ -42,11 +86,35 @@ async function scoreFromPortal(page, code, fixture, playerIndex) {
     await expect(page.locator('#saveMessage')).toHaveText('Scores saved. Submitted holes are now locked; continue with any remaining holes.');
   }
   await expect(page.locator('#scorecard input[readonly]')).toHaveCount(18);
+  if (correctInPlay) {
+    await correctIndividual(page, fixture, { hole: 1, before: submitted[0], after: expectedScores[0], reason: '[S1] Signed card verified in Play', play: true });
+    await expect(page.getByLabel('Hole 1 gross score', { exact: true })).toHaveValue(String(expectedScores[0]));
+    await expect(page.locator('#grossTotal')).toHaveText(String(expectedScores.reduce((total, score) => total + score, 0)));
+    await expect(page.locator('#scorecard input[readonly]')).toHaveCount(18);
+  } else if (playerIndex !== 0) {
+    await expect(page.locator('button[data-edit-hole]')).toHaveCount(0);
+  }
 }
 
-async function selectMatch(page, code) {
-  await page.locator('#resultMatch').selectOption(manifest.fixtures[code].match);
-  await expect(page.locator('#resultSegmentRows [data-segment-id]')).toHaveCount(manifest.fixtures[code].segments.length);
+async function selectMatch(page, code, { inspectFallbacks = true } = {}) {
+  const fixture = manifest.fixtures[code];
+  await page.locator('#resultMatch').selectOption(fixture.match);
+  await expect(page.locator('#resultMatch')).toHaveValue(fixture.match);
+  await expect(page.locator(`#resultSegmentRows [data-segment-id="${fixture.segments[0]}"]`)).toHaveCount(1);
+  await expect(page.locator('#resultSegmentRows [data-segment-id]')).toHaveCount(fixture.segments.length);
+  if (!inspectFallbacks) return;
+  const more = page.locator('#scorecardMore');
+  // Open the actual disclosure before asserting a Foursomes action is absent;
+  // a closed disclosure alone must not make an automatic-only match pass.
+  const roundId = Object.values(fixture.rounds)[0];
+  const savedHole = page.locator(`button[data-edit-hole][data-round-id="${roundId}"]`).first();
+  const controls = more.or(savedHole).filter({ visible: true }).first();
+  await showCardTarget(page, controls, `round:${roundId}`);
+  if (await more.isVisible() && await more.evaluate(el => el.matches('details:not([open])'))) {
+    await more.locator(':scope > summary').click();
+    await expect(more).toHaveJSProperty('open', true);
+  }
+  await expect(page.locator('#resultSegmentRows')).toBeVisible();
 }
 
 async function finalizeSelectedMatch(page, { manual = [] } = {}) {
@@ -55,7 +123,7 @@ async function finalizeSelectedMatch(page, { manual = [] } = {}) {
     await card.locator('[name="differential"]').fill(String(result.differential));
     await card.locator('[name="holesPlayed"]').fill(String(result.holesPlayed));
   }
-  const submit = page.locator('#resultFinalizationForm button[type="submit"]');
+  const submit = page.getByRole('button', { name: 'Record Foursomes result', exact: true });
   await expect(submit).toHaveText('Record Foursomes result');
   await expect(submit).toBeEnabled();
   await submit.click();
@@ -90,8 +158,10 @@ test('[A1][A2][R1][R2][R3][C1][S1][S2][F1][F2][M1] pre-completion browser matrix
   page.on('pageerror', error => browserErrors.push(error.message));
   await page.goto('/admin.html');
   await expect(page.locator('#adminContent')).toBeVisible({ timeout: 20_000 });
+  await selectAdminTool(page, 'members');
   await expect(page.locator('#membershipManagement')).toBeVisible();
 
+  await selectAdminTool(page, 'legacy');
   await expect(page.locator('#legacyEditionPanel')).toBeVisible();
   await expect(page.locator('#legacyResultsPanel')).toBeHidden();
   await page.locator('#legacyResultsTab').click();
@@ -102,32 +172,42 @@ test('[A1][A2][R1][R2][R3][C1][S1][S2][F1][F2][M1] pre-completion browser matrix
   await page.locator('#legacyEditionTab').click();
   await expect(page.locator('#legacyEditionPanel')).toBeVisible();
 
+  await selectAdminTool(page, 'scorecards');
   await selectMatch(page, 'R1');
-  await expect(page.locator('#resultSegmentRows')).toContainText('Waiting for completed scorecards');
+  await expect(page.locator('#resultSegmentRows')).toContainText('Waiting for completed scorecards', { useInnerText: true });
   await expect(page.locator('#resultFinalizationForm button[type="submit"]')).toBeHidden();
+  // The missing eighteenth score has no row to edit; the manual fallback is
+  // still reachable without filling the hole or weakening R1's later rejection.
+  await page.locator('#scorecardMore #openScoreCorrection').click();
+  const manual = page.locator('#scoreCorrectionDialog');
+  await expect(manual).toBeVisible();
+  await manual.locator('#correctionRound').selectOption(manifest.fixtures.R1.rounds['2']);
+  await manual.locator('#correctionHole').fill('18');
+  await manual.locator('#closeScoreCorrection').click();
+  await expect(manual).toBeHidden();
 
   await selectMatch(page, 'R2');
-  await expect(page.locator('#resultSegmentRows')).toContainText('matching hole stroke indexes');
+  await expect(page.locator('#resultSegmentRows')).toContainText('matching hole stroke indexes', { useInnerText: true });
   await expect(page.locator('#resultFinalizationForm button[type="submit"]')).toBeHidden();
 
+  await selectAdminTool(page, 'matches');
   await page.locator('#matchTournament').selectOption(manifest.tournaments.rejection);
   const noTeamOption = page.locator(`#segmentRows [data-player-select] option[value="${manifest.admins[3].id}"]`).first();
   await expect(noTeamOption).toBeDisabled();
   await expect(noTeamOption).toContainText('No team');
 
-  await selectMatch(page, 'C1');
-  await expect(page.locator('#resultAuditHistory')).toContainText('Result finalized');
-  await expect(page.locator('#resultAuditHistory')).toContainText('Completed automatically from verified scorecards.');
-  await page.locator('#openScoreCorrection').click();
-  await expect(page.locator('#scoreCorrectionDialog')).toBeVisible();
-  await page.locator('#correctionRound').selectOption(manifest.fixtures.C1.rounds['0']);
-  await page.locator('#correctionHole').fill('18');
-  await page.locator('#correctionScore').fill('4');
-  await page.locator('#correctionReason').fill('[C1] deterministic QA correction');
-  await page.locator('#scoreCorrectionForm button[type="submit"]').click();
-  await expect(page.locator('#resultMessage')).toContainText('Score corrected and result recalculated');
-  await expect(page.locator('#resultAuditHistory')).toContainText('Result recalculated');
-  await expect(page.locator('#resultAuditHistory')).toContainText('[C1] deterministic QA correction');
+  await selectAdminTool(page, 'scorecards');
+  await selectMatch(page, 'C1', { inspectFallbacks: false });
+  const log = (await openChangeHistory(page, `round:${manifest.fixtures.C1.rounds['0']}`)).locator('#resultAuditHistory');
+  await expect(log).toBeVisible();
+  await expect(log).toContainText('Result finalized', { useInnerText: true });
+  await expect(log).toContainText('Completed automatically from verified scorecards.', { useInnerText: true });
+  const reason = '[C1] deterministic QA correction';
+  await correctIndividual(page, manifest.fixtures.C1, { hole: 18, before: 5, after: 4, reason });
+  await openChangeHistory(page);
+  await expect(log).toBeVisible();
+  await expect(log).toContainText('Result recalculated', { useInnerText: true });
+  await expect(log).toContainText(reason, { useInnerText: true });
 
   const expectedResults = {
     S1: 'Blue wins 1 Up',
@@ -138,14 +218,14 @@ test('[A1][A2][R1][R2][R3][C1][S1][S2][F1][F2][M1] pre-completion browser matrix
   };
   for (const code of ['S1', 'S2', 'F1', 'F2', 'C1']) {
     await selectMatch(page, code);
-    await expect(page.locator('#resultSegmentRows')).toContainText(expectedResults[code]);
-    await expect(page.locator('#resultSegmentRows')).toContainText('Calculated automatically from submitted hole-by-hole scores.');
+    await expect(page.locator('#resultSegmentRows')).toContainText(expectedResults[code], { useInnerText: true });
+    await expect(page.locator('#resultSegmentRows')).toContainText('Calculated automatically from submitted hole-by-hole scores.', { useInnerText: true });
     await expect(page.locator('#resultFinalizationForm button[type="submit"]')).toBeHidden();
   }
 
   await selectMatch(page, 'M1');
-  await expect(page.locator('#resultSegmentRows')).toContainText('Blue wins 1 Up');
-  await expect(page.locator('#resultSegmentRows')).toContainText('requires an administrator-entered match-play result');
+  await expect(page.locator('#resultSegmentRows')).toContainText('Blue wins 1 Up', { useInnerText: true });
+  await expect(page.locator('#resultSegmentRows')).toContainText('requires an administrator-entered match-play result', { useInnerText: true });
   await finalizeSelectedMatch(page, {
     manual: [{
       segmentId: manifest.fixtures.M1.segments[1],
@@ -162,6 +242,7 @@ test('[T3][T5] post-completion browser replay and Past Trips rendering', async (
   const { context, page } = await signIn(browser, 0);
   await page.goto('/admin.html');
   await expect(page.locator('#adminContent')).toBeVisible({ timeout: 20_000 });
+  await selectAdminTool(page, 'completion');
   await page.locator('#completionTournament').selectOption(manifest.tournaments.main);
   await expect(page.locator('#completionReadiness')).toContainText('This tournament is complete.');
   await page.locator('#completionConfirmation').fill('COMPLETE 2027 HEREFORD CUP');
