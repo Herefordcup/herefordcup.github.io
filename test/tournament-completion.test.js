@@ -134,9 +134,9 @@ test('administrator completion requires an exact typed confirmation and refreshe
   assert.match(adminScript, /adminData = await loadAdminData\(\)/);
   assert.match(adminScript, /submitButton\.disabled = true/);
   assert.match(adminScript, /finally[\s\S]*submitButton\.disabled = false/);
-  assert.match(html, /src\/admin\.js\?v=organizer-scoring-2/);
-  assert.match(adminScript, /admin-helpers\.js\?v=organizer-scoring-2/);
-  assert.match(adminScript, /supabase\.js\?v=organizer-scoring-2/);
+  assert.match(html, /src\/admin\.js\?v=compact-scorecard-1/);
+  assert.match(adminScript, /admin-helpers\.js\?v=compact-scorecard-1/);
+  assert.match(adminScript, /supabase\.js\?v=compact-scorecard-1/);
 });
 
 test('tournament administrators can proceed when RLS hides the unpublished planned edition', () => {

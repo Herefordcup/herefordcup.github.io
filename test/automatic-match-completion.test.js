@@ -34,7 +34,7 @@ test('automatic completion is idempotent and preserves the explicit Foursomes fa
 
 test('hidden automatic-format controls stay visually hidden despite button display styles', () => {
   assert.match(adminCss, /\[hidden\]\s*\{\s*display:\s*none\s*!important\s*;?\s*\}/i);
-  assert.match(adminHtml, /admin\.css\?v=organizer-scoring-2/);
+  assert.match(adminHtml, /admin\.css\?v=compact-scorecard-1/);
 });
 
 test('portal attempts completion and initial recap after an assigned score save', () => {

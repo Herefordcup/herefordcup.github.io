@@ -1,10 +1,10 @@
 import { validateSegments } from './formats.js';
-import { scrambleLocalStart, scrambleLockReason } from './texas-scramble-planner.js?v=organizer-scoring-2';
-import { applyMemberCardVisibility, createMutationGate, easternDateTimeInput, easternDateTimeToIso, filterActiveMemberships, moveFocusFromFilteredCard, optionalNumber, renameMatchPlanPayload, segmentPlayerFromMembership, segmentPlayerOptions, tournamentCompletionReadiness, tournamentTeamLabel } from './admin-helpers.js?v=organizer-scoring-2';
+import { scrambleLocalStart, scrambleLockReason } from './texas-scramble-planner.js?v=compact-scorecard-1';
+import { applyMemberCardVisibility, createMutationGate, easternDateTimeInput, easternDateTimeToIso, filterActiveMemberships, moveFocusFromFilteredCard, optionalNumber, renameMatchPlanPayload, segmentPlayerFromMembership, segmentPlayerOptions, tournamentCompletionReadiness, tournamentTeamLabel } from './admin-helpers.js?v=compact-scorecard-1';
 import { summarizeLegacyLedger } from './legacy-ledger.js?v=legacy-ledger-2';
-import { deriveSegmentResult } from './match-results.js?v=organizer-scoring-2';
+import { deriveSegmentResult } from './match-results.js?v=compact-scorecard-1';
 import { formatMatchStatus } from './scoring.js';
-import { createCorrectionEditor, isSharedSegment, renderTeamCorrectionAudits, teamValue } from './team-correction-editor.js?v=organizer-scoring-2';
+import { createCorrectionEditor, isSharedSegment, renderTeamCorrectionAudits, teamValue } from './team-correction-editor.js?v=compact-scorecard-1';
 import {
   completeTournamentArchive,
   correctHoleScore,
@@ -37,7 +37,7 @@ import {
   uploadLegacyPhoto,
   updateCommentaryStatus,
   updateCommentaryText,
-} from './supabase.js?v=organizer-scoring-2';
+} from './supabase.js?v=compact-scorecard-1';
 
 const courseForm = document.querySelector('#courseForm');
 const holesContainer = document.querySelector('#adminHoles');
