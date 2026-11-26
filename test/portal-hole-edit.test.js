@@ -192,7 +192,7 @@ test('mixed readback refreshes only the submitted card and standings, preserving
   const button = page.locator(`${edit}[data-entry-id="score"]`);
   await button.click();
   await page.waitForFunction(() => window.edited);
-  const payload = { roundId: 'round', holeNumber: 1, grossScore: 3, reason: 'Signed card', deleteScore: false };
+  const payload = { roundId: 'round', holeNumber: 1, expectedScoreId: 'score', grossScore: 3, reason: 'Signed card', deleteScore: false };
   assert.equal(await saveCaptured(page, 'correctHoleScore', payload), '');
   await expect(page.getByLabel('Hole 1 gross score')).toHaveValue('3');
   await expect(draft).toHaveValue('6');
@@ -206,7 +206,7 @@ test('mixed readback refreshes only the submitted card and standings, preserving
   assert.deepEqual(calls.filter(([op]) => op.startsWith('correct')), [['correctHoleScore', payload]]);
 });
 
-const individualPayload = { roundId: 'round', holeNumber: 1, grossScore: 3, reason: 'Signed card', deleteScore: false };
+const individualPayload = { roundId: 'round', holeNumber: 1, expectedScoreId: 'score', grossScore: 3, reason: 'Signed card', deleteScore: false };
 const openIndividual = async page => {
   await page.locator(`${edit}[data-entry-id="score"]`).click();
   await page.waitForFunction(() => window.edited?.target.row.id === 'score');
@@ -421,7 +421,7 @@ test('double submission of one open editor makes one audited write; a different 
   const data = memberCard();
   const { page, calls } = await openPortal(t, { data, hooks: { write(method, p) { return { score: Object.assign(data.rounds[0].scores[0], { gross_score: p.grossScore }) }; } } });
   await openIndividual(page);
-  for (const wrong of [{ roundId: 'other' }, { holeNumber: 2 }, { deleteScore: true }]) {
+  for (const wrong of [{ roundId: 'other' }, { holeNumber: 2 }, { deleteScore: true }, { expectedScoreId: 'other-row' }, { expectedScoreId: undefined }]) {
     await assert.rejects(saveCaptured(page, 'correctHoleScore', { ...individualPayload, ...wrong }), /changed|target/i);
   }
   const results = await Promise.allSettled([saveCaptured(page, 'correctHoleScore', individualPayload), saveCaptured(page, 'correctHoleScore', individualPayload)]);

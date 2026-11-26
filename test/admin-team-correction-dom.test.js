@@ -184,9 +184,12 @@ test('row Edit opens the immutable individual target and rereads its match, scor
   const [target, allowed] = await page.evaluate(() => [holeProbe.target, holeProbe.callbacks.canEdit(holeProbe.target)]);
   assert.deepEqual([target.kind, target.matchId, target.roundId, target.row.id, target.row.gross_score, allowed],
     ['individual', 'singles', 'round', 'immutable-4', 5, true]);
+  await assert.rejects(page.evaluate(() => holeProbe.callbacks.correctHoleScore({ roundId: 'round', holeNumber: 4,
+    expectedScoreId: 'immutable-5', grossScore: 4, reason: 'Wrong saved entry' })), /reopen|target/i);
+  assert.equal(calls.some(([n]) => n === 'correctHoleScore'), false);
   await page.evaluate(async () => {
     const { target, callbacks } = holeProbe;
-    const result = await callbacks.correctHoleScore({ roundId: target.roundId, holeNumber: target.row.hole_number, grossScore: 4, reason: 'Checked card' });
+    const result = await callbacks.correctHoleScore({ roundId: target.roundId, holeNumber: target.row.hole_number, expectedScoreId: target.row.id, grossScore: 4, reason: 'Checked card' });
     const warning = await callbacks.onSaved(target, result);
     callbacks.notify(`Hole 4 corrected.${warning ? ' ' + warning : ''}`, Boolean(warning), target);
   });
@@ -200,6 +203,25 @@ test('row Edit opens the immutable individual target and rereads its match, scor
   assert.deepEqual(calls.filter(([n]) => n === 'generateMatchCommentary'), [['generateMatchCommentary', match.id, { regenerate: true }]]);
   assert.equal(calls.filter(([n]) => n === 'loadMatchResultAudits').length, 1);
   assert.equal(await page.evaluate(() => holeProbe.callbacks.canEdit(holeProbe.target)), false, 'old snapshot no longer editable');
+});
+
+test('an unconfirmed correction receipt never freezes Edit on a different hole', async t => {
+  const data = organizerData();
+  const { page, calls } = await openAdmin(t, data, { correctTeamScoreEntry: () => ({ id: 'unconfirmed' }) }, true);
+  await page.selectOption('#resultMatch', 'blue');
+  const edit = id => page.locator(`button[data-edit-hole][data-entry-id="blue-squad-hole-${id}"]`);
+  await edit(2).click();
+  await expect.poll(() => page.evaluate(() => window.holeProbe?.target.row.hole_number)).toBe(2);
+  await page.evaluate(async () => {
+    const { target, callbacks } = holeProbe;
+    const receipt = await callbacks.correctTeamScoreEntry({ targetType: target.kind, targetId: target.row.id, grossScore: 3, teeShotPlayerId: 'alex', reason: 'Verified' });
+    if (receipt.id === target.row.id) throw new Error('Test must exercise an unconfirmed return');
+    // The sheet must NOT apply a mismatched receipt with onSaved or retry it.
+    callbacks.notify('Could not confirm the saved hole.', true, target);
+  });
+  await edit(7).click();
+  await expect.poll(() => page.evaluate(() => window.holeProbe?.target.row.hole_number), { timeout: 1200 }).toBe(7);
+  assert.equal(calls.filter(([name]) => name === 'correctTeamScoreEntry').length, 1);
 });
 
 test('final manual segments are read-only, use text labels and cannot submit an outcome-only match', async t => {
