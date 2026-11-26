@@ -251,6 +251,15 @@ test('[T3][T5] post-completion browser replay and Past Trips rendering', async (
   await completionButton.click();
   await expect(page.locator('#completionMessage')).toHaveText('Completed tournament archive verified without changes.');
 
+  await selectAdminTool(page, 'scorecards');
+  await selectMatch(page, 'C1', { inspectFallbacks: false });
+  await expect(page.locator('#resultMessage')).toContainText('Submitted scores are read-only.');
+  await expect(page.locator('#scorecardHoles')).toBeVisible();
+  await expect(page.locator('#scorecardHoles button[data-edit-hole]')).toHaveCount(0);
+  await expect(page.locator('#scorecardMore')).toBeHidden();
+  const history = await openChangeHistory(page);
+  await expect(history.locator('#resultAuditHistory')).toContainText('[C1] deterministic QA correction');
+
   await page.goto('/past-trips.html');
   await page.locator('#legacy-tab-2027').click();
   await expect(page.locator('#legacyDetails')).toContainText('Round');

@@ -119,6 +119,11 @@ export async function saveHoleEdit(page, row, rpc, message, expected) {
   const dialog = page.locator('#holeEditDialog');
   await expect(dialog).toHaveAttribute('data-entry-id', row.id);
   const reply = await submitRpc(page, rpc, () => dialog.locator('#holeEditSave').click());
+  const sent = reply.request().postDataJSON();
+  if (rpc === 'correct_hole_score') {
+    expect(sent).toMatchObject({expected_score_id: row.id, target_round_id: row.round_id,
+      target_hole_number: row.hole_number, delete_score: false});
+  } else expect(sent).toMatchObject({target_id: row.id});
   const saved = await reply.json();
   expect(Array.isArray(saved) ? saved : [saved]).toMatchObject([{ id: row.id, hole_number: row.hole_number, ...expected }]);
   await expect(dialog).toBeHidden();
