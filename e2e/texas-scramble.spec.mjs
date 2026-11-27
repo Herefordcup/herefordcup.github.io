@@ -26,6 +26,7 @@ async function locked(row, strokes, contributorId) {
   await expect(row.locator('input')).toHaveValue(String(strokes));
   await expect(row.locator('select')).toBeDisabled();
   await expect(row.locator('select')).toHaveValue(contributorId);
+  await expect(row.locator('button[data-edit-hole]')).toHaveCount(0); // Ordinary squad members see locked scores, never Edit.
 }
 
 test('Texas Scramble: an organizer reopens and edits only the unplayed 2098 lineup', { tag: '@scramble' }, async ({ browser, baseURL, plans }) => {

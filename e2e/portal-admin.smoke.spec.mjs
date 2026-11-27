@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { selectAdminTool } from './helpers/organizer-score-checks.mjs';
 
 const email = process.env.E2E_USER_EMAIL;
 const password = process.env.E2E_USER_PASSWORD;
@@ -31,20 +32,27 @@ test('controlled administrator can sign in, update disposable profile data, and 
   await expect(page.locator('#profileSetupMessage')).toHaveText('Profile saved.');
   await expect(page.locator('#homeHandicap')).toHaveText('10.4');
 
-  await page.goto('/admin.html');
+  await expect(page.locator('#adminLink')).toHaveAttribute('href', 'admin.html');
+  await page.locator('#adminLink').click();
   await expect(page.locator('#adminContent')).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator('#membershipManagement')).toBeVisible();
-  await expect(page.locator('#activeMemberSearch')).toBeVisible();
-
+  await expect(page.getByRole('navigation', { name: 'Admin sections' }).getByRole('link')).toHaveCount(4);
+  await selectAdminTool(page, 'completion');
   await expect(page.locator('#tournamentCompletionForm')).toBeVisible();
   const completionOption = page.locator('#completionTournament option').filter({ hasText: '2099' });
   await expect(completionOption).toHaveCount(1);
   const completionOptionText = await completionOption.textContent();
   const alreadyCompleted = completionOptionText?.includes('complete') ?? false;
-  await page.locator('#completionTournament').selectOption(await completionOption.getAttribute('value'));
+  const tournamentId = await completionOption.getAttribute('value');
+  await selectAdminTool(page, 'roster');
+  await expect(page.locator('#membershipManagement')).toBeVisible();
+  await expect(page.locator('#activeMemberSearch')).toBeVisible();
   if (!alreadyCompleted) {
     await expect(page.locator('#activeMemberCount')).toContainText('2 members');
     await expect(page.locator('#activeMembers [data-member-id]')).toHaveCount(2);
+  }
+  await selectAdminTool(page, 'completion');
+  await page.locator('#completionTournament').selectOption(tournamentId);
+  if (!alreadyCompleted) {
     await expect(page.locator('#completionReadiness')).toContainText('All 1 matches are final');
   } else {
     await expect(page.locator('#completionReadiness')).toContainText('already complete');

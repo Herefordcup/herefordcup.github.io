@@ -46,7 +46,7 @@ test('home profile control opens an accessible setup dialog', () => {
 });
 
 test('profile setup loads a fresh script and has a non-dialog fallback', () => {
-  assert.match(html, /src="src\/portal\.js\?v=organizer-scoring-2"/);
+  assert.match(html, /src="src\/portal\.js\?v=compact-scorecard-1"/);
   assert.match(portalScript, /from '\.\/profile\.js\?v=player-name-1'/);
   assert.match(html, /href="home\.css\?v=match-commentary-inline-1"/);
   assert.match(portalScript, /typeof profileSetupDialog\.showModal === 'function'/);

@@ -8,7 +8,8 @@
   <title>Player Portal · Hereford Cup</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css?v=home-standings-1">
-  <link rel="stylesheet" href="portal.css?v=shared-scorecard-visibility-1">
+  <link rel="stylesheet" href="portal.css?v=compact-scorecard-1">
+  <link rel="stylesheet" href="scorecard-edit.css?v=compact-scorecard-1">
   <link rel="stylesheet" href="home.css?v=match-commentary-inline-1">
 </head>
 <body class="portal-body">
@@ -151,7 +152,7 @@
             <section id="holeOutcomeScorecard" class="team-scorecard" hidden><p class="auth-note">Choose Blue, Halved, or White for each hole. No individual scores are created.</p><div id="holeOutcomeRows"></div></section>
             <div class="empty-scorecard" id="emptyScorecard"><span>18</span><p>Select a course and tee to open your scorecard.</p></div>
             <div class="scorecard" id="scorecard" hidden></div>
-            <div class="save-row"><span id="saveMessage"></span><button class="button button-primary" id="saveRound" type="button" disabled>Save round</button></div>
+            <div class="save-row"><span id="saveMessage" role="status"></span><button class="button button-primary" id="saveRound" type="button" disabled>Save round</button></div>
           </section>
         </div>
       </section>
@@ -211,6 +212,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="src/portal.js?v=organizer-scoring-2"></script>
+  <script type="module" src="src/portal.js?v=compact-scorecard-1"></script>
 </body>
 </html>

@@ -132,7 +132,7 @@ test('More includes a tournament player directory without private contact data',
   assert.match(html, /id="playersList"/);
   assert.match(html, />Players</);
   assert.match(supabaseScript, /profiles!tournament_memberships_user_id_fkey\(display_name, handicap_index, profile_photo_path\)/);
-  assert.match(portalScript, /from '\.\/supabase\.js\?v=organizer-scoring-2'/);
+  assert.match(portalScript, /from '\.\/supabase\.js\?v=compact-scorecard-1'/);
   assert.match(portalScript, /function renderPlayers\(/);
   assert.doesNotMatch(portalScript, /player\.email|profiles\(email/);
 });
@@ -203,7 +203,7 @@ test('scorecard explains standalone gross play and assigned mixed segment scorin
 });
 
 test('mixed segment summaries stack at phone widths', () => {
-  assert.match(html, /href="portal\.css\?v=shared-scorecard-visibility-1"/);
+  assert.match(html, /href="portal\.css\?v=compact-scorecard-1"/);
   assert.match(portalCss, /@media\(max-width:820px\)[\s\S]*#segmentSummaries\{grid-template-columns:1fr\}/);
 });
 
@@ -269,7 +269,7 @@ test('scorecard setup includes an 18-hole, front-nine, and back-nine selector', 
   assert.match(html, /<option value="front9">Front 9 \(holes 1–9\)<\/option>/);
   assert.match(html, /<option value="back9">Back 9 \(holes 10–18\)<\/option>/);
   assert.match(portalScript, /holeNumbersForRound\(holeRangeSelect\.value, segments\)/);
-  assert.match(html, /src="src\/portal\.js\?v=organizer-scoring-2"/);
+  assert.match(html, /src="src\/portal\.js\?v=compact-scorecard-1"/);
   assert.match(portalScript, /from '\.\/round-entry\.js\?v=round-holes-1'/);
 });
 

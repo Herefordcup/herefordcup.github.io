@@ -49,7 +49,7 @@ test('an individual correction RPC success is not undone by an unavailable audit
   const score = { id: 'score', round_id: 'round', hole_number: 7, gross_score: 4 };
   client.rpc = async (name, args) => {
     assert.equal(name, 'correct_hole_score');
-    assert.equal(args.target_round_id, 'round');
+    assert.deepEqual(args, { target_round_id: 'round', target_hole_number: 7, target_reason: 'Verified', target_gross_score: 4, delete_score: false });
     saves++;
     return { data: score };
   };
@@ -58,4 +58,38 @@ test('an individual correction RPC success is not undone by an unavailable audit
   assert.deepEqual(saved.score, score);
   assert.match(saved.auditWarning, /Audit unavailable/);
   assert.deepEqual(client.calls.map(q => q.filters), [[['round_id', 'round'], ['hole_number', 7]]]);
+});
+
+test('an exact individual edit passes its displayed score ID and keeps the score/audit return contract', async () => {
+  const score = { id: 'original' }, audit = { score_id: score.id };
+  const client = reader(() => ({ data: audit }));
+  client.rpc = async (name, args) => {
+    assert.equal(name, 'correct_hole_score');
+    assert.deepEqual(args, { target_round_id: 'round', target_hole_number: 7, target_reason: 'Verified', target_gross_score: 4,
+      delete_score: false, expected_score_id: score.id });
+    return { data: score };
+  };
+  assert.deepEqual(await correctHoleScore({ roundId: 'round', holeNumber: 7, grossScore: 4, reason: ' Verified ', expectedScoreId: score.id }, client), { score, audit });
+});
+
+test('the exact-row guard works on browsers without Object.hasOwn', async () => {
+  const args = [];
+  const client = reader(() => ({ data: null }));
+  client.rpc = async (name, payload) => { args.push(payload); return { data: { id: 'exact-id' } }; };
+  const descriptor = Object.getOwnPropertyDescriptor(Object, 'hasOwn');
+  let pending;
+  try {
+    Object.defineProperty(Object, 'hasOwn', { ...descriptor, value: undefined });
+    pending = correctHoleScore({ roundId: 'round', holeNumber: 3, grossScore: 5, reason: 'Signed card', expectedScoreId: 'exact-id' }, client);
+  } finally { Object.defineProperty(Object, 'hasOwn', descriptor); }
+  await pending;
+  assert.equal(args.length, 1);
+  assert.equal(args[0].expected_score_id, 'exact-id');
+});
+
+test('an explicitly missing displayed ID never falls back to an old-client insert', async () => {
+  const client = { rpc: () => assert.fail('A form missing its displayed ID must not send a mutation') };
+  for (const expectedScoreId of [null, undefined]) {
+    await assert.rejects(correctHoleScore({ roundId: 'round', holeNumber: 7, grossScore: 4, reason: 'Verified', expectedScoreId }, client), /submitted score ID/i);
+  }
 });

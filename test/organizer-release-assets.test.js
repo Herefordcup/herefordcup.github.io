@@ -6,7 +6,7 @@ const root = new URL('../', import.meta.url);
 const text = path => readFile(new URL(path, root), 'utf8');
 
 test('public entries and organizer scoring imports use the same release cache key', async () => {
-  const key = 'organizer-scoring-2';
+  const key = 'compact-scorecard-1';
   for (const [page, entry] of [['index', 'app'], ['portal', 'portal'], ['admin', 'admin'], ['past-trips', 'past-trips']]) {
     const [html, js] = await Promise.all([text(`${page}.html`), text(`src/${entry}.js`)]);
     assert.ok(html.includes(`src="src/${entry}.js?v=${key}"`), `${page} loads this release's entrypoint`);
