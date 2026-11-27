@@ -73,14 +73,6 @@ const tournaments = await request('/rest/v1/tournaments', {
 const tournament = tournaments[0];
 if (!tournament?.id) throw new Error('Disposable tournament was not created.');
 
-await request('/rest/v1/tournament_events', {
-  method: 'POST',
-  body: [
-    { tournament_id: tournament.id, title: 'Disposable opening round', event_type: 'golf', starts_at: '2099-03-18T17:00:00Z', time_precision: 'tbd', notes: null },
-    { tournament_id: tournament.id, title: 'Disposable team breakfast', event_type: 'meal', starts_at: '2099-03-19T12:00:00Z', time_precision: 'exact', notes: 'Player meeting point: the clubhouse.' },
-  ],
-});
-
 await request('/rest/v1/tournament_memberships?on_conflict=tournament_id,user_id', {
   method: 'POST',
   body: [
