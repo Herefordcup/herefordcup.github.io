@@ -8,6 +8,24 @@ if (!email?.endsWith('@local.test') || !password) {
   throw new Error('Disposable E2E credentials were not generated.');
 }
 
+test('an ordinary player can switch itinerary days and read member notes without Admin access', async ({ page }) => {
+  await page.goto('/portal.html');
+  await page.locator('#emailAddress').fill('e2e-opponent@local.test');
+  await page.locator('#emailPassword').fill(password);
+  await page.locator('#emailAuthSubmit').click();
+  await expect(page.locator('#dashboardView')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('#adminLink')).toBeHidden();
+  const tabs = page.getByRole('tablist', { name: 'Itinerary days' }).getByRole('tab');
+  await expect(tabs).toHaveCount(2);
+  const panel = page.getByRole('tabpanel');
+  await expect(panel).toContainText('Disposable opening round');
+  await expect(panel).toContainText('Time TBD');
+  await tabs.nth(1).click();
+  await expect(panel).toContainText('Disposable team breakfast');
+  await expect(panel).toContainText('Player meeting point: the clubhouse.');
+  await expect(panel).not.toContainText('Disposable opening round');
+});
+
 test('controlled administrator can sign in, update disposable profile data, and open Admin', async ({ page }) => {
   const browserErrors = [];
   page.on('console', message => {
