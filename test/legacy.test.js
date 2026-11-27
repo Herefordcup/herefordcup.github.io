@@ -249,7 +249,7 @@ test('Past Trips cache-busts every changed scorecard dependency', async () => {
   assert.match(indexHtml, /src="src\/app\.js\?v=compact-scorecard-1"/);
   assert.match(appScript, /from '\.\/supabase\.js\?v=compact-scorecard-1'/);
   assert.match(appScript, /from '\.\/legacy\.js\?v=pimentel-correction-1'/);
-  assert.match(portalHtml, /src="src\/portal\.js\?v=compact-scorecard-1"/);
+  assert.match(portalHtml, /src="src\/portal\.js\?v=portal-itinerary-days-1"/);
   const portalScript = await readFile(new URL('src/portal.js', root), 'utf8');
   assert.match(portalScript, /from '\.\/supabase\.js\?v=compact-scorecard-1'/);
   assert.match(portalScript, /from '\.\/member\.js\?v=member-role-1'/);

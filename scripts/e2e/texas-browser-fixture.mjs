@@ -52,6 +52,11 @@ export async function seedScramble(env = process.env) {
     return tournament;
   }
   const scoringTournament = await createTournament(2027, 'live');
+  // Member Home reads the current edition, not the separate 2099 archive fixture.
+  await insert('tournament_events', [
+    { tournament_id: scoringTournament.id, title: 'Disposable opening round', event_type: 'golf', starts_at: '2027-03-18T17:00:00Z', time_precision: 'tbd', notes: null },
+    { tournament_id: scoringTournament.id, title: 'Disposable team breakfast', event_type: 'meal', starts_at: '2027-03-19T12:00:00Z', time_precision: 'exact', notes: 'Player meeting point: the clubhouse.' },
+  ]);
   const [course] = await insert('courses', { name: `Disposable Scramble Links ${tag}`, location: 'Loopback', active: true, created_by: admin.user.id });
   const [tee] = await insert('tees', { course_id: course.id, name: 'Scramble QA', rating_category: 'M', rating: 72, slope: 113, rating_par: 72, par: 72, yardage: 6300 });
   await insert('holes', Array.from({ length: 18 }, (_, i) => ({ tee_id: tee.id, hole_number: i + 1, par: 4, stroke_index: i + 1, yardage: 350 })));

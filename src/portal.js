@@ -3,7 +3,8 @@ import { matchPoints } from './scoring.js';
 import { assignedRoundScoringMode, formatSegmentLabel, individualEntryBlockReason, segmentHoleCount } from './formats.js?v=handicap-scoring-1';
 import { summarizeLeagueStats, summarizePlayerStats } from './stats.js';
 import { assertRoundAssignment, holeNumbersForRound, mergePersistedScores, unsavedScoreRows } from './round-entry.js?v=round-holes-1';
-import { commentaryForMatch, formatHomeDate, formatHomeDateRange, formatItineraryTime, formatMatchupPlayers, orderHomeMatches } from './home.js?v=itinerary-1';
+import { commentaryForMatch, formatHomeDate, formatHomeDateRange, formatMatchupPlayers, orderHomeMatches } from './home.js?v=itinerary-1';
+import { renderMemberItinerary } from './member-itinerary.js?v=portal-itinerary-days-1';
 import { avatarInitials, normalizeProfileInput, playerDisplayName, profileAvatarUrl, validateProfilePhoto } from './profile.js?v=player-name-1';
 import {
   assignedSegmentsForPlayer,
@@ -235,29 +236,6 @@ function renderHomeSummary() {
   document.querySelector('#homeScheduleTitle').textContent = tripRange ? `${tripRange} itinerary` : 'Tournament itinerary';
 }
 
-function renderSchedule() {
-  const container = document.querySelector('#schedulePreview');
-  container.replaceChildren();
-  if (!playerData.events.length) {
-    container.append(element('p', 'empty-panel', 'The itinerary has not been published yet.'));
-    return;
-  }
-  for (const event of playerData.events) {
-    const row = element('article', 'schedule-item');
-    const time = element(event.time_precision === 'tbd' ? 'span' : 'time', '',
-      formatItineraryTime(event.starts_at, event.ends_at, event.time_precision, true));
-    if (time.tagName === 'TIME') time.dateTime = event.starts_at;
-    row.append(time);
-    const details = element('div');
-    details.append(element('strong', '', event.title));
-    if (event.public_details) details.append(element('span', '', event.public_details));
-    if (event.notes && event.notes !== event.public_details) details.append(element('span', '', event.notes));
-    row.append(details);
-    row.append(element('em', '', event.is_competitive ? 'CUP' : event.event_type.toUpperCase()));
-    container.append(row);
-  }
-}
-
 function renderLiveMatch() {
   const preview = document.querySelector('#matchPreview');
   const live = playerData.assignments.find(item => item.matches?.status === 'live');
@@ -470,7 +448,7 @@ function renderNotificationPreferences() {
 
 function renderMemberHome() {
   renderHomeSummary();
-  renderSchedule();
+  renderMemberItinerary(document.querySelector('#schedulePreview'), playerData.events);
   renderLiveMatch();
   renderRecentResults();
   renderCup();

@@ -2,7 +2,7 @@ import { expect, test as base } from '@playwright/test';
 import { seedScramble } from '../scripts/e2e/texas-browser-fixture.mjs';
 import { editUnplayedLineup, verifyOrganizerCorrections } from './helpers/organizer-score-checks.mjs';
 
-// Both tests use the same 16 accounts, but never edit the same tournament plan.
+// The tests reuse 16 accounts; Home is read-only and lineup and scoring use separate plans.
 const test = base.extend({
   plans: [async ({}, use) => use(await seedScramble()), { scope: 'worker', timeout: 120_000 }],
 });
@@ -28,6 +28,21 @@ async function locked(row, strokes, contributorId) {
   await expect(row.locator('select')).toHaveValue(contributorId);
   await expect(row.locator('button[data-edit-hole]')).toHaveCount(0); // Ordinary squad members see locked scores, never Edit.
 }
+
+test('an ordinary player can switch itinerary days and read member notes without Admin access', { tag: '@scramble' }, async ({ page, plans }) => {
+  await signIn(page, plans.scoring.squads[0].players[0]);
+  await expect(page.locator('#adminLink')).toBeHidden();
+  await expect(page.locator('#homeScheduleTitle')).toHaveText('March 18–21, 2027 itinerary');
+  const tabs = page.getByRole('tablist', { name: 'Itinerary days' }).getByRole('tab');
+  await expect(tabs).toHaveCount(2);
+  const panel = page.getByRole('tabpanel');
+  await expect(panel).toContainText('Disposable opening round');
+  await expect(panel).toContainText('Time TBD');
+  await tabs.nth(1).click();
+  await expect(panel).toContainText('Disposable team breakfast');
+  await expect(panel).toContainText('Player meeting point: the clubhouse.');
+  await expect(panel).not.toContainText('Disposable opening round');
+});
 
 test('Texas Scramble: an organizer reopens and edits only the unplayed 2098 lineup', { tag: '@scramble' }, async ({ browser, baseURL, plans }) => {
   const original = plans.scoring;
